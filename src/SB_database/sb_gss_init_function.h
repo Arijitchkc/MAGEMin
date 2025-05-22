@@ -11,7 +11,8 @@
 #ifndef __SB_GSS_INIT_FUNCTION_H_
 #define __SB_GSS_INIT_FUNCTION_H_
 
-#include "../MAGEMin.h"
+// #include "../MAGEMin.h"
+#include "../MAGEMin_modified.h"
 #include "../initialize.h"
 								
 

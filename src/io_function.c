@@ -17,8 +17,8 @@
 #include <time.h>
 #include <string.h>
 
-#include "MAGEMin.h"
-
+// #include "MAGEMin.h"
+#include "MAGEMin_modified.h"
 
 #define n_ox 11
 /** 

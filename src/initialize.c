@@ -9,7 +9,8 @@
  **
  ** ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ @*/
 #include "uthash.h"
-#include "MAGEMin.h"
+// #include "MAGEMin.h"
+#include "MAGEMin_modified.h"
 #include "initialize.h"
 #include "toolkit.h"
 #include <stdio.h>

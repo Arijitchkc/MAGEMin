@@ -11,7 +11,9 @@
 #ifndef __run_levelling_function_H_
 #define __run_levelling_function_H_
 
-#include "MAGEMin.h"
+// #include "MAGEMin.h"
+#include "MAGEMin_modified.h"
+
 #include "all_solution_phases.h"
 
 /* simplex levelling declaration part */

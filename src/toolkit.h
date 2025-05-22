@@ -1,7 +1,8 @@
 #ifndef __TOOLKIT_H_
 #define __TOOLKIT_H_
 
-#include "MAGEMin.h"
+// #include "MAGEMin.h"
+#include "MAGEMin_modified.h"
 
 /*@ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
  **

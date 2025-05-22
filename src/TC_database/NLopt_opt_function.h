@@ -11,7 +11,8 @@
 #ifndef __NLOPT_OPT_FUNCTION_H_
 #define __NLOPT_OPT_FUNCTION_H_
 
-#include "../MAGEMin.h"
+// #include "../MAGEMin.h"
+#include "../MAGEMin_modified.h"
 
 typedef SS_ref (*NLopt_type) (		global_variable 	 gv,
 									SS_ref 				 SS_ref_db		);

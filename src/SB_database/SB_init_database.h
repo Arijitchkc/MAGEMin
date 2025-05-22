@@ -11,8 +11,8 @@
 #ifndef __SB_init_db_H_
 #define __SB_init_db_H_
 
-    #include "../MAGEMin.h"
-
+    // #include "../MAGEMin.h"
+#include "../MAGEMin_modified.h"
 	/** 
 		Store oxide informations 
 	**/

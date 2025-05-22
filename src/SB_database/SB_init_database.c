@@ -15,7 +15,8 @@
 #include <complex.h> 
 
 #include "../uthash.h"
-#include "../MAGEMin.h"
+// #include "../MAGEMin.h"
+#include "../MAGEMin_modified.h"
 #include "../initialize.h"
 #include "../all_endmembers.h"
 #include "SB_init_database.h"

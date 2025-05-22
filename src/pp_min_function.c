@@ -22,7 +22,9 @@ This function simply update the driving forces of pure phase each time the G-hyp
 #include <string.h>
 #include <complex.h> 
 
-#include "MAGEMin.h"
+// #include "MAGEMin.h"
+#include "MAGEMin_modified.h"
+
 #include "gem_function.h"
 
 

@@ -32,7 +32,8 @@
 #ifdef USE_MPI
 	#include "mpi.h"
 #endif
-#include "MAGEMin.h"
+// #include "MAGEMin.h"
+#include "MAGEMin_modified.h"
 #include "gem_function.h"
 #include "all_solution_phases.h"
 #include "toolkit.h"

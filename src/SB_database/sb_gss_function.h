@@ -11,7 +11,8 @@
 #ifndef __SB_GSS_FUNCTION_H_
 #define __SB_GSS_FUNCTION_H_
 
-#include "../MAGEMin.h"
+// #include "../MAGEMin.h"
+#include "../MAGEMin_modified.h"
 
 SS_ref G_SS_sb11_EM_function(	global_variable  gv, 
 							    SS_ref 			 SS_ref_db,

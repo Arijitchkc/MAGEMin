@@ -59,7 +59,9 @@ NOTES:
 #include <string.h>
 #include <complex.h> 
 
-#include "MAGEMin.h"
+// #include "MAGEMin.h"
+#include "MAGEMin_modified.h"
+
 #include "ss_min_function.h"
 #include "gem_function.h"
 #include "all_solution_phases.h"

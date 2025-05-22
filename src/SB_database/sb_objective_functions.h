@@ -11,8 +11,8 @@
 #ifndef __SB_OBJECTIVE_FUNCTIONS_H_
 #define __SB_OBJECTIVE_FUNCTIONS_H_
 
-#include "../MAGEMin.h"
-
+// #include "../MAGEMin.h"
+#include "../MAGEMin_modified.h"
 
 
 void SB_sb11_objective_init_function(	obj_type 		 	*SS_objective,

@@ -13,7 +13,9 @@
 
 	#include <string.h>
 	#include "uthash.h"
-	#include "MAGEMin.h"
+	// #include "MAGEMin.h"
+	#include "MAGEMin_modified.h"
+
 	#include "all_endmembers.h"
 	#include "all_init_database.h"
 

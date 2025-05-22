@@ -26,7 +26,7 @@ ifeq ($(UNAME_S),Linux)
 	endif
 endif
 
-SOURCES=src/MAGEMin.c 							\
+SOURCES=src/MAGEMin_modified.c 							\
 		src/initialize.c 						\
 		src/TC_database/TC_init_database.c		\
 		src/TC_database/TC_endmembers.c			\
@@ -69,7 +69,9 @@ OBJECTS=$(SOURCES:.c=.o)
 	$(CC) $(CCFLAGS) -c $< -o $@ $(INC)
  
 all: $(OBJECTS)
-	$(CC)  -o $(EXE_NAME) $(OBJECTS) $(INC) $(LIBS)  -flto
+	$(CC) -shared -undefined dynamic_lookup-o $(EXE_NAME).so $(OBJECTS) $(INC) $(LIBS)  -flto
+	clang src/MAGEMin_cpp.cc -L. -l$(EXE_NAME).so -o $(EXE_NAME)
+
 	rm src/*.o src/TC_database/*.o
 
 lib: $(OBJECTS)

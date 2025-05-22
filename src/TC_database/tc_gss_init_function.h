@@ -11,7 +11,8 @@
 #ifndef __TC_GSS_INIT_FUNCTION_H_
 #define __TC_GSS_INIT_FUNCTION_H_
 
-#include "../MAGEMin.h"
+// #include "../MAGEMin.h"
+#include "../MAGEMin_modified.h"
 #include "../initialize.h"
 								
 void TC_SS_init_mp(	                SS_init_type 		*SS_init,

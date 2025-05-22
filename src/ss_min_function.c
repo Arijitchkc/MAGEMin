@@ -24,7 +24,9 @@ Function to call solution phase Minimization
 #endif
 
 #include "nlopt.h"
-#include "MAGEMin.h"
+// #include "MAGEMin.h"
+#include "MAGEMin_modified.h"
+
 #include "gem_function.h"
 #include "dump_function.h"
 #include "toolkit.h"

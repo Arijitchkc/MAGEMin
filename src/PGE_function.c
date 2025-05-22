@@ -34,7 +34,8 @@ The routine is the core of MAGEMin algorithm and is constructed around the Gibbs
 	#include <lapacke.h> 
 #endif 
 
-#include "MAGEMin.h"
+// #include "MAGEMin.h"
+#include "MAGEMin_modified.h"
 #include "simplex_levelling.h"
 #include "toolkit.h"
 #include "gem_function.h"

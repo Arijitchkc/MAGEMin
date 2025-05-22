@@ -11,7 +11,8 @@
 #ifndef __PHASE_UPDATE_FUNCTION_H_
 #define __PHASE_UPDATE_FUNCTION_H_
 
-#include "MAGEMin.h"
+// #include "MAGEMin.h"
+#include "MAGEMin_modified.h"
 
 global_variable check_PC(					bulk_info 	 		 z_b,
 											global_variable  	 gv,

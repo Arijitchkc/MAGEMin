@@ -21,7 +21,8 @@ Stixrude thermodynamic database for the mantle minerals
 #include <string.h>
 #include <complex.h> 
 
-#include "../MAGEMin.h"
+// #include "../MAGEMin.h"
+#include "../MAGEMin_modified.h"
 #include "../initialize.h"
 #include "../all_solution_phases.h"
 #include "../simplex_levelling.h"
