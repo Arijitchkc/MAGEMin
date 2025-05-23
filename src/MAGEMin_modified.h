@@ -146,6 +146,7 @@ typedef struct global_variables {
 	double  *pp_n;				/** fraction of pure phase in estimated phase assemblage */
 	double  *pp_n_mol;			/** fraction of pure phase in estimated phase assemblage */
 	double  *pp_n_wt;			/** fraction of pure phase in estimated phase assemblage */
+	double  *pp_n_vol;			/** fraction of pure phase in estimated phase assemblage */
 	double  *pp_xi;				/** penalty term -> distance from G-hyperplane */
 	double  *delta_pp_n;		/** fraction of pure phase in estimated phase assemblage */
 	double  *delta_pp_xi;		/** penalty term -> distance from G-hyperplane*/
@@ -435,6 +436,7 @@ typedef struct SS_refs {
 
 	/** data needed for levelling and/or PGE **/
 	int		 is_liq;			/** check if phase is "liq" 												*/
+	int      override;			/** check if the phase is overridden 										*/
 	int      symmetry;			/** solution phase symmetry  												*/
 	int      n_em;				/** number od endmembers 													*/
 	int 	 n_xeos;			/** number of compositional variables 										*/
@@ -588,6 +590,7 @@ typedef struct csd_phase_sets {
 	double 	ss_n;
 	double 	ss_n_mol;
 	double 	ss_n_wt;
+	double  ss_n_vol;
 	double  delta_ss_n;
 	double 	df;
 	double 	factor;

@@ -1670,6 +1670,7 @@ void FreeDatabases(bulk_info z_b, Databases DB, global_variable gv)
 	free(gv.pp_n);
 	free(gv.pp_n_mol);
 	free(gv.pp_n_wt);
+	free(gv.pp_n_vol);
 	free(gv.pp_xi);
 	free(gv.delta_pp_n);
 	free(gv.delta_pp_xi);
