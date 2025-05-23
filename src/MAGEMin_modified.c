@@ -58,15 +58,12 @@
 #include "all_solution_phases.h"
 #include "MAGEMin_modified.h"
 
-<<<<<<< HEAD
 
 /**
  * I need to do away with the main function
  * Because I want to call individual functions from this c file
  */
 
-=======
->>>>>>> 9e30f2a (function call from cpp function works)
 // /** 
 //   Main routine
 // */
@@ -94,7 +91,6 @@
   call MAGEMin
 */
 
-<<<<<<< HEAD
 // int runMAGEMin(int argc, char **argv, bulk_info z_b, Databases DB, global_variable gv)
 
 
@@ -122,11 +118,6 @@ void runMAGEMin(int argc, char **argv, bulk_info z_b, Databases DB, global_varia
 	 * This function is called from the other wrapper cpp file; to be able to feed variable and extract the results from it;
 	 */
 
-=======
-
-int runMAGEMin(int argc, char **argv,bulk_info z_b, Databases DB, global_variable gv)
-{
->>>>>>> 9e30f2a (function call from cpp function works)
 	int 	i,j,k;
 	int 	rank, numprocs;
 
@@ -139,7 +130,6 @@ int runMAGEMin(int argc, char **argv,bulk_info z_b, Databases DB, global_variabl
 	/*
 	  initialize MPI communicators 
 	*/
-<<<<<<< HEAD
 	
 	// initMPI(argc, argv, rank);
 	#ifdef USE_MPI
@@ -151,26 +141,12 @@ int runMAGEMin(int argc, char **argv,bulk_info z_b, Databases DB, global_variabl
 
 
 
-=======
-	printf("Hey does it work?");
-	#ifdef USE_MPI
-		MPI_Comm_size(MPI_COMM_WORLD, &numprocs);
-		MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-	#endif
->>>>>>> 9e30f2a (function call from cpp function works)
 	/*
 		initiliaze structures
 	*/
 	// global_variable gv;
 	// bulk_info 		z_b;	
 	// Databases 		DB;
-<<<<<<< HEAD
-=======
-
-	
-	
-
->>>>>>> 9e30f2a (function call from cpp function works)
 	// /** 
 	// 	Read command-line arguments and set default parameters
 	// */
@@ -182,36 +158,20 @@ int runMAGEMin(int argc, char **argv,bulk_info z_b, Databases DB, global_variabl
 
 	printf("Temperature: %f", z_b.T);
 	printf("Pressure: %f", z_b.P);
-<<<<<<< HEAD
 	printf("sys_in: %s", gv.sys_in);
 
 	gv = SetupDatabase(	gv, &z_b); // Does something withing MAGEMin; Not to be touched
-=======
-
-	gv = SetupDatabase(				gv,
-								   &z_b				);
->>>>>>> 9e30f2a (function call from cpp function works)
 
 
 	/*
 	  initialize global structure to store shared variables (e.g. Gamma, SS and PP list, ...) 
 	*/
-<<<<<<< HEAD
 	gv = global_variable_init( gv,&z_b ); // Does something withing MAGEMin; Not to be touched
-=======
-	gv = global_variable_init( 		 gv,
-									&z_b 			);
->>>>>>> 9e30f2a (function call from cpp function works)
 
 	/* 
 	  Allocate both pure and solid-solution databases 
 	*/
-<<<<<<< HEAD
 	DB = InitializeDatabases( gv, gv.EM_database, DB); // DB needs 
-=======
-	DB = InitializeDatabases(		 gv,
-									 gv.EM_database	);
->>>>>>> 9e30f2a (function call from cpp function works)
 
 	/*
 	  initialize simplex (levelling stage using pseudocompounds) 
@@ -338,14 +298,11 @@ int runMAGEMin(int argc, char **argv,bulk_info z_b, Databases DB, global_variabl
 		time_taken 	= ((double)t)/CLOCKS_PER_SEC;
 		gv.tot_time = time_taken*1000.0;
 
-<<<<<<< HEAD
 
 
 		/**
 		 * Redundant steps for us;
 		 */
-=======
->>>>>>> 9e30f2a (function call from cpp function works)
 		/* Dump final results to files 												*/
 		save_results_function(				gv,												/** global variables (e.g. Gamma) 	*/
 											z_b,											/** bulk-rock informations 			*/
@@ -365,30 +322,17 @@ int runMAGEMin(int argc, char **argv,bulk_info z_b, Databases DB, global_variabl
 
 	/* wait for all cores to be finished */
 	#ifdef USE_MPI
-<<<<<<< HEAD
 		MPI_Barrier(MPI_COMM_WORLD);	
 	#endif
 	// endMPI(argc, argv, rank);
-=======
-		MPI_Barrier(MPI_COMM_WORLD);		
-	#endif
->>>>>>> 9e30f2a (function call from cpp function works)
 
 	/* now merge the parallel output files into one*/
 	mergeParallelFiles(gv);
 
-<<<<<<< HEAD
 	if (gv.output_matlab >= 1)
 	{
 		mergeParallel_matlab(gv);
 	}
-=======
-	if (gv.output_matlab >= 1){
-		mergeParallel_matlab(gv);
-	}
-	/* free memory allocated to solution and pure phases */
-	FreeDatabases(gv, DB, z_b);
->>>>>>> 9e30f2a (function call from cpp function works)
 
 	/* print the time */
 	u = clock() - u; 
@@ -406,7 +350,6 @@ int runMAGEMin(int argc, char **argv,bulk_info z_b, Databases DB, global_variabl
 		#endif
 
 	}
-<<<<<<< HEAD
 
 	#ifdef USE_MPI
 		MPI_Finalize();	
@@ -663,11 +606,6 @@ void fill_Cpp_returnDataStructures(global_variable gv, bulk_info z_b, PP_ref *PP
 }
 
 
-=======
-    return 0;
-}
-
->>>>>>> 9e30f2a (function call from cpp function works)
 /** 
   Compute stable equilibrium at given P/T/C point
 */
@@ -1340,16 +1278,9 @@ global_variable SetupDatabase(			global_variable 	 gv,
 /** 
   Initiatizes the endmember and solid solution databases and adds them to a single struct
 **/
-<<<<<<< HEAD
 Databases InitializeDatabases(global_variable gv, int EM_database, Databases 	DB)
 {
 	// Databases 	DB;
-=======
-Databases InitializeDatabases(	global_variable gv, 
-								int 			EM_database
-){
-	Databases 	DB;
->>>>>>> 9e30f2a (function call from cpp function works)
 
 	/* Allocate pure-phase database (to get gbase, comp and factor) 				*/
 	DB.PP_ref_db = malloc ((gv.len_pp) 		* sizeof(PP_ref)); 
@@ -1439,34 +1370,20 @@ Databases InitializeDatabases(	global_variable gv,
 	return DB;
 }
 
-<<<<<<< HEAD
 
 /** 
   Free the memory associated with the databases
 **/
 void FreeDatabases(bulk_info z_b, Databases DB, global_variable gv)
 {
-=======
-/** 
-  Free the memory associated with the databases
-**/
-void FreeDatabases(		global_variable gv, 
-						Databases 		DB,
-						bulk_info 	 	z_b			){
->>>>>>> 9e30f2a (function call from cpp function works)
 	int i, j, n_cat, n_xeos, n_em, n_sf, n_ox, n_pc, n_Ppc, n_cp, sym, ndif, pp, ss;
 
 	/*  ==================== SP ==============================  */
 	n_ox = gv.len_ox;
-<<<<<<< HEAD
 	// printf("inside freedb %s",DB.cp[0].name);
 
 	for ( i = 0; i < n_ox; i++)
 	{
-=======
-
-	for ( i = 0; i < n_ox; i++){
->>>>>>> 9e30f2a (function call from cpp function works)
 		if  (DB.sp[0].oxides[i]				!=NULL)  free( DB.sp[0].oxides[i] 			);	
 		if  (DB.sp[0].elements[i]			!=NULL)  free( DB.sp[0].elements[i] 		);	
 		if  (DB.sp[0].ph[i]					!=NULL)  free( DB.sp[0].ph[i] 				);	

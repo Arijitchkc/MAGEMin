@@ -96,8 +96,8 @@ char** get_FS_DB_names(global_variable gv) {
 /** 
 	set default parameters necessary to initialize the system 
 */
-global_variable global_variable_alloc( bulk_info  *z_b ){
-	global_variable gv;
+global_variable global_variable_alloc( global_variable gv, bulk_info  *z_b ){
+	// global_variable gv;
 
 	int i,j,k;
 

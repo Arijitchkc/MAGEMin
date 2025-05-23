@@ -1,11 +1,7 @@
 #include "MAGEMin_cpp.h"
 
 
-<<<<<<< HEAD
 void MAGEMin_wrapper::getValuesFromASPECT_runs(global_variable *gv, bulk_info *z_b, MAGEMinProps *mProperties)
-=======
-void MAGEMin_wrapper::getValuesFromASPECT_runs(global_variable *gv, bulk_info *z_b)
->>>>>>> 9e30f2a (function call from cpp function works)
 {
     gv->verbose=1;
     gv->db="ig";
@@ -17,11 +13,7 @@ void MAGEMin_wrapper::getValuesFromASPECT_runs(global_variable *gv, bulk_info *z
     gv->mpSp 			= 0;					/** 0: Sp LT, 1: Mt1													*/
 	gv->mpIlm 			= 0;					/** 0: Ilmm, 1: Ilm 																*/
     gv->solver   		=  2;
-<<<<<<< HEAD
     gv->output_matlab 	=  1;
-=======
-    gv->output_matlab 	=  0;
->>>>>>> 9e30f2a (function call from cpp function works)
     gv->n_points 		=  1;
     gv->test     		= -1;
     gv->buffer_n 		= 0.0;
@@ -30,13 +22,8 @@ void MAGEMin_wrapper::getValuesFromASPECT_runs(global_variable *gv, bulk_info *z
 
 
     //  Main variables which I am changing
-<<<<<<< HEAD
     z_b->T=1285.000+273.15; // Temperature need to be in Kelin
     z_b->P=3.234; // Pressure need to be in kbar
-=======
-    z_b->T=488.750+273.15; // Temperature need to be in Kelin
-    z_b->P=3.5; // Pressure need to be in kbar
->>>>>>> 9e30f2a (function call from cpp function works)
 
     /**
      * Chemical potential of oxides; This values if used can be drawn from aspect; or otherwise kept constant
@@ -51,7 +38,6 @@ void MAGEMin_wrapper::getValuesFromASPECT_runs(global_variable *gv, bulk_info *z
 
     gv->sys_in="mol";
 
-<<<<<<< HEAD
 
     // Assign already known variables
     if(gv->db == "ig")
@@ -68,11 +54,6 @@ void MAGEMin_wrapper::getValuesFromASPECT_runs(global_variable *gv, bulk_info *z
 }
 
 
-=======
-    // return gv;
-}
-
->>>>>>> 9e30f2a (function call from cpp function works)
 void MAGEMin_wrapper::executeMAGEMin(int argc, char **argv)
 {
     /**
@@ -82,7 +63,6 @@ void MAGEMin_wrapper::executeMAGEMin(int argc, char **argv)
      * Third Objective: Import output function to be able to directly use it in our code
      */
 
-<<<<<<< HEAD
     /**
      * Initialize structure of variables
      * allocate global variables(Ideally would come from ASPECT)
@@ -149,52 +129,24 @@ void MAGEMin_wrapper::executeMAGEMin(int argc, char **argv)
 	}
 
 
-=======
-    
-    /**
-     * Initialize structure of variables
-     */
-    /*
-	  allocate global variables 
-	*/	
-	gv = global_variable_alloc(	&z_b );
-    MAGEMin_wrapper::getValuesFromASPECT_runs(&gv, &z_b);
-    
-    /**
-     * Run MAGEMin from this code
-     */
-    runMAGEMin(argc, argv,z_b, DB, gv);
->>>>>>> 9e30f2a (function call from cpp function works)
 
 }
 
 
-<<<<<<< HEAD
-
-=======
->>>>>>> 9e30f2a (function call from cpp function works)
 int main(int argc, char** argv) 
 {
     MAGEMin_wrapper wrap;
     int rank;
-<<<<<<< HEAD
     // #ifdef USE_MPI
     //     MPI_Init(&argc, &argv);
 	// 	MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     // #endif
-=======
-    #ifdef USE_MPI
-        MPI_Init(&argc, &argv);
-		MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-    #endif
->>>>>>> 9e30f2a (function call from cpp function works)
 
     std::cout<<"Hey it works!"<<std::endl;
     wrap.executeMAGEMin(argc, argv);
 
     
 
-<<<<<<< HEAD
     // #ifdef USE_MPI
 	// 	MPI_Finalize();
 	// #endif
@@ -203,10 +155,3 @@ int main(int argc, char** argv)
 
 
 
-=======
-    #ifdef USE_MPI
-		MPI_Finalize();
-	#endif
-    return 0;
-}
->>>>>>> 9e30f2a (function call from cpp function works)

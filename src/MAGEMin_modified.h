@@ -58,12 +58,7 @@ typedef struct oxide_datas {
 
 
 /* structure to store global variables */
-<<<<<<< HEAD
-typedef struct global_variables 
-{
-=======
 typedef struct global_variables {
->>>>>>> 9e30f2a (function call from cpp function works)
 	
 	/* GLOBAL PARAMETERS */
 	char    *version;			/** MAGEMin version */
@@ -810,11 +805,7 @@ typedef struct stb_systems {
 
 } stb_system;
 
-<<<<<<< HEAD
 global_variable global_variable_alloc(	global_variable gv, bulk_info 			*z_b	);
-=======
-global_variable global_variable_alloc(	bulk_info 			*z_b	);
->>>>>>> 9e30f2a (function call from cpp function works)
 
 global_variable global_variable_init( 	global_variable  	 gv,
 										bulk_info 			*z_b 	);
@@ -836,7 +827,6 @@ typedef struct Database {	PP_ref     		 *PP_ref_db;		/** Pure phases 											
 
 
 
-<<<<<<< HEAD
 typedef struct lazy_pointer
 {
 	bulk_info *bInfo;
@@ -886,18 +876,6 @@ void fill_Cpp_returnDataStructures(		global_variable 	 gv,
 Databases InitializeDatabases(global_variable gv,  int EM_database, Databases DB);
 
 void FreeDatabases(bulk_info z_b, Databases DB, global_variable gv);
-=======
-
-// Function to run MAGEMin
-int runMAGEMin(	int argc, char ** argv, bulk_info z_b, Databases DB, global_variable gv);
-
-Databases InitializeDatabases(				global_variable 	 gv, 
-											int 				 EM_database		);
-
-void FreeDatabases(							global_variable 	 gv, 
-											Databases			 DB,
-											bulk_info 	 		 z_b				);
->>>>>>> 9e30f2a (function call from cpp function works)
 											
 global_variable ComputeG0_point( 			int 				 EM_database,
 											bulk_info 	 		 z_b,

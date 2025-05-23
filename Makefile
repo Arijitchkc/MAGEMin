@@ -66,7 +66,6 @@ SOURCES=src/MAGEMin_modified.c 					\
 OBJECTS=$(SOURCES:.c=.o)
 
 
-<<<<<<< HEAD
 #.c.o: $(SOURCES)
 #	$(CC) $(CCFLAGS) -c $< -o $@ $(INC)
 
@@ -78,14 +77,6 @@ OBJECTS=$(SOURCES:.c=.o)
 all: $(OBJECTS) 
 #	$(CC)  -o $(EXE_NAME) $(OBJECTS) $(INC) $(LIBS)  -flto
 	g++ src/MAGEMin_cpp.cc -ggdb3 $(OBJECTS) $(INC) $(LIBS) -DUSE_MPI  -flto -o $(EXE_NAME)
-=======
-.c.o: $(SOURCES)
-	$(CC) $(CCFLAGS) -c $< -o $@ $(INC)
- 
-all: $(OBJECTS) 
-#	$(CC)  -o $(EXE_NAME) $(OBJECTS) $(INC) $(LIBS)  -flto
-	g++ src/MAGEMin_cpp.cc $(OBJECTS) $(INC) $(LIBS) -DUSE_MPI  -flto -o $(EXE_NAME)
->>>>>>> 9e30f2a (function call from cpp function works)
 	rm src/*.o src/TC_database/*.o
 
 lib: $(OBJECTS)
