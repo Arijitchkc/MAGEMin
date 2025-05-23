@@ -1,5 +1,6 @@
 # CC=gcc
-CC=clang 
+CC=gcc
+#clang 
 
 UNAME_S := $(shell uname -s)
 
@@ -8,7 +9,7 @@ EXE_NAME:= MAGEMin
 # Check if USE_MPI is set (default: 1)
 USE_MPI ?= 1
 
-CCFLAGS = -Wall -O3 -g -fPIC -Wno-unused-variable -Wno-unused-but-set-variable -march=native -funroll-loops
+CCFLAGS = -Wall -O3 -g -fPIC -Wno-unused-variable -Wno-unused-but-set-variable -march=native -funroll-loops -flto
 ifeq ($(UNAME_S),Darwin)
 	INC      = -I/opt/homebrew/include 
 	LIBS     = -lm -framework Accelerate /opt/homebrew/lib/libnlopt.dylib
@@ -25,8 +26,9 @@ ifeq ($(UNAME_S),Linux)
 		INC      = -I/usr/lib/x86_64-linux-gnu/openmpi/include/
 	endif
 endif
+	EXE_NAME = MAGEMin
 
-SOURCES=src/MAGEMin_modified.c 							\
+SOURCES=src/MAGEMin_modified.c 					\
 		src/initialize.c 						\
 		src/TC_database/TC_init_database.c		\
 		src/TC_database/TC_endmembers.c			\
@@ -64,14 +66,26 @@ SOURCES=src/MAGEMin_modified.c 							\
 OBJECTS=$(SOURCES:.c=.o)
 
 
+<<<<<<< HEAD
+#.c.o: $(SOURCES)
+#	$(CC) $(CCFLAGS) -c $< -o $@ $(INC)
+
 
 .c.o:
 	$(CC) $(CCFLAGS) -c $< -o $@ $(INC)
  
-all: $(OBJECTS)
-	$(CC) -shared -undefined dynamic_lookup-o $(EXE_NAME).so $(OBJECTS) $(INC) $(LIBS)  -flto
-	clang src/MAGEMin_cpp.cc -L. -l$(EXE_NAME).so -o $(EXE_NAME)
-
+ 
+all: $(OBJECTS) 
+#	$(CC)  -o $(EXE_NAME) $(OBJECTS) $(INC) $(LIBS)  -flto
+	g++ src/MAGEMin_cpp.cc -ggdb3 $(OBJECTS) $(INC) $(LIBS) -DUSE_MPI  -flto -o $(EXE_NAME)
+=======
+.c.o: $(SOURCES)
+	$(CC) $(CCFLAGS) -c $< -o $@ $(INC)
+ 
+all: $(OBJECTS) 
+#	$(CC)  -o $(EXE_NAME) $(OBJECTS) $(INC) $(LIBS)  -flto
+	g++ src/MAGEMin_cpp.cc $(OBJECTS) $(INC) $(LIBS) -DUSE_MPI  -flto -o $(EXE_NAME)
+>>>>>>> 9e30f2a (function call from cpp function works)
 	rm src/*.o src/TC_database/*.o
 
 lib: $(OBJECTS)
@@ -79,3 +93,5 @@ lib: $(OBJECTS)
  
 clean:
 	rm -f src/*.o  src/TC_database/*.o src/SB_database/*.o *.dylib MAGEMin
+# rm -f *.dylib MAGEMin
+	
