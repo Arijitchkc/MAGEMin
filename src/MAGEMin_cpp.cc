@@ -15,7 +15,7 @@ void MAGEMin_wrapper::getValuesFromASPECT_runs(
   //   major_oxide_names = {"SiO2", "Al2O3", "MgO", "FeO", "O", "H2O", "S"};
   // }
 
-  gv->verbose = 1;
+  gv->verbose = 0;
   gv->db = database;
   gv->limitCaOpx = 0;
   gv->CaOpxLim = 1.0;
@@ -29,7 +29,7 @@ void MAGEMin_wrapper::getValuesFromASPECT_runs(
   gv->mpIlm = 0; /** 0: Ilmm, 1: Ilm
                   */
   gv->solver = 2;
-  gv->output_matlab = 1;
+  gv->output_matlab = 0;
   gv->n_points = 1;
   gv->test = -1;
   gv->buffer_n = 0.0;
