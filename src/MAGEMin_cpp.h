@@ -14,23 +14,24 @@
 #include "MAGEMin_modified.h"
 // #include "initialize.h"
 
+struct stableAssemblage {
+  int len_oxides;
+  int len_stable_phases;
+
+  std::vector<std::vector<double>> oxideCompositions;
+  std::vector<std::vector<double>> stablePhasesProperties;
+  std::vector<std::string> oxideNames;
+  std::vector<std::string> solutionNames;
+  // std::vector<std::vector<double>> oxide_compositions;
+  // double oxide_compositions[20][20];
+  // std::vector<std::vector<double>> all_properties;
+};
+
 class MAGEMin_wrapper {
 public:
   bulk_info z_b;
   Databases DB;
   global_variable gv;
-
-  struct MAGEMinProps {
-    double len_oxides;
-    double stable_phases;
-
-    std::vector<std::string> major_oxide_names;
-    std::vector<std::string> stable_phases_names;
-
-    // std::vector<std::vector<double>> oxide_compositions;
-    double oxide_compositions[20][20];
-    std::vector<std::vector<double>> all_properties;
-  };
 
   outdataCPP data_in;
   // Variables to import data
@@ -40,13 +41,14 @@ public:
   // void executeMAGEMin(int argc, char **argv);
   void executeMAGEMin(int argc, char **argv, double Temperature,
                       double Pressure, int len_oxides, char *database,
-                      std::vector<double> bulkComposition);
+                      std::vector<double> bulkComposition,
+                      stableAssemblage *sAssemblage);
   // void getValuesFromASPECT_runs(global_variable *gv, bulk_info *z_b,
   // MAGEMinProps *mProperties);
 
   void getValuesFromASPECT_runs(global_variable *gv, bulk_info *z_b,
-                                MAGEMinProps *mProperties, double Temperature,
-                                double Pressure, int len_oxides, char *database,
+                                double Temperature, double Pressure,
+                                int len_oxides, char *database,
                                 std::vector<double> bulkComposition);
 
   // Bulk composition of the system we are trying to study

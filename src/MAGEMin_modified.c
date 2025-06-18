@@ -254,9 +254,8 @@ void runMAGEMin(int argc, char **argv, bulk_info z_b, Databases DB,
 
     /* Perform calculation for a single point
      */
-    gv = ComputeG0_point(gv.EM_database,
-                         z_b, /** bulk rock informations */
-                         gv,  /** global variables (e.g. Gamma) 	*/
+    gv = ComputeG0_point(gv.EM_database, z_b, /** bulk rock informations */
+                         gv, /** global variables (e.g. Gamma) 	*/
 
                          DB.PP_ref_db, /** pure phase database */
                          DB.SS_ref_db);
@@ -520,7 +519,8 @@ void fill_Cpp_returnDataStructures(global_variable gv, bulk_info z_b,
 
   // 		printf( "%6s", cp[i].name);
   // 		printf( "%+15.5f %+13.5f %+17.5f %+17.5f %+12.5f %+12.5f %+12.8f
-  // %+12.6f %+14.4f %+12.2f %+12.2f %+12.2f %+12.2f", 					sp[0].ph_frac_wt[n], 					G,
+  // %+12.6f %+14.4f %+12.2f %+12.2f %+12.2f %+12.2f",
+  // sp[0].ph_frac_wt[n], 					G,
   // 					cp[i].volume*10.,
   // 					cp[i].volume*10.*cp[i].ss_n_mol*cp[i].factor,
   // 					cp[i].phase_cp,
@@ -572,9 +572,8 @@ void fill_Cpp_returnDataStructures(global_variable gv, bulk_info z_b,
   // 	G += z_b.bulk_rock[j]*gv.gam_tot[j];
   // }
   // printf( "%6s %14s %+13.5f %17s %+17.5f %+12.5f %+12.5f %12s %+12.6f %+14.4f
-  // %+12.5f %+12.5f %+12.5f %+12.5f\n", 		"SYS", 		" ", 		G, 		" ",
-  // 		gv.system_volume*10.,
-  // 		gv.system_cp,
+  // %+12.5f %+12.5f %+12.5f %+12.5f\n", 		"SYS", 		" ",
+  // G, 		" ", 		gv.system_volume*10., 		gv.system_cp,
   // 		gv.system_density,
   // 		" ",
   // 		gv.system_entropy,
@@ -966,7 +965,9 @@ global_variable ComputeEquilibrium_Point(int EM_database, io_data input_data,
 // */
 // global_variable ReadCommandLineOptions(	global_variable 	 gv,
 // 										bulk_info
-// *z_b, 										int 				 argc, 										char **argv
+// *z_b,
+// int 				 argc,
+// char **argv
 // ){
 // 	int i;
 // 	static ko_longopt_t longopts[] = {
@@ -1009,19 +1010,20 @@ global_variable ComputeEquilibrium_Point(int EM_database, io_data input_data,
 //         }
 // 		else if (c == 309){ gv.EM_dataset		= atoi(opt.arg);
 // } 		else if (c == 321){ gv.limitCaOpx   	= atoi(opt.arg);
-// } 		else if (c == 326){ gv.CaOpxLim	   		= strtold(opt.arg,NULL);
-// } 		else if (c == 322){ gv.fluidSpec    	= atoi(opt.arg);
-// } 		else if (c == 323){ gv.mbCpx   			= atoi(opt.arg);
-// } 		else if (c == 324){ gv.mbIlm   			= atoi(opt.arg);
-// } 		else if (c == 327){ gv.mpSp   			= atoi(opt.arg);
-// } 		else if (c == 328){ gv.mpIlm   			= atoi(opt.arg);
-// } 		else if (c == 316){ gv.solver   		= atoi(opt.arg);
-// } 		else if (c == 318){ gv.output_matlab   	= atoi(opt.arg);
-// } 		else if (c == 304){ gv.n_points 		= atoi(opt.arg);
-// } 		else if (c == 305){ gv.test  			= atoi(opt.arg);
-// } 		else if (c == 320){ gv.buffer_n 		= strtold(opt.arg,NULL); } 		else if (c == 306){ z_b->T				= strtold(opt.arg,NULL)+273.15;}
-// 		else if (c == 307){ z_b->P 				=
-// strtold(opt.arg,NULL); 	}
+// } 		else if (c == 326){ gv.CaOpxLim	   		=
+// strtold(opt.arg,NULL); } 		else if (c == 322){ gv.fluidSpec =
+// atoi(opt.arg); } 		else if (c == 323){ gv.mbCpx = atoi(opt.arg); }
+// else if (c == 324){ gv.mbIlm   			= atoi(opt.arg); }
+// else if (c == 327){ gv.mpSp   			= atoi(opt.arg); }
+// else if (c == 328){ gv.mpIlm   			= atoi(opt.arg); }
+// else if (c == 316){ gv.solver   		= atoi(opt.arg); }
+// else if (c == 318){ gv.output_matlab   	= atoi(opt.arg); }
+// else if (c == 304){ gv.n_points 		= atoi(opt.arg); }
+// else if (c == 305){ gv.test  			= atoi(opt.arg); }
+// else if (c == 320){ gv.buffer_n 		= strtold(opt.arg,NULL); }
+// else if (c == 306){ z_b->T				=
+// strtold(opt.arg,NULL)+273.15;} 		else if (c == 307){ z_b->P
+// = strtold(opt.arg,NULL); 	}
 
 // 		else if (c == 312){ strcpy(gv.research_group,opt.arg);
 // } 		else if (c == 319){ strcpy(gv.buffer,opt.arg);
