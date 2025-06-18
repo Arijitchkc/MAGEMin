@@ -155,9 +155,9 @@ void runMAGEMin(int argc, char **argv, bulk_info z_b, Databases DB,
   // 								 argv
   // );
 
-  printf("Temperature: %f", z_b.T);
-  printf("Pressure: %f", z_b.P);
-  printf("sys_in: %s", gv.sys_in);
+  // printf("Temperature: %f", z_b.T);
+  // printf("Pressure: %f", z_b.P);
+  // printf("sys_in: %s", gv.sys_in);
 
   gv = SetupDatabase(gv,
                      &z_b); // Does something withing MAGEMin; Not to be touched
@@ -573,10 +573,8 @@ void fill_Cpp_returnDataStructures(global_variable gv, bulk_info z_b,
   // }
   // printf( "%6s %14s %+13.5f %17s %+17.5f %+12.5f %+12.5f %12s %+12.6f %+14.4f
   // %+12.5f %+12.5f %+12.5f %+12.5f\n", 		"SYS", 		" ",
-  // G, 		" ", 		gv.system_volume*10., 		gv.system_cp,
-  // 		gv.system_density,
-  // 		" ",
-  // 		gv.system_entropy,
+  // G, 		" ", 		gv.system_volume*10.,
+  // gv.system_cp, 		gv.system_density, 		" ", 		gv.system_entropy,
   // 		gv.system_enthalpy,
   // 		gv.system_bulkModulus,
   // 		gv.system_shearModulus,
