@@ -1,4 +1,5 @@
 #include "MAGEMin_cpp.h"
+#include <stdio.h>
 
 void MAGEMin_wrapper::getValuesFromASPECT_runs(
     global_variable *gv, bulk_info *z_b, MAGEMinProps *mProperties,
@@ -15,7 +16,7 @@ void MAGEMin_wrapper::getValuesFromASPECT_runs(
   //   major_oxide_names = {"SiO2", "Al2O3", "MgO", "FeO", "O", "H2O", "S"};
   // }
 
-  gv->verbose = 0;
+  gv->verbose = -1;
   gv->db = database;
   gv->limitCaOpx = 0;
   gv->CaOpxLim = 1.0;
