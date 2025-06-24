@@ -21,13 +21,16 @@ if(APPLE)
 endif()
 
 if(UNIX AND NOT APPLE)
-  set(LIBS m nlopt)
+  set(LIBS m)
   
   # lapacke block
   find_package(LAPACK REQUIRED)
-  find_library(LAPACKE_LIB lapacke REQUIRED)
+  find_library(LAPACKE_LIB lapacke HINTS ${LAPACKE_LIB} REQUIRED)
   find_library(BLAS_LIB blas REQUIRED)
-  list(APPEND LIBS LAPACK::LAPACK ${LAPACKE_LIB} ${BLAS_LIB})
+
+  include_directories("/nobackup/scxn98/installations/nloptInstall/include")
+  find_library(nlopt_lib nlopt PATHS "/nobackup/scxn98/installations/nloptInstall/lib64" REQUIRED)
+  list(APPEND LIBS LAPACK::LAPACK ${LAPACKE_LIB} ${BLAS_LIB} ${nlopt_lib})
 
 
   # include_directories(/usr/lib/x86_64-linux-gnu/openmpi/include/ /usr/include/)
