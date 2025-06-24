@@ -41,9 +41,10 @@
 #include "nlopt.h"
 #include "uthash.h"
 
-#ifdef USE_MPI
-#include "mpi.h"
-#endif
+// Deleting MPI_TEMPORARY
+// #ifdef USE_MPI
+// #include "mpi.h"
+// #endif
 
 #include "gem_function.h"
 #include "io_function.h"
@@ -128,16 +129,18 @@ void runMAGEMin(int argc, char **argv, bulk_info z_b, Databases DB,
 
   clock_t t = clock(), u = clock();
 
-/*
-  initialize MPI communicators
-*/
+  /*
+    initialize MPI communicators
+  */
 
-// initMPI(argc, argv, rank);
+  // initMPI(argc, argv, rank);
+  //
+
 #ifdef USE_MPI
   MPI_Init(&argc, &argv);
   MPI_Comm_rank(MPI_COMM_WORLD, &rank);
   MPI_Comm_size(MPI_COMM_WORLD, &numprocs);
-  MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+  // MPI_Comm_rank(MPI_COMM_WORLD, &rank);
 #endif
 
   /*
@@ -199,28 +202,36 @@ void runMAGEMin(int argc, char **argv, bulk_info z_b, Databases DB,
   */
   gv = get_tests_bulks(gv);
 
-/****************************************************************************************/
-/**                               LAUNCH MINIMIZATION ROUTINE **/
-/****************************************************************************************/
-#ifdef USE_MPI
-  if (rank == 0 && gv.verbose != -1) {
-    printf("\nRunning MAGEMin %5s on %d cores {\n", gv.version, numprocs);
-    printf("═══════════════════════════════════════════════\n");
-  }
-#else
-  if (gv.verbose != -1) {
-    printf("\nRunning Serial MAGEMin %5s {\n", gv.version);
-    printf("═══════════════════════════════════════════════\n");
-  }
-#endif
+  /****************************************************************************************/
+  /**                               LAUNCH MINIMIZATION ROUTINE **/
+  /****************************************************************************************/
+
+  // Deleting MPI_TEMPORARY
+  // #ifdef USE_MPI
+  //   if (rank == 0 && gv.verbose != -1) {
+  //     printf("\nRunning MAGEMin %5s on %d cores {\n", gv.version, numprocs);
+  //     printf("═══════════════════════════════════════════════\n");
+  //   }
+  // #else
+  //   if (gv.verbose != -1) {
+  //     printf("\nRunning Serial MAGEMin %5s {\n", gv.version);
+  //     printf("═══════════════════════════════════════════════\n");
+  //   }
+  // #endif
 
   for (int point = 0; point < gv.n_points; point++) {
-#ifdef USE_MPI
-    if ((point % numprocs != rank))
-      continue; /** this ensures that, in parallel, not every point is computed
-                   by every processor (instead only every numprocs point). Only
-                   applied to Mode==0 */
-#endif
+
+    // Deleting MPI_TEMPORARY
+    // #ifdef USE_MPI
+    //     if ((point % numprocs != rank))
+    //       continue; /** this ensures that, in parallel, not every point is
+    //       computed
+    //                    by every processor (instead only every numprocs
+    //                    point). Only applied to Mode==0 */
+    // #endif
+    //
+    //
+
     t = clock();         /** reset loop timer 				*/
     gv.numPoint = point; /** the number of the current point */
 
@@ -302,22 +313,25 @@ void runMAGEMin(int argc, char **argv, bulk_info z_b, Databases DB,
         DB.SS_ref_db, /** solution phase database 		*/
         DB.cp, DB.sp);
 
-/* Print output to screen
- */									/* in seconds 	 					*/
-#ifdef USE_MPI
-    PrintOutput(gv, rank, point, DB, time_taken,
-                z_b); /* print output on screen 			*/
-#else
-    PrintOutput(gv, 0, point, DB, time_taken,
-                z_b); /* print output on screen 			*/
-#endif
-  }
-/* end of loop over points */
+    /* Print output to screen
+     */									/* in seconds 	 					*/
 
-/* wait for all cores to be finished */
-#ifdef USE_MPI
-  MPI_Barrier(MPI_COMM_WORLD);
-#endif
+    // Deleting MPI_TEMPORARY
+    // #ifdef USE_MPI
+    //     PrintOutput(gv, rank, point, DB, time_taken,
+    //                 z_b); /* print output on screen 			*/
+    // #else
+    //     PrintOutput(gv, 0, point, DB, time_taken,
+    //                 z_b); /* print output on screen 			*/
+    // #endif
+  }
+  /* end of loop over points */
+
+  // Deleting MPI_TEMPORARY
+  /* wait for all cores to be finished */
+  // #ifdef USE_MPI
+  //   MPI_Barrier(MPI_COMM_WORLD);
+  // #endif
   // endMPI(argc, argv, rank);
 
   /* now merge the parallel output files into one*/
@@ -332,20 +346,23 @@ void runMAGEMin(int argc, char **argv, bulk_info z_b, Databases DB,
 
   if (gv.verbose != -1) {
     time_taken = ((double)u) / (CLOCKS_PER_SEC); /** in seconds */
-#ifdef USE_MPI
-    if (rank == 0) {
-      printf("___________________________________\n");
-      printf("MAGEMin comp time: %+3f ms }\n", time_taken * 1000.0);
-    }
-#else
-    printf("___________________________________\n");
-    printf("MAGEMin comp time: %+3f ms }\n", time_taken * 1000.0);
-#endif
+
+    // Deleting MPI_TEMPORARY
+    // #ifdef USE_MPI
+    //     if (rank == 0) {
+    //       printf("___________________________________\n");
+    //       printf("MAGEMin comp time: %+3f ms }\n", time_taken * 1000.0);
+    //     }
+    // #else
+    //     printf("___________________________________\n");
+    //     printf("MAGEMin comp time: %+3f ms }\n", time_taken * 1000.0);
+    // #endif
   }
 
-#ifdef USE_MPI
-  MPI_Finalize();
-#endif
+  // Deleting MPI_TEMPORARY
+  // #ifdef USE_MPI
+  //   MPI_Finalize();
+  // #endif
   // lPointer->bInfo=&z_b;
   // lPointer->dBases=&DB;
   // lPointer->gVars=&gv;
@@ -574,12 +591,9 @@ void fill_Cpp_returnDataStructures(global_variable gv, bulk_info z_b,
   // printf( "%6s %14s %+13.5f %17s %+17.5f %+12.5f %+12.5f %12s %+12.6f %+14.4f
   // %+12.5f %+12.5f %+12.5f %+12.5f\n", 		"SYS", 		" ",
   // G, 		" ", 		gv.system_volume*10.,
-  // gv.system_cp, 		gv.system_density, 		" ", 		gv.system_entropy,
-  // 		gv.system_enthalpy,
-  // 		gv.system_bulkModulus,
-  // 		gv.system_shearModulus,
-  // 		gv.system_Vp,
-  // 		gv.system_Vs
+  // gv.system_cp, 		gv.system_density, 		" ",
+  // gv.system_entropy, 		gv.system_enthalpy,
+  // gv.system_bulkModulus, 		gv.system_shearModulus, 		gv.system_Vp, 		gv.system_Vs
   // );
 }
 

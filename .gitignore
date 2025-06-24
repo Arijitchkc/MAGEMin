@@ -16,3 +16,4 @@ Manifest.toml
 libMAGEMin.dylib
 build/*
 !CMakeLists.txt
+!CMakeLists*txt
