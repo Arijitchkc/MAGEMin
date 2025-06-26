@@ -1,17 +1,17 @@
 cmake_minimum_required(VERSION 3.10)
 
 
-  # Set C standsards
-  # Step 1: COmpile the C part of the magemin as a shared library
-  project(MAGEMin C CXX)
+# Set C standsards
+# Step 1: COmpile the C part of the magemin as a shared library
+project(MAGEMin C CXX)
 
-  set(VERSION 1.7.9)
-  set(CMAKE_C_STANDARD 17)
+set(VERSION 1.7.9)
+set(CMAKE_C_STANDARD 17)
 
-  set(CMAKE_CXX_STANDARD 17)
-  set(CMAKE_POSITION_INDEPENDENT_CODE ON)
-  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -O3 -Wno-unused-variable -Wno-unused-but-set-variable -march=native -funroll-loops -flto")
-  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -O3 -fPIC -std=c++17 -flto")
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -g -O0 -Wno-unused-variable -Wno-unused-but-set-variable -march=native -funroll-loops -flto")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -g -O0 -fPIC -std=c++17 -flto")
 # g flag is removed
 
 # Platform specific settings
@@ -22,13 +22,12 @@ endif()
 
 if(UNIX AND NOT APPLE)
   set(LIBS m)
-  
+
   # lapacke block
   find_package(LAPACK REQUIRED)
   find_library(LAPACKE_LIB lapacke HINTS ${LAPACKE_LIB} REQUIRED)
   find_library(BLAS_LIB blas REQUIRED)
 
-  include_directories("/nobackup/scxn98/installations/nloptInstall/include")
   find_library(nlopt_lib nlopt PATHS "/nobackup/scxn98/installations/nloptInstall/lib64" REQUIRED)
   list(APPEND LIBS LAPACK::LAPACK ${LAPACKE_LIB} ${BLAS_LIB} ${nlopt_lib})
 
@@ -47,7 +46,7 @@ list(APPEND LIBS MPI::MPI_CXX)
 # OPENMP block
 find_package(OpenMP)
 if(OpenMP_CXX_FOUND)
-  list(APPEND LIBS OpenMP::OpenMP_CXX)    
+  list(APPEND LIBS OpenMP::OpenMP_CXX)
   # target_link_libraries(MyTarget PUBLIC OpenMP::OpenMP_CXX)
 endif()
 
@@ -63,6 +62,8 @@ set(CPP_wrapper src/MAGEMin_cpp.cc)
 
 add_library(MAGEMin_cpp SHARED ${CPP_wrapper} ${C_SRC_FILES})
 
+
+target_include_directories(MAGEMin_cpp PUBLIC /nobackup/scxn98/installations/nloptInstall/include/)
 target_include_directories(MAGEMin_cpp PUBLIC src/ src/SB_database/ src/TC_database/)
 target_link_libraries(MAGEMin_cpp PUBLIC ${LIBS})
 
@@ -99,7 +100,7 @@ message(STATUS "MAGEMin_cpp library version ${VERSION} configured from ${CMAKE_C
 # INSTALL(TARGETS MAGEMin_cpp LIBRARY DESTINATION lib COMPONENT RUNTIME)
 #
 # # headers:
-# INSTALL(DIRECTORY include/ 
+# INSTALL(DIRECTORY include/
 #   DESTINATION include
 #   COMPONENT includes
-# ) 
+# )

@@ -53,7 +53,7 @@ void MAGEMin_wrapper::executeMAGEMin(int argc, char **argv, double Temperature,
     gv.arg_bulk[i] = bulkComposition[i];
   }
 
-  gv.sys_in = "mol";
+  gv.sys_in = "wt";
 
   MAGEMin_wrapper::getValuesFromASPECT_runs(
       &gv, &z_b, Temperature, Pressure, len_oxides, database, bulkComposition);
@@ -75,6 +75,11 @@ void MAGEMin_wrapper::executeMAGEMin(int argc, char **argv, double Temperature,
         break;
       }
     }
+
+    // if(sAssemblage->solutionNames[indexOfStblMin]=="liq")
+    // {
+    //   sAssemblage->meltFraction = data_in.all_properties[0];
+    // }
 
     // std::cout << "\n"
     //           << sAssemblage->solutionNames[it] << "  " << indexOfStblMin

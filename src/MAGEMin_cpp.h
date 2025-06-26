@@ -22,6 +22,8 @@ struct stableAssemblage {
   std::vector<std::vector<double>> stablePhasesProperties;
   std::vector<std::string> oxideNames;
   std::vector<std::string> solutionNames;
+
+  double meltFraction;
   // std::vector<std::vector<double>> oxide_compositions;
   // double oxide_compositions[20][20];
   // std::vector<std::vector<double>> all_properties;

@@ -135,13 +135,13 @@ void runMAGEMin(int argc, char **argv, bulk_info z_b, Databases DB,
 
   // initMPI(argc, argv, rank);
   //
-
-#ifdef USE_MPI
-  MPI_Init(&argc, &argv);
-  MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-  MPI_Comm_size(MPI_COMM_WORLD, &numprocs);
-  // MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-#endif
+  // Deleting MPI_TEMPORARY
+  // #ifdef USE_MPI
+  //   MPI_Init(&argc, &argv);
+  //   MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+  //   MPI_Comm_size(MPI_COMM_WORLD, &numprocs);
+  //   // MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+  // #endif
 
   /*
           initiliaze structures
@@ -301,17 +301,18 @@ void runMAGEMin(int argc, char **argv, bulk_info z_b, Databases DB,
     time_taken = ((double)t) / CLOCKS_PER_SEC;
     gv.tot_time = time_taken * 1000.0;
 
+    // Deleting MPI_TEMPORARY
     /**
      * Redundant steps for us;
      */
     /* Dump final results to files
      */
-    save_results_function(
-        gv,           /** global variables (e.g. Gamma) 	*/
-        z_b,          /** bulk-rock informations 			*/
-        DB.PP_ref_db, /** pure phase database 			*/
-        DB.SS_ref_db, /** solution phase database 		*/
-        DB.cp, DB.sp);
+    // save_results_function(
+    //     gv,           /** global variables (e.g. Gamma) 	*/
+    //     z_b,          /** bulk-rock informations 			*/
+    //     DB.PP_ref_db, /** pure phase database 			*/
+    //     DB.SS_ref_db, /** solution phase database 		*/
+    //     DB.cp, DB.sp);
 
     /* Print output to screen
      */									/* in seconds 	 					*/
@@ -334,12 +335,12 @@ void runMAGEMin(int argc, char **argv, bulk_info z_b, Databases DB,
   // #endif
   // endMPI(argc, argv, rank);
 
-  /* now merge the parallel output files into one*/
-  mergeParallelFiles(gv);
-
-  if (gv.output_matlab >= 1) {
-    mergeParallel_matlab(gv);
-  }
+  // Deleting MPI_TEMPORARY
+  // /* now merge the parallel output files into one*/
+  // mergeParallelFiles(gv);
+  // if (gv.output_matlab >= 1) {
+  //   mergeParallel_matlab(gv);
+  // }
 
   /* print the time */
   u = clock() - u;
@@ -593,7 +594,8 @@ void fill_Cpp_returnDataStructures(global_variable gv, bulk_info z_b,
   // G, 		" ", 		gv.system_volume*10.,
   // gv.system_cp, 		gv.system_density, 		" ",
   // gv.system_entropy, 		gv.system_enthalpy,
-  // gv.system_bulkModulus, 		gv.system_shearModulus, 		gv.system_Vp, 		gv.system_Vs
+  // gv.system_bulkModulus, 		gv.system_shearModulus,
+  // gv.system_Vp, 		gv.system_Vs
   // );
 }
 
