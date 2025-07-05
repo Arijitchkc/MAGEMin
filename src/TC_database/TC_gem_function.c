@@ -713,20 +713,21 @@ PP_ref TC_G_EM_function(int EM_dataset, int len_ox, int *id, double *bulk_rock,
                         double *apo, double P, double T, char *name,
                         char *state) {
 
-  printf("\nEM_dataset : %i", EM_dataset);
-  printf("\nlen_ox : %i", len_ox);
-  for (int i = 0; i < len_ox; i++) {
-    printf("\nid: %f, bulk_rock: %f, apo: %f", id[i], bulk_rock[i], apo[i]);
-  }
-  printf("\nP : %0.4f", P);
-  printf("\nT : %0.4f", T);
-  printf("\nname: %c", name);
-  printf("\nstate : %c", state);
-
   /* Get thermodynamic data */
   EM_db EM_return;
   int i, p_id = find_EM_id(name);
   EM_return = Access_EM_DB(p_id, EM_dataset);
+
+  // printf("\n\n\nSTART DIAGNOSING \nEM_dataset : %i", EM_dataset);
+  // printf("\nlen_ox : %i", len_ox);
+  // for (int i = 0; i < len_ox; i++) {
+  //   printf("\nid: %f, bulk_rock: %f, apo: %f", id[i], bulk_rock[i], apo[i]);
+  // }
+  // printf("\nP : %0.4f", P);
+  // printf("\nT : %0.4f", T);
+  // printf("\nname: %c", name);
+  // printf("\nstate : %c", state);
+  // printf("\ni : %i, p_id : %i ", i, p_id);
 
   /* Get composition (in molar amount) */
   double composition[len_ox];
@@ -1073,9 +1074,13 @@ PP_ref TC_G_EM_function(int EM_dataset, int len_ox, int *id, double *bulk_rock,
   double ape = 0.0;
   for (i = 0; i < len_ox; i++) {
     ape += composition[i] * apo[i];
+    // printf("\nDANGER composition : %f", composition[i]);
+    // printf("\nDANGER apo : %f", apo[i]);
   }
 
   /* Calculate normalizing factor */
+  // printf("\n Final ape : %f", ape);
+  // printf("\n FInal fbc : %f", fbc);
   factor = fbc / ape;
 
   strcpy(PP_ref_db.Name, name);

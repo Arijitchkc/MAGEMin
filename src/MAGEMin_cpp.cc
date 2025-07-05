@@ -38,8 +38,8 @@ void MAGEMin_wrapper::executeMAGEMin(int argc, char **argv, double Temperature,
   gv = global_variable_alloc(gv, &z_b);
 
   // Change values as per inputs from ASPECT
-  z_b.T = Temperature;
-  z_b.P = Pressure;
+  z_b.T = Temperature; // this value needs to be in Kelvin
+  z_b.P = Pressure;    // this valye needs to be in kbar
   gv.db = database;
   gv.File = "none";
   gv.buffer = "none";
