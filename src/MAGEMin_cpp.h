@@ -7,9 +7,9 @@
 #include <typeinfo>
 #include <vector>
 
-#ifdef USE_MPI
-#include <mpi.h>
-#endif
+// #ifdef USE_MPI
+// #include <mpi.h>
+// #endif
 
 #include "MAGEMin_modified.h"
 // #include "initialize.h"

@@ -31,9 +31,9 @@
 #include <time.h>
 #include <unistd.h>
 
-#ifdef USE_MPI
-#include "mpi.h"
-#endif
+// #ifdef USE_MPI
+// #include "mpi.h"
+// #endif
 // #include "MAGEMin.h"
 #include "MAGEMin_modified.h"
 #include "all_solution_phases.h"
@@ -73,7 +73,8 @@ void dump_init(global_variable gv) {
     // Deleting MPI_TEMPORARY
     // #ifdef USE_MPI
     // 	if (numprocs==1){	sprintf(out_lm,	"%s_matlab_output.txt"
-    // ,gv.outpath); 		} 	else 			{	sprintf(out_lm,
+    // ,gv.outpath); 		} 	else 			{
+    // sprintf(out_lm,
     // "%s_matlab_output.%i.txt"	,gv.outpath, rank); } #else
     // 	sprintf(out_lm,	"%s_matlab_output.txt"		,gv.outpath);
     // #endif
@@ -89,7 +90,8 @@ void dump_init(global_variable gv) {
     // Deleting MPI_TEMPORARY
     // #ifdef USE_MPI
     // 	if (numprocs==1){	sprintf(out_lm,	"%s_gui_output.txt"
-    // ,gv.outpath); 		} 	else 			{	sprintf(out_lm,
+    // ,gv.outpath); 		} 	else 			{
+    // sprintf(out_lm,
     // "%s_gui_output.%i.txt"	,gv.outpath, rank); } #else 	sprintf(out_lm,
     // "%s_gui_output.txt"		,gv.outpath); #endif
 
@@ -1179,7 +1181,8 @@ void output_gui(global_variable gv, bulk_info z_b,
   // Deleting MPI_TEMPORARY
   // #ifdef USE_MPI
   // 	if (numprocs==1){	sprintf(out_lm,	"%s_pseudosection_output.txt"
-  // ,gv.outpath); 		} 	else 			{	sprintf(out_lm,
+  // ,gv.outpath); 		} 	else 			{
+  // sprintf(out_lm,
   // "%s_pseudosection_output.%i.txt"	,gv.outpath, rank); } #else
   // 	sprintf(out_lm,	"%s_pseudosection_output.txt"		,gv.outpath);
   // #endif
