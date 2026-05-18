@@ -8,7 +8,8 @@
  **   Contact      : nriel[at]uni-mainz.de, kaus[at]uni-mainz.de
  **
  ** ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ @*/
-#include "../MAGEMin.h"
+// #include "../MAGEMin.h"
+#include "../MAGEMin_modified.h"
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
