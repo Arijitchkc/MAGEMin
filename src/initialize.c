@@ -3,7 +3,7 @@
  **   Project      : MAGEMin
  **   License      : GNU GENERAL PUBLIC LICENSE Version 3, 29 June 2007
  **   Developers   : Nicolas Riel, Boris Kaus
- **   Contributors : Dominguez, H., Assunção J., Green E., Berlie N., and Rummel L.
+ **   Contributors : Nickolas B. Moccetti, Dominguez, H., Assunção J., Green E., Berlie N., and Rummel L.
  **   Organization : Institute of Geosciences, Johannes-Gutenberg University, Mainz
  **   Contact      : nriel[at]uni-mainz.de, kaus[at]uni-mainz.de
  **
@@ -105,7 +105,7 @@ global_variable global_variable_alloc( global_variable gv, bulk_info  *z_b ){
 		allocate data necessary to initialize the system 
 	*/
 	/* system parameters 		*/
-	gv.maxlen_ox 		= 15;
+	gv.maxlen_ox 		= 16;
 	gv.outpath 			= malloc (100 	* sizeof(char)			);
 	gv.version 			= malloc (50  	* sizeof(char)			);
 	gv.File 			= malloc (50 	* sizeof(char)			);
@@ -123,7 +123,7 @@ global_variable global_variable_alloc( global_variable gv, bulk_info  *z_b ){
 	}
 
 	strcpy(gv.outpath,"./output/");				/** define the outpath to save logs and final results file	 						*/
-	strcpy(gv.version,"1.7.7 [11/04/2025]");	/** MAGEMin version 																*/
+	strcpy(gv.version,"1.9.3 16/04/2026]");		/** MAGEMin version 																*/
 
 	/* generate parameters        		*/
 	strcpy(gv.buffer,"none");
@@ -134,12 +134,14 @@ global_variable global_variable_alloc( global_variable gv, bulk_info  *z_b ){
 	gv.buffer_n 		= 0.0;					/** factor for QFM buffer 															*/
 	gv.limitCaOpx       = 0;					/** limit Ca-bearing  orthopyroxene (add-hoc correction) 							*/
 	gv.CaOpxLim         = 1.0;					/** limit Ca-bearing  orthopyroxene (add-hoc correction) 							*/
+	gv.fixed_bulk	    = 0;                   /** by default we don't activate the initial guess for fixed bulk 					*/
 
 	/* Phase selection 					*/
 	gv.mbCpx 			= 0;					/** 0: omphacite LT, 1: augite HT													*/
 	gv.mbIlm 			= 0;					/** 0: Ilmm, 1: Ilm 																*/
 	gv.mpSp 			= 0;					/** 0: Sp LT, 1: Mt1													*/
 	gv.mpIlm 			= 0;					/** 0: Ilmm, 1: Ilm 																*/
+	gv.ig_ed 			= 0;					/** 0: flag to activate edited version of bi and amp for igneous database 			*/
 
 	// gv.calc_seismic_cor = 1;					/** compute seismic velocity corrections (melt and anelastic)						*/
 	// gv.melt_pressure 	= 0.0;				/** [kbar] pressure shift in case of modelling melt pressure 						*/
@@ -161,7 +163,7 @@ global_variable global_variable_alloc( global_variable gv, bulk_info  *z_b ){
 	gv.PC_check_val2	= 1.0e-4;				/** br norm under which PC are tested for potential candidate to be added 			*/
 	gv.PC_min_dist 		= 1.0;					/** factor multiplying the diagonal of the hyperbox of xeos s-tep 					*/
 	gv.mSS_df_max_add 	= 0.4;					/** driving force under which a metastable solution phase is added to the assemblage */
-	gv.mSS_df_min_add   = 1e-6;					/** driving force under which a metastable solution phase is added to the assemblage */
+	gv.mSS_df_min_add   = 1e-4;					/** driving force under which a metastable solution phase is added to the assemblage */
 
 	/* levelling parameters 			*/
 	gv.em2ss_shift		= 2e-7;					/** small value to shift x-eos of pure endmember from bounds after levelling 		*/
@@ -655,8 +657,7 @@ global_variable reset_gv(					global_variable 	 gv,
 			}
 		}
 		else{
-
-			if(strcmp( gv.PP_list[i], "O2") == 0){
+			if(strcmp( gv.PP_list[i], "O2") == 0 && strcmp(gv.research_group, "sb") != 0){ //stx
 				gv.pp_flags[i][0] = 0;
 				gv.pp_flags[i][1] = 0;
 				gv.pp_flags[i][2] = 0;
@@ -674,6 +675,7 @@ global_variable reset_gv(					global_variable 	 gv,
 		}
 	}
 	gv.leveling_mode	  = 0;
+	gv.fixed_bulk		  = 0;
 	gv.tot_time 	  	  = 0.0;
 	gv.tot_min_time 	  = 0.0;
 	gv.melt_fraction	  = 0.;
@@ -696,11 +698,12 @@ global_variable reset_gv(					global_variable 	 gv,
 	gv.system_aAl2O3  	  = 0.;
 	gv.system_aMgO  	  = 0.;
 	gv.system_aFeO  	  = 0.;
-		
+
 	gv.system_density     = 0.;
 	gv.system_entropy     = 0.;
 	gv.system_enthalpy    = 0.;
 	gv.system_volume   	  = 0.;
+	gv.system_volume_cm3mol = 0.;
 	gv.system_cp    	  = 0.;
 	gv.system_expansivity = 0.;
 	gv.system_bulkModulus = 0.;
@@ -723,6 +726,7 @@ global_variable reset_gv(					global_variable 	 gv,
 	gv.n_cp_phase         = 0;					/** reset the number of ss phases to start with */
 	gv.n_pp_phase         = 0;					/** reset the number of pp phases to start with */
 	gv.alpha          	  = gv.max_fac;
+
 
 	/* reset iteration record */
 	for (i = 0; i < gv.it_f; i++){	
@@ -788,6 +792,10 @@ void reset_sp(						global_variable 	 gv,
 	sp[0].frac_S_wt						= 0.0;
 	sp[0].frac_M_wt						= 0.0;
 	sp[0].frac_F_wt						= 0.0;
+
+	sp[0].entropy_S						= 0.0;
+	sp[0].entropy_M						= 0.0;
+	sp[0].entropy_F						= 0.0;
 
 	sp[0].frac_S_vol					= 0.0;
 	sp[0].frac_M_vol					= 0.0;

@@ -3,7 +3,7 @@
  **   Project      : MAGEMin
  **   License      : GNU GENERAL PUBLIC LICENSE Version 3, 29 June 2007
  **   Developers   : Nicolas Riel, Boris Kaus
- **   Contributors : Dominguez, H., Assunção J., Green E., Berlie N., and Rummel L.
+ **   Contributors : Nickolas B. Moccetti, Dominguez, H., Assunção J., Green E., Berlie N., and Rummel L.
  **   Organization : Institute of Geosciences, Johannes-Gutenberg University, Mainz
  **   Contact      : nriel[at]uni-mainz.de, kaus[at]uni-mainz.de
  **
@@ -16,6 +16,8 @@
 
 
 void TC_mb_objective_init_function(	obj_type 		 	*SS_objective,
+									global_variable  	 gv					);
+void TC_mb_ext_objective_init_function(	obj_type 		 	*SS_objective,
 									global_variable  	 gv					);
 void TC_ig_objective_init_function(	obj_type 		 	*SS_objective,
 									global_variable   	 gv					);
@@ -62,6 +64,8 @@ double obj_mb_ep(unsigned   n, const double *x, double *grad, void *SS_ref_db);
 double obj_mb_bi(unsigned   n, const double *x, double *grad, void *SS_ref_db);
 double obj_mb_mu(unsigned   n, const double *x, double *grad, void *SS_ref_db);
 double obj_mb_chl(unsigned   n, const double *x, double *grad, void *SS_ref_db);
+double obj_mb_oamp(unsigned   n, const double *x, double *grad, void *SS_ref_db);
+double obj_mb_ta(unsigned   n, const double *x, double *grad, void *SS_ref_db);
 
 double obj_ig_fper(unsigned n, const double *x, double *grad, void *SS_ref_db);
 double obj_ig_bi(unsigned   n, const double *x, double *grad, void *SS_ref_db);
@@ -126,6 +130,7 @@ double obj_um_po(unsigned     n, const double *x, double *grad, void *SS_ref_db)
 double obj_ume_pl4tr(unsigned n, const double *x, double *grad, void *SS_ref_db);
 double obj_ume_amp(unsigned    n, const double *x, double *grad, void *SS_ref_db);
 double obj_ume_aug(unsigned   n, const double *x, double *grad, void *SS_ref_db);
+double obj_ume_spl(unsigned   n, const double *x, double *grad, void *SS_ref_db);
 
 double obj_mtl_g(unsigned  		n, const double *x, double *grad, void *SS_ref_db);
 double obj_mtl_fp(unsigned     	n, const double *x, double *grad, void *SS_ref_db);
@@ -178,6 +183,8 @@ SS_ref PC_function(			global_variable 	 gv,
 void TC_mp_PC_init(	                PC_type 			*PC_read,
 									global_variable 	 gv				);
 void TC_mb_PC_init(	                PC_type 			*PC_read,
+									global_variable 	 gv				);
+void TC_mb_ext_PC_init(	            PC_type 			*PC_read,
 									global_variable 	 gv				);
 void TC_ig_PC_init(	                PC_type 			*PC_read,
 									global_variable 	 gv				);

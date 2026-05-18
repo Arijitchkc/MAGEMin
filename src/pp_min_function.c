@@ -3,7 +3,7 @@
  **   Project      : MAGEMin
  **   License      : GNU GENERAL PUBLIC LICENSE Version 3, 29 June 2007
  **   Developers   : Nicolas Riel, Boris Kaus
- **   Contributors : Dominguez, H., Assunção J., Green E., Berlie N., and Rummel L.
+ **   Contributors : Nickolas B. Moccetti, Dominguez, H., Assunção J., Green E., Berlie N., and Rummel L.
  **   Organization : Institute of Geosciences, Johannes-Gutenberg University, Mainz
  **   Contact      : nriel[at]uni-mainz.de, kaus[at]uni-mainz.de
  **
@@ -757,6 +757,9 @@ global_variable init_em_db(		int 				EM_database,
 				else if (EM_database == 1){
 					printf(" S   A   C   M   F   K   N   T   O   H\n");
 				}
+				else if (EM_database == 11){
+					printf(" S   A   C   M   F   K   N   T   O   H\n");
+				}
 				else if (EM_database == 2){
 					printf(" S   A   C   M   F   K   N   T   O   Cr  H\n");
 				}
@@ -767,10 +770,10 @@ global_variable init_em_db(		int 				EM_database,
 					printf(" S   A   M   F   O   H   S\n");
 				}
 				else if (EM_database == 5){
-					printf(" S   A   M   F   O   H   S   C   N\n");
+					printf(" S   A   M   F   O   H   S   C   N   Cr  CO\n");
 				}
 				else if (EM_database == 6){
-					printf(" S   A   M   F   O   H   S   C   N  \n");
+					printf(" S   A   M   F   O   H   S   C   N \n");
 				}
 				else if (EM_database == 7){
 					printf(" S   A   C   M   F   K   N   T   O   Mn  H   CO2 S\n");
@@ -824,7 +827,7 @@ global_variable init_em_db_sb(	int 				EM_database,
 				strcpy(PP_ref_db[i].Name, gv.PP_list[i]);
 				for (int j = 0; j < gv.len_ox; j++){
 					PP_ref_db[i].Comp[j] = MgO.Comp[j];
-					if (gv.EM_database == 1){
+					if (gv.EM_database == 1 || gv.EM_database == 2){
 						PP_ref_db[i].Comp[j] /= 4.0; // divide by 4 for sb21
 					}
 				}		
@@ -849,7 +852,7 @@ global_variable init_em_db_sb(	int 				EM_database,
 					buffer_n = 1.0-1e-8;
 				}
 				double G0 = MgO.gbase;
-				if (gv.EM_database == 1){
+				if (gv.EM_database == 1 || gv.EM_database == 2){
 					G0 /= 4.0; // divide by 4 for sb21
 				}
 				PP_ref_db[i].gbase   =  z_b.R * z_b.T*log(buffer_n) + G0;
@@ -873,7 +876,7 @@ global_variable init_em_db_sb(	int 				EM_database,
 				strcpy(PP_ref_db[i].Name, gv.PP_list[i]);
 				for (int j = 0; j < gv.len_ox; j++){
 					PP_ref_db[i].Comp[j] = FeO.Comp[j];
-					if (gv.EM_database == 1){
+					if (gv.EM_database == 1 || gv.EM_database == 2){
 						PP_ref_db[i].Comp[j] /= 4.0; // divide by 4 for sb21
 					}
 				}		
@@ -898,7 +901,7 @@ global_variable init_em_db_sb(	int 				EM_database,
 					buffer_n = 1.0-1e-8;
 				}
 				double G0 = FeO.gbase;
-				if (gv.EM_database == 1){
+				if (gv.EM_database == 1 || gv.EM_database == 2){
 					G0 /= 4.0; // divide by 4 for sb21
 				}
 				PP_ref_db[i].gbase   =  z_b.R * z_b.T*log(buffer_n) + G0;

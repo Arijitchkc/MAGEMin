@@ -11,6 +11,7 @@ matlab/.DS_Store
 tools/.DS_Store
 .vscode/
 *.txt
+*.png
 Manifest.toml
 .DS_Store
 libMAGEMin.dylib

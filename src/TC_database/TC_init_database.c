@@ -3,7 +3,7 @@
  **   Project      : MAGEMin
  **   License      : GNU GENERAL PUBLIC LICENSE Version 3, 29 June 2007
  **   Developers   : Nicolas Riel, Boris Kaus
- **   Contributors : Dominguez, H., Assunção J., Green E., Berlie N., and Rummel L.
+ **   Contributors : Nickolas B. Moccetti, Dominguez, H., Assunção J., Green E., Berlie N., and Rummel L.
  **   Organization : Institute of Geosciences, Johannes-Gutenberg University, Mainz
  **   Contact      : nriel[at]uni-mainz.de, kaus[at]uni-mainz.de
  **
@@ -30,8 +30,8 @@ oxide_data oxide_info = {
 	{60.08  ,101.96 ,56.08  ,40.30  ,71.85  ,94.2   ,61.98  ,79.88  ,16.0   ,70.94	,151.99 ,18.015	,44.01	, 32.06	,35.453	,0.0		},
 	{3.0	,5.0	,2.0	,2.0	,2.0	,3.0	,3.0	,3.0	,1.0	,2.0 	,5.0	,3.0	,3.0	, 1.0	,1.0	,0.0		},
 	{66.7736,108.653,42.9947,40.3262,38.7162,69.1514,61.1729,70.3246,30.5827,40.1891,106.9795,69.5449,62.8768,9.5557,33.2556,0.0		},
-	// {2,3,1,1,1,1,1,2,1,1,3,1,2,0,0,0},
-	{3,5,2,2,2,3,3,3,0,2,5,3,3,1,1,0},  //apo
+	{2,3,1,1,1,1,1,2,1,1,3,1,2,0,0,0}, //opo
+	// {3,5,2,2,2,3,3,3,0,2,5,3,3,1,1,0},  //apo
 	{1,2,1,1,1,2,2,1,1,1,2,2,1,1,1,0}	//ape
 	// for the standard molar entropy the values are already normalized by the reference temperature = 298.15K (25°C) and expressed in kJ
 };
@@ -40,10 +40,10 @@ oxide_data oxide_info = {
 metapelite_aq_dataset metapelite_aq_db = {
 	62,							/* Endmember default dataset number */
 	11,							/* number of oxides */			
-	26,							/* number of pure phases */
+	27,							/* number of pure phases */
 	18,							/* number of solution phases */
 	{"SiO2"	,"Al2O3","CaO"	,"MgO"	,"FeO"	,"K2O"	,"Na2O"	,"TiO2"	,"O"	,"MnO"	,"H2O"											},
-	{"q"	,"crst"	,"trd"	,"coe"	,"stv"	,"ky"	,"sill"	,"and"	,"ru"	,"sph"	,"O2"  ,"H2O"	,"zo"	,
+	{"q"	,"crst"	,"trd"	,"coe"	,"stv"	,"ky"	,"sill"	,"and"	,"ru"	,"sph"	,"O2"  ,"H2O"	,"zo", "cor"	,
 	"qfm"	,"mw"	,"qif"	,"nno"	,"hm"	,"iw"	,"cco"	,"aH2O"	, "aO2"	,"aMgO"	,"aFeO"	,"aAl2O3"		,"aTiO2"								},
 	{"liq"	,"fsp"	,"bi"	,"g"	,"ep"	,"ma"	,"mu"	,"opx"	,"sa"	,"cd"	,"st"	,"chl"	,"ctd"	,"sp"  ,"mt"  ,"ilm"  ,"ilmm"  ,"aq17"},
 	
@@ -70,10 +70,10 @@ metapelite_aq_dataset metapelite_aq_db = {
 metapelite_dataset metapelite_db = {
 	62,							/* Endmember default dataset number */
 	11,							/* number of oxides */			
-	26,							/* number of pure phases */
+	27,							/* number of pure phases */
 	17,							/* number of solution phases */
 	{"SiO2"	,"Al2O3","CaO"	,"MgO"	,"FeO"	,"K2O"	,"Na2O"	,"TiO2"	,"O"	,"MnO"	,"H2O"											},
-	{"q"	,"crst"	,"trd"	,"coe"	,"stv"	,"ky"	,"sill"	,"and"	,"ru"	,"sph"	,"O2"  ,"H2O"	,"zo"	,
+	{"q"	,"crst"	,"trd"	,"coe"	,"stv"	,"ky"	,"sill"	,"and"	,"ru"	,"sph"	,"O2"  ,"H2O"	,"zo"	,"cor",
 	"qfm"	,"mw"	,"qif"	,"nno"	,"hm"	,"iw"	,"cco"	,"aH2O"	, "aO2"	,"aMgO"	,"aFeO"	,"aAl2O3"		,"aTiO2"								},
 	{"liq"	,"fsp"	,"bi"	,"g"	,"ep"	,"ma"	,"mu"	,"opx"	,"sa"	,"cd"	,"st"	,"chl"	,"ctd"	,"sp"  ,"mt"  ,"ilm"  ,"ilmm" 	,"aq17" },
 	
@@ -98,16 +98,45 @@ metapelite_dataset metapelite_db = {
 metabasite_dataset metabasite_db = {
 	62,							/* Endmember default dataset number */
 	10,							/* number of oxides */			
-	26,							/* number of pure phases */
+	28,							/* number of pure phases */
 	17,							/* number of solution phases */
 	{"SiO2"	,"Al2O3","CaO"	,"MgO"	,"FeO"	,"K2O"	,"Na2O"	,"TiO2"	,"O"	,"H2O"													},
-	{"q"	,"crst"	,"trd"	,"coe"	,"law"	,"ky"	,"sill"	,"and"	,"ru"	,"sph" 	,"ab"	,"H2O"	,"zo"	,
+	{"q"	,"crst"	,"trd"	,"coe"	,"law"	,"ky"	,"sill"	,"and"	,"ru"	,"sph" 	,"O2"	,"ab"	,"H2O"	,"zo"	,"cor",
 	"qfm"	,"mw" 	,"qif"	,"nno"	,"hm"	,"iw"	,"cco"	,"aH2O"	,"aO2"	,"aMgO"	,"aFeO"	,"aAl2O3"		,"aTiO2"								},
 	{"sp"	,"opx"	,"fsp"	,"liq"	,"mu"	,"ilmm"	,"ilm"	,"ol"	,"amp"	,"ep"	,"g"	,"chl"	,"bi"	,"dio"	,"aug"	,"abc"  ,"spl"			},
 	
 	{1		,1		,1		,1		,1		,1		,1		,1		,1		,1 		,1 		,1 		,1 		,1 		,1 		,1 		,1				},  // allow solvus?
-	{939	,1731 	,231	,3507	,4538 	,298	,422	,11		,7673	,110	,217	,3980	,1098	,1811	,2398	,21 	,196			},  // # of pseudocompound
+	{939	,1731 	,231	,3507	,4539 	,298	,422	,11		,7674	,110	,217	,3980	,1098	,1811	,2398	,21 	,196			},  // # of pseudocompound
 	{0.04	,0.19	,0.02	,0.15	,0.049	,0.09	,0.049	,0.04	,0.15	,0.049	,0.19	,0.19	,0.125	,0.10	,0.10	,0.049 	,0.04			},  // discretization step
+
+	6.0, 						/* max dG under which a phase is considered to be reintroduced  					*/
+	473.15,						/* max temperature above which PGE solver is active 								*/
+	873.15,						/** minimum temperature above which melt is considered 								*/
+
+	4,							/** number of inner PGE iterations, this has to be made mass or dG dependent 		*/
+	0.025,						/** maximum mol% phase change during one PGE iteration in wt% 						*/
+	2.5,						/** maximum delta_G of reference change during PGE 									*/
+	1.0,						/** maximum update factor during PGE under-relax < 0.0, over-relax > 0.0 	 		*/
+
+	1e-1,						/** merge instances of solution phase if norm < val 								*/
+	1e-4,						/** fraction of solution phase when re-introduced 									*/
+	1e-6						/** objective function tolerance 				 									*/
+};
+
+
+metabasite_ext_dataset metabasite_ext_db = {
+	62,							/* Endmember default dataset number */
+	10,							/* number of oxides */			
+	28,							/* number of pure phases */
+	19,							/* number of solution phases */
+	{"SiO2"	,"Al2O3","CaO"	,"MgO"	,"FeO"	,"K2O"	,"Na2O"	,"TiO2"	,"O"	,"H2O"													},
+	{"q"	,"crst"	,"trd"	,"coe"	,"law"	,"ky"	,"sill"	,"and"	,"ru"	,"sph" 	,"O2" ,"ab"	,"H2O"	,"zo"	,"cor",
+	"qfm"	,"mw" 	,"qif"	,"nno"	,"hm"	,"iw"	,"cco"	,"aH2O"	,"aO2"	,"aMgO"	,"aFeO"	,"aAl2O3"		,"aTiO2"								},
+	{"sp"	,"opx"	,"fsp"	,"liq"	,"mu"	,"ilmm"	,"ilm"	,"ol"	,"amp"	,"ep"	,"g"	,"chl"	,"bi"	,"dio"	,"aug"	,"abc"  ,"spl"	,"ta"	,"oamp"		},
+	
+	{1		,1		,1		,1		,1		,1		,1		,1		,1		,1 		,1 		,1 		,1 		,1 		,1 		,1 		,1		,1 		,1			},  // allow solvus?
+	{939	,1731 	,231	,3507	,4539 	,298	,422	,11		,7673	,110	,217	,3980	,1098	,1811	,2398	,21 	,196	,760	,3648		},  // # of pseudocompound
+	{0.04	,0.19	,0.02	,0.15	,0.049	,0.09	,0.049	,0.04	,0.15	,0.049	,0.19	,0.19	,0.125	,0.10	,0.10	,0.049 	,0.04	,0.09	,0.2		},  // discretization step
 
 	6.0, 						/* max dG under which a phase is considered to be reintroduced  					*/
 	473.15,						/* max temperature above which PGE solver is active 								*/
@@ -126,17 +155,17 @@ metabasite_dataset metabasite_db = {
 igneous_dataset igneous_db = {
 	636,						/* Endmember default dataset number */
 	11,							/* number of oxides */			
-	26,							/* number of pure phases */
+	27,							/* number of pure phases */
 	16,							/* number of solution phases */
 	{"SiO2"	,"Al2O3","CaO"	,"MgO"	,"FeO"	,"K2O"	,"Na2O"	,"TiO2"	,"O"	,"Cr2O3","H2O"														},
-	{"ne"	,"q"	,"crst"	,"trd"	,"coe"	,"stv"	,"ky"	,"sill"	,"and"	,"ru"	,"sph"	,"O2"	,"H2O"	,
+	{"ne"	,"q"	,"crst"	,"trd"	,"coe"	,"stv"	,"ky"	,"sill"	,"and"	,"ru"	,"sph"	,"O2"	,"H2O"	,"cor"	,
 	"qfm"	,"mw"	,"qif"	,"nno"	,"hm"	,"iw"	,"cco"	,"aH2O"	, "aO2"	,"aMgO"	,"aFeO"	,"aAl2O3"		,"aTiO2"							},
 	{1		, 1		, 1		, 1		, 1		, 1		, 1		, 1		, 1		, 1		, 1		, 1		, 0		,
-	 1		, 1		, 1		, 1		, 1		, 1		, 1		, 1		, 1		, 1		, 1		, 1		, 1		,									},
+	 1		, 1		, 1		, 1		, 1		, 1		, 1		, 1		, 1		, 1		, 1		, 1		, 1		,	1 								},
 	{"spl"	,"bi"	,"cd"	,"cpx"	,"ep"	,"g"	,"amp"	,"ilm"	,"liq"	,"ol"	,"opx"	,"fsp"	,"fl"	,"mu"	,"fper"	,"chl"				},
 	
 	{1		,1		,1		,1		,1		,1		,1		,1		,1 		,1 		,1 		,1 		,1		,1		,1		,1					}, // allow solvus?
-	{1523	,3554	,121	,4127	,210	,2450	,5499	,1670	,3088	,381	,3413	,231	,2		,2376	,20		,3980				}, // # of pseudocompound
+	{1523	,3554	,121	,4127	,210	,2450	,5499	,1670	,3088	,381	,3413	,231	,10		,2376	,20		,3980				}, // # of pseudocompound
 	{0.2	,0.124	,0.098	,0.20	,0.049	,0.145	,0.33	,0.10	,0.15	,0.04	,0.249	,0.049	,1.0 	,0.198	,0.05	,0.19				}, // discretization step
 
 	6.0, 						/** max dG under which a phase is considered to be reintroduced  					*/
@@ -156,10 +185,10 @@ igneous_dataset igneous_db = {
 igneous_igad_dataset igneous_igad_db = {
 	636,						/* number of endmembers */
 	10,							/* number of oxides */			
-	24,							/* number of pure phases */
+	25,							/* number of pure phases */
 	12,							/* number of solution phases */
 	{"SiO2"	,"Al2O3","CaO"	,"MgO"	,"FeO"	,"K2O"	,"Na2O"	,"TiO2"	,"O"	,"Cr2O3"														},
-	{"q"	,"crst"	,"trd"	,"coe"	,"stv"	,"ky"	,"sill"	,"and"	,"ru"	,"sph"	,"O2" 	,
+	{"q"	,"crst"	,"trd"	,"coe"	,"stv"	,"ky"	,"sill"	,"and"	,"ru"	,"sph"	,"O2" 	,"cor"	,
 	"qfm"	,"mw"	,"qif"	,"nno"	,"hm"	,"iw"	,"cco"	,"aH2O"	, "aO2"	,"aMgO"	,"aFeO"	,"aAl2O3"		,"aTiO2"								},
 	{"spl"	,"cpx"	,"g"	,"ilm"	,"liq"	,"ol"	,"opx"	,"fsp"	,"lct"	,"mel"	,"nph"	,"kals"		},
 	
@@ -184,10 +213,10 @@ igneous_igad_dataset igneous_igad_db = {
 ultramafic_dataset ultramafic_db = {
 	633,						/* Endmember default dataset number */
 	7,							/* number of oxides */			
-	23,							/* number of pure phases */
+	25,							/* number of pure phases */
 	12,							/* number of solution phases */
 	{"SiO2"	,"Al2O3","MgO"	,"FeO"	,"O"	,"H2O"	,"S"												},
-	{"q"	,"crst"	,"trd"	,"coe"	,"stv"	,"ky"	,"sill"	,"and"	,"pyr"	,"O2"  	,
+	{"q"	,"crst"	,"trd"	,"coe"	,"stv"	,"ky"	,"sill"	,"and"	,"pyr"	,"O2"  	,"hem"	,"cor",
 	"qfm"	,"qif"	,"nno"	,"hm"	,"mw"	,"iw"	,"cco"	,"aH2O"	, "aO2"	,"aMgO"	,"aFeO"	,"aAl2O3"		,"aTiO2"	},
 	{"fl"	,"ol"  ,"br"	,"ch"	,"atg"	,"g"	,"ta"	,"chl"	,"spi"	,"opx"	,"po"	,"anth" 	},
 	
@@ -211,17 +240,17 @@ ultramafic_dataset ultramafic_db = {
 
 ultramafic_ext_dataset ultramafic_ext_db = {
 	633,						/* Endmember default dataset number */
-	9,							/* number of oxides */			
-	23,							/* number of pure phases */
-	15,							/* number of solution phases */
-	{"SiO2"	,"Al2O3","MgO"	,"FeO"	,"O"	,"H2O"	,"S"	,"CaO"	,"Na2O"													},
-	{"q"	,"crst"	,"trd"	,"coe"	,"stv"	,"ky"	,"sill"	,"and"	,"pyr"	,"O2"  	,
-	"qfm"	,"qif"	,"nno"	,"hm"	,"mw"	,"iw"	,"cco"	,"aH2O"	, "aO2"	,"aMgO"	,"aFeO"	,"aAl2O3"		,"aTiO2"		},
-	{"fl"	,"ol"  ,"br"	,"ch"	,"atg"	,"g"	,"ta"	,"chl"	,"spi"	,"opx"	,"po"	,"anth"	,"pl4tr","amp"	,"aug"	},
+	11,							/* number of oxides */			
+	27,							/* number of pure phases */
+	18,							/* number of solution phases */
+	{"SiO2"	,"Al2O3","MgO"	,"FeO"	,"O"	,"H2O"	,"S"	,"CaO"	,"Na2O", "Cr2O3","CO2"											},
+	{"q"	,"crst"	,"trd"	,"coe"	,"stv"	,"ky"	,"sill"	,"and"	,"pyr"	,"O2"  	,"hem"	,"H2O"	,"cor"	,"gph",
+	"qfm"	,"qif"	,"nno"	,"hm"	,"mw"	,"iw"	,"cco"	,"aH2O"	, "aO2"	,"aMgO"	,"aFeO"	,"aAl2O3"		,"aTiO2"				},
+	{"fl"	,"ol"  ,"br"	,"ch"	,"atg"	,"g"	,"ta"	,"chl"	,"spi"	,"opx"	,"po"	,"anth"	,"pl4tr","amp"	,"aug"	,"spl"	,"flc"	,"occm"	},
 	
-	{1		,1		,1		,1		,1		,1		,1		,1		,1 		,1 		,1		,1		,1		,1		,1		},  // allow solvus?
-	{11  	,10  	,11 	,10 	,489 	,10  	,985 	,2691	,100	,196	,10		,274	,21		,5033	,3036	},  // No. of pseudocompound
-	{0.001	,0.1	,0.1	,0.1	,0.19	,0.1	,0.19	,0.19	,0.1	,0.19	,0.1	,0.249	,0.049	,0.24	,0.24	},  // discretization step
+	{1		,1		,1		,1		,1		,1		,1		,1		,1 		,1 		,1		,1		,1		,1		,1		,1		,1		,1	},  // allow solvus?
+	{11  	,10  	,11 	,10 	,489 	,10  	,985 	,2691	,100	,196	,10		,274	,21		,5033	,3036	,2060	,12		,352},  // No. of pseudocompound
+	{0.001	,0.1	,0.1	,0.1	,0.19	,0.1	,0.19	,0.19	,0.1	,0.19	,0.1	,0.249	,0.049	,0.24	,0.24	,0.19	,0.09	,0.10},  // discretization step
 
 	4.0, 						/* max dG under which a phase is considered to be reintroduced  					*/
 	473.15,						/* max temperature above which PGE solver is active 								*/
@@ -269,16 +298,16 @@ mantle_dataset mantle_db = {
 metapelite_dataset_ext metapelite_ext_db = {
 	62,							/* Endmember default dataset number */
 	13,							/* number of oxides */			
-	31,							/* number of pure phases */
-	23,							/* number of solution phases */
+	32,							/* number of pure phases */
+	24,							/* number of solution phases */
 	{"SiO2"	,"Al2O3","CaO"	,"MgO"	,"FeO"	,"K2O"	,"Na2O"	,"TiO2"	,"O"	,"MnO"	,"H2O"	,"CO2"	,"S"										},
-	{"q"	,"crst"	,"trd"	,"coe"	,"stv"	,"ky"	,"sill"	,"and"	,"ru"	,"sph"	,"O2" 	,"pyr"	,"gph"	,"law"	,"zo" ,"prl"  ,"mpm"   ,"pre"	,
+	{"q"	,"crst"	,"trd"	,"coe"	,"stv"	,"ky"	,"sill"	,"and"	,"ru"	,"sph"	,"O2" 	,"pyr"	,"gph"	,"law"	,"zo" ,"prl"  ,"mpm"   ,"pre"	,"cor",
 	"qfm"	,"mw"	,"qif"	,"nno"	,"hm"	,"iw" 	,"cco"	,"aH2O"	, "aO2"	,"aMgO"	,"aFeO"	,"aAl2O3"		,"aTiO2"											},
-	{"liq"	,"fsp"	,"bi"	,"g"	,"ep"	,"ma"	,"mu"	,"opx"	,"sa"	,"cd"	,"st"	,"chl"	,"ctd"	,"sp"  ,"mt"  ,"ilm"  ,"ilmm"  ,"occm"	,"fl"	,"po"	,"dio"	,"aug"	,"amp"		},
+	{"liq"	,"fsp"	,"bi"	,"g"	,"ep"	,"ma"	,"mu"	,"opx"	,"sa"	,"cd"	,"st"	,"chl"	,"ctd"	,"sp"  ,"mt"  ,"ilm"  ,"ilmm"  ,"occm"	,"fl"	,"po"	,"dio"	,"aug"	,"amp"	,"oamp"		},
 	
-	{1		,1		,1		,1		,1		,1		,1		,1		,1 		,1 		,1 		,1 		,1 		,1 		,1 		,1 		,1 		,1		,1		,1		,1		,1		,1			},  // allow solvus?
-	{3150	,231 	,981	,758	,110 	,1875	,1877	,1277	,230	,343	,540	,2270	,216	,407 	,87 	,131 	,1430 	,352	,12		,10		,1810	,2396,	7669		},  // # of pseudocompound
-	{0.24	,0.049	,0.125	,0.049	,0.049	,0.19	,0.19	,0.249	,0.19	,0.145	,0.19	,0.249	,0.19	,0.124 	,0.099 	,0.09 	,0.099 	,0.10	,0.09	,0.1	,0.10	,0.10,	0.075		},  // discretization step
+	{1		,1		,1		,1		,1		,1		,1		,1		,1 		,1 		,1 		,1 		,1 		,1 		,1 		,1 		,1 		,1		,1		,1		,1		,1		,1		,1			},  // allow solvus?
+	{3150	,231 	,981	,758	,110 	,1875	,1877	,1277	,230	,343	,540	,2270	,216	,407 	,87 	,131 	,1430 	,352	,12		,10		,1810	,2396,	7669	,3648		},  // # of pseudocompound
+	{0.24	,0.049	,0.125	,0.049	,0.049	,0.19	,0.19	,0.249	,0.19	,0.145	,0.19	,0.249	,0.19	,0.124 	,0.099 	,0.09 	,0.099 	,0.10	,0.09	,0.1	,0.10	,0.10,	0.075	,0.2		},  // discretization step
 
 	6.0, 						/* max dG under which a phase is considered to be reintroduced  					*/
 	473.15,						/* max temperature above which PGE solver is active 								*/
@@ -351,6 +380,56 @@ global_variable global_variable_TC_init( 	global_variable  	 gv,
 	}
 	else if (gv.EM_database == 1){
 		metabasite_dataset db 	= metabasite_db;
+		if (gv.EM_dataset == -1){
+			gv.EM_dataset = db.ds_version;	
+		}
+		gv.len_pp   		= db.n_pp;		
+		gv.len_ss  			= db.n_ss;
+		gv.len_ox  			= db.n_ox;
+
+		gv.PC_df_add		= db.PC_df_add;					/** min value of df under which the PC is added 									*/
+		gv.solver_switch_T  = db.solver_switch_T;
+		gv.min_melt_T       = db.min_melt_T ;				/** minimum temperature above which melt is considered 								*/
+
+		gv.inner_PGE_ite    = db.inner_PGE_ite;				/** number of inner PGE iterations, this has to be made mass or dG dependent 		*/
+		gv.max_n_phase  	= db.max_n_phase;				/** maximum mol% phase change during one PGE iteration in wt% 						*/
+		gv.max_g_phase  	= db.max_g_phase;				/** maximum delta_G of reference change during PGE 									*/
+		gv.max_fac          = db.max_fac;					/** maximum update factor during PGE under-relax < 0.0, over-relax > 0.0 	 		*/
+
+		gv.merge_value		= db.merge_value;				/** merge instances of solution phase if norm < val 								*/
+		gv.re_in_n          = db.re_in_n;					/** fraction of phase when being reintroduce.  										*/
+		gv.obj_tol 			= db.obj_tol;
+
+		/* alloc */
+		gv.ox 				= malloc (gv.len_ox * sizeof(char*)		);
+		for (i = 0; i < gv.len_ox; i++){
+			gv.ox[i] 		= malloc(20 * sizeof(char));	
+			strcpy(gv.ox[i],db.ox[i]);
+		}
+
+		gv.PP_list 			= malloc (gv.len_pp * sizeof(char*)		);
+		for (i = 0; i < (gv.len_pp); i++){	
+			gv.PP_list[i] 	= malloc(20 * sizeof(char));
+			strcpy(gv.PP_list[i],db.PP[i]);
+		}
+
+		gv.SS_list 			= malloc ((gv.len_ss) * sizeof (char*)	);
+		gv.n_SS_PC     		= malloc ((gv.len_ss) * sizeof (int) 	);
+
+		gv.verifyPC  		= malloc ((gv.len_ss) * sizeof (int) 	);
+		gv.SS_PC_stp     	= malloc ((gv.len_ss) * sizeof (double) );
+		for (i = 0; i < gv.len_ss; i++){ 
+			gv.SS_list[i] 	= malloc(20 * sizeof(char)				);
+			strcpy(gv.SS_list[i],db.SS[i]);
+			gv.verifyPC[i]  = db.verifyPC[i]; 
+			gv.n_SS_PC[i] 	= db.n_SS_PC[i]; 
+			gv.SS_PC_stp[i] = db.SS_PC_stp[i]; 	
+		}
+		gv.act_PP     		= malloc ((gv.len_pp) * sizeof (int) 	);
+		for (i = 0; i < gv.len_pp; i++){ gv.act_PP[i] = 1; 			};
+	}
+	else if (gv.EM_database == 11){
+		metabasite_ext_dataset db 	= metabasite_ext_db;
 		if (gv.EM_dataset == -1){
 			gv.EM_dataset = db.ds_version;	
 		}
@@ -846,7 +925,6 @@ global_variable global_variable_TC_init( 	global_variable  	 gv,
 			}
 		}
 	}
-
 	z_b->bulk_rock_cat  = malloc (gv.len_ox * sizeof (double) ); 
 	z_b->bulk_rock  	= malloc (gv.len_ox * sizeof (double) ); 
 	z_b->nzEl_array 	= malloc (gv.len_ox * sizeof (int) ); 
@@ -1355,7 +1433,6 @@ global_variable get_bulk_ultramafic_ext( global_variable gv) {
 		}	
 	}
 	if (gv.test == 0){ //Barberton Komatiite, Tamblyn et al.,2022 
-		/* SiO2 Al2O3 MgO FeO O H2O S */
 		gv.bulk_rock[0]  = 38.51 ;		/** SiO2 	*/
 		gv.bulk_rock[1]  = 2.25;		/** Al2O2 	*/
 		gv.bulk_rock[2]  = 29.03;		/** MgO 	*/
@@ -1365,9 +1442,10 @@ global_variable get_bulk_ultramafic_ext( global_variable gv) {
 		gv.bulk_rock[6]  = 0.1;			/** S 		*/		
 		gv.bulk_rock[7]  = 6.92;		/** CaO		*/	
 		gv.bulk_rock[8]  = 0.25;		/** Na2O	*/	
+		gv.bulk_rock[9]  = 0.0;			/** Cr2O3	*/	
+		gv.bulk_rock[10] = 0.0;			/** CO2		*/	
 	}      
 	else if (gv.test == 1){ //Evans&Forst 2021, Serpentine oxidized
-		/* SiO2 Al2O3 MgO FeO O H2O S */
 		gv.bulk_rock[0]  = 20.044 ;		/** SiO2 	*/
 		gv.bulk_rock[1]  = 0.6256;		/** Al2O2 	*/
 		gv.bulk_rock[2]  = 29.24;		/** MgO 	*/
@@ -1377,9 +1455,10 @@ global_variable get_bulk_ultramafic_ext( global_variable gv) {
 		gv.bulk_rock[6]  = 0.3;			/** S 		*/		
 		gv.bulk_rock[7]  = 2.0;			/** CaO		*/	
 		gv.bulk_rock[8]  = 0.15;		/** Na2O	*/	
+		gv.bulk_rock[9]  = 0.0;			/** Cr2O3	*/	
+		gv.bulk_rock[10] = 0.0;			/** CO2		*/	
 	}
 	else if (gv.test == 2){ //Evans&Forst 2021, Serpentine reduced
-		/* SiO2 Al2O3 MgO FeO O H2O S */
 		gv.bulk_rock[0]  = 20.044 ;		/** SiO2 	*/
 		gv.bulk_rock[1]  = 0.6256;		/** Al2O2 	*/
 		gv.bulk_rock[2]  = 29.24;		/** MgO 	*/
@@ -1388,7 +1467,35 @@ global_variable get_bulk_ultramafic_ext( global_variable gv) {
 		gv.bulk_rock[5]  = 46.755;		/** H2O 	*/	
 		gv.bulk_rock[6]  = 0.3;			/** S 		*/		
 		gv.bulk_rock[7]  = 2.0;			/** CaO		*/	
-		gv.bulk_rock[8]  = 0.15;			/** Na2O	*/	
+		gv.bulk_rock[8]  = 0.15;		/** Na2O	*/
+		gv.bulk_rock[9]  = 0.0;			/** Cr2O3	*/
+		gv.bulk_rock[10] = 0.0;			/** CO2		*/	
+	}
+	else if (gv.test == 3){ //Evans&Forst 2021, Serpentine reduced
+		gv.bulk_rock[0]  = 20.044 ;		/** SiO2 	*/
+		gv.bulk_rock[1]  = 0.6256;		/** Al2O2 	*/
+		gv.bulk_rock[2]  = 29.24;		/** MgO 	*/
+		gv.bulk_rock[3]  = 3.149;		/** FeO 	*/
+		gv.bulk_rock[4]  = 0.1324;		/** O 		*/
+		gv.bulk_rock[5]  = 46.755;		/** H2O 	*/	
+		gv.bulk_rock[6]  = 0.3;			/** S 		*/		
+		gv.bulk_rock[7]  = 2.0;			/** CaO		*/	
+		gv.bulk_rock[8]  = 0.15;		/** Na2O	*/
+		gv.bulk_rock[9]  = 0.4;		    /** Cr2O3	*/
+		gv.bulk_rock[10] = 0.0;			/** CO2		*/
+	}
+	else if (gv.test == 4){ //Evans&Forst 2021, Serpentine oxidized
+		gv.bulk_rock[0]  = 20.044 ;		/** SiO2 	*/
+		gv.bulk_rock[1]  = 0.6256;		/** Al2O2 	*/
+		gv.bulk_rock[2]  = 29.24;		/** MgO 	*/
+		gv.bulk_rock[3]  = 3.149;		/** FeO 	*/
+		gv.bulk_rock[4]  = 0.7324;		/** O 		*/
+		gv.bulk_rock[5]  = 46.755;		/** H2O 	*/
+		gv.bulk_rock[6]  = 0.3;			/** S 		*/		
+		gv.bulk_rock[7]  = 2.0;			/** CaO		*/	
+		gv.bulk_rock[8]  = 0.15;		/** Na2O	*/	
+		gv.bulk_rock[9]  = 0.0;			/** Cr2O3	*/	
+		gv.bulk_rock[10] = 10.0;			/** CO2		*/	
 	}
   
 	else{

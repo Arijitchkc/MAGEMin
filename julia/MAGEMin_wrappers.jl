@@ -14,32 +14,99 @@
 import Base.show
 using Base.Threads: @threads
 using ProgressMeter
-using DataFrames, Dates, CSV
+using DataFrames, Dates, CSV, SpecialFunctions
 
 const VecOrMat          = Union{Nothing, AbstractVector{Float64}, AbstractVector{<:AbstractVector{Float64}}}
 const available_TC_ds   = [62,633,634,635,636]
 
-export  anhydrous_renormalization, retrieve_solution_phase_information, remove_phases, get_ss_from_mineral,
-        init_MAGEMin, allocate_output,finalize_MAGEMin, point_wise_minimization, convertBulk4MAGEMin, use_predefined_bulk_rock, define_bulk_rock, create_output,
+export  anhydrous_renormalization, retrieve_solution_phase_information, remove_phases, get_ss_from_mineral, mineral_classification,
+        init_MAGEMin, allocate_output,finalize_MAGEMin, point_wise_minimization, 
+        get_all_stable_phases, convertBulk4MAGEMin, use_predefined_bulk_rock, define_bulk_rock, create_output,
         print_info, create_gmin_struct, pwm_init, pwm_run,
-        single_point_minimization, multi_point_minimization, AMR_minimization, MAGEMin_Data, W_Data,
-        MAGEMin_data2dataframe, MAGEMin_dataTE2dataframe,
+        point_wise_metastability,
+        single_point_minimization, multi_point_minimization, AMR_minimization, MAGEMin_Data,
+        MAGEMin_data2dataframe, MAGEMin_dataTE2dataframe, MAGEMin_data2dataframe_inlined,
+        
         Initialize_MAGEMin, Finalize_MAGEMin
 
-export wt2mol, mol2wt
+export wt2mol, mol2wt, get_molar_mass, vec_norm, FeO2Fe_O
+export compute_melt_viscosity_G08
 
-export adjust_chemical_system, TE_prediction, adjust_bulk_4_zircon
-export get_OL_KDs_database, get_MM_KDs_database, get_KP_Exp_KDs_database, get_IL_Exp_KDs_database, get_B_Nat_KDs_database, get_AV_Nat_KDs_database
+export TE_prediction, adjust_bulk_4_zircon, create_custom_KDs_database, get_TE_database, adjust_chemical_system
+export zirconium_saturation, sulfur_saturation, phosphate_saturation
+
 
 export initialize_AMR, split_and_keep, AMR
 
+export out_struct, out_TE_struct
+
+include("name_solvus.jl")
+
 """
-    Function to allocate memory for the output
+    get_molar_mass(oxide)
+
+    Retrieve the molar mass of a given oxide.
+
+    Parameters
+    ----------
+    oxide : String
+        Name of the oxide (e.g., "SiO2", "Al2O3").
+
+    Returns
+    -------
+    molar_mass : Float64
+        Molar mass of the specified oxide [g/mol].
+"""
+function get_molar_mass( oxide :: String)
+    ref_ox          = ["SiO2"; "Al2O3"; "CaO"; "MgO"; "FeO"; "Fe2O3"; "K2O"; "Na2O"; "TiO2"; "O"; "Cr2O3"; "MnO"; "H2O"; "CO2"; "S"; "P2O5"; "Fe"];
+	ref_MolarMass   = [60.08; 101.96; 56.08; 40.30; 71.85; 159.69; 94.2; 61.98; 79.88; 16.0; 151.99; 70.937; 18.015; 44.01; 32.06; 141.9445; 55.85];      #Molar mass of oxides
+
+    id_oxide        = findfirst(==(oxide), ref_ox)
+
+    return ref_MolarMass[id_oxide]
+end
+
+
+"""
+    allocate_output(n)
+
+    Allocate memory for the output vector of minimization results.
+
+    Parameters
+    ----------
+    n : Int64
+        Number of output structures to allocate.
+
+    Returns
+    -------
+    output : Vector{gmin_struct{Float64, Int64}}
+        Uninitialized vector of `gmin_struct` with length `n`.
 """
 function allocate_output(n::Int64)
     return Vector{gmin_struct{Float64, Int64}}(undef, n)
 end
 
+function vec_norm(v::AbstractVector)
+    sqrt(sum(abs2, v))
+end
+
+"""
+    anhydrous_renormalization(bulk, oxide)
+
+    Renormalize the bulk rock composition to remove water (H2O) if present.
+
+    Parameters
+    ----------
+    bulk : Vector{Float64}
+        Bulk rock composition vector.
+    oxide : Vector{String}
+        List of oxide names corresponding to `bulk`.
+
+    Returns
+    -------
+    bulk_dry : Vector{Float64}
+        Renormalized anhydrous bulk rock composition.
+"""
 function anhydrous_renormalization( bulk    :: Vector{Float64},
                                     oxide   :: Vector{String})
 
@@ -49,7 +116,7 @@ function anhydrous_renormalization( bulk    :: Vector{Float64},
         bulk_dry[H2O_index] = 0.0
         bulk_dry ./= sum(bulk_dry)
     else
-        println("No water oxide in the system!")
+        # println("No water oxide in the system!")
         bulk_dry = bulk ./ sum(bulk)
     end
 
@@ -57,7 +124,174 @@ function anhydrous_renormalization( bulk    :: Vector{Float64},
 end
 
 """
-    structure that holds the result of the pointwise minimization
+    gmin_struct{T, I}
+
+    Structure that holds the result of the pointwise Gibbs energy minimization.
+
+    Fields
+    ------
+    MAGEMin_ver : String
+        MAGEMin version string.
+    dataset : String
+        Dataset name.
+    database : String
+        Database name.
+    buffer : String
+        Buffer type.
+    buffer_n : T
+        Buffer value.
+    G_system : T
+        Gibbs free energy of the system.
+    Gamma : Vector{T}
+        Chemical potentials of oxides.
+    P_kbar : T
+        Pressure [kbar].
+    T_C : T
+        Temperature [°C].
+    X : Vector{T}
+        Compositional variable(s).
+    M_sys : T
+        Molar mass of the system.
+    bulk : Vector{T}
+        Bulk rock composition [mol].
+    bulk_M : Vector{T}
+        Bulk melt composition [mol].
+    bulk_S : Vector{T}
+        Bulk solid composition [mol].
+    bulk_F : Vector{T}
+        Bulk fluid composition [mol].
+    bulk_wt : Vector{T}
+        Bulk rock composition [wt].
+    bulk_M_wt : Vector{T}
+        Bulk melt composition [wt].
+    bulk_S_wt : Vector{T}
+        Bulk solid composition [wt].
+    bulk_F_wt : Vector{T}
+        Bulk fluid composition [wt].
+    frac_M : T
+        Melt fraction [mol].
+    frac_S : T
+        Solid fraction [mol].
+    frac_F : T
+        Fluid fraction [mol].
+    frac_M_wt : T
+        Melt fraction [wt].
+    frac_S_wt : T
+        Solid fraction [wt].
+    frac_F_wt : T
+        Fluid fraction [wt].
+    frac_M_vol : T
+        Melt fraction [vol].
+    frac_S_vol : T
+        Solid fraction [vol].
+    frac_F_vol : T
+        Fluid fraction [vol].
+    entropy_S : T
+        Entropy of solid [J/K].
+    entropy_M : T
+        Entropy of melt [J/K].
+    entropy_F : T
+        Entropy of fluid [J/K].
+    alpha : Vector{T}
+        Thermal expansivity.
+    V : T
+        Volume.
+    s_cp : Vector{T}
+        Heat capacity.
+    rho : T
+        System density [kg/m³].
+    rho_M : T
+        Melt density [kg/m³].
+    rho_S : T
+        Solid density [kg/m³].
+    rho_F : T
+        Fluid density [kg/m³].
+    eta_M : T
+        Melt viscosity [Pa·s].
+    fO2 : T
+        Oxygen fugacity.
+    dQFM : T
+        Delta QFM buffer.
+    aH2O : T
+        Activity of H2O.
+    aSiO2 : T
+        Activity of SiO2.
+    aTiO2 : T
+        Activity of TiO2.
+    aAl2O3 : T
+        Activity of Al2O3.
+    aMgO : T
+        Activity of MgO.
+    aFeO : T
+        Activity of FeO.
+    n_PP : Int64
+        Number of pure phases.
+    n_SS : Int64
+        Number of solution phases.
+    n_mSS : Int64
+        Number of metastable solution phases.
+    ph_frac : Vector{T}
+        Phase fractions [mol].
+    ph_frac_wt : Vector{T}
+        Phase fractions [wt].
+    ph_frac_1at : Vector{T}
+        Phase fractions [mol, 1 atom basis].
+    ph_frac_vol : Vector{T}
+        Phase fractions [vol].
+    ph_type : Vector{I}
+        Type of phase (SS or PP).
+    ph_id : Vector{I}
+        Phase identifier.
+    ph_id_db : Vector{I}
+        Phase identifier in database.
+    ph : Vector{String}
+        Phase names.
+    sol_name : Vector{String}
+        Solution phase names.
+    SS_syms : Dict{Symbol, Int64}
+        Symbol-to-index mapping for solution phases.
+    PP_syms : Dict{Symbol, Int64}
+        Symbol-to-index mapping for pure phases.
+    SS_vec : Vector{LibMAGEMin.SS_data}
+        Solution phase data.
+    mSS_vec : Vector{LibMAGEMin.mSS_data}
+        Metastable solution phase data.
+    PP_vec : Vector{LibMAGEMin.PP_data}
+        Pure phase data.
+    oxides : Vector{String}
+        Oxide names.
+    elements : Vector{String}
+        Element names.
+    Vp : T
+        P-wave velocity [km/s].
+    Vs : T
+        S-wave velocity [km/s].
+    Vp_S : T
+        P-wave velocity of solid aggregate [km/s].
+    Vs_S : T
+        S-wave velocity of solid aggregate [km/s].
+    bulkMod : T
+        Elastic bulk modulus [GPa].
+    shearMod : T
+        Elastic shear modulus [GPa].
+    bulkModulus_M : T
+        Bulk modulus of melt [GPa].
+    bulkModulus_S : T
+        Bulk modulus of solid [GPa].
+    shearModulus_S : T
+        Shear modulus of solid [GPa].
+    entropy : Vector{T}
+        Entropy [J/K].
+    enthalpy : Vector{T}
+        Enthalpy [J].
+    iter : I
+        Number of iterations required.
+    bulk_res_norm : T
+        Bulk residual norm.
+    time_ms : T
+        Computational time [ms].
+    status : I
+        Status of calculations (0 = converged, 5 = not converged).
 """
 struct gmin_struct{T,I}
     MAGEMin_ver :: String
@@ -97,15 +331,20 @@ struct gmin_struct{T,I}
     frac_S_vol   :: T
     frac_F_vol   :: T
 
+    entropy_S      :: T
+    entropy_M      :: T
+    entropy_F      :: T
+
     # Solid, melt, fluid densities
-    alpha       :: T
+    alpha       :: Vector{T}
     V           :: T
-    # cp          :: T
+    V_cm3    :: T
     s_cp        :: Vector{T}
     rho         :: T
     rho_M       :: T
     rho_S       :: T
     rho_F       :: T
+    eta_M       :: T
 
     # Oxygen fugacity
     fO2         :: T
@@ -134,6 +373,9 @@ struct gmin_struct{T,I}
     ph          :: Vector{String}       # Name of phase
     sol_name    :: Vector{String}       # Name of phase
 
+    SS_syms     :: Dict{Symbol, Int64}
+    PP_syms     :: Dict{Symbol, Int64}
+
     SS_vec      :: Vector{LibMAGEMin.SS_data}
     mSS_vec     :: Vector{LibMAGEMin.mSS_data}
     PP_vec      :: Vector{LibMAGEMin.PP_data}
@@ -153,8 +395,8 @@ struct gmin_struct{T,I}
     shearModulus_S  :: T                # Elastic shear modulus
 
     # thermodynamic properties
-    entropy         :: T          # entropy
-    enthalpy        :: T         # enthalpy
+    entropy         :: Vector{T}         # entropy
+    enthalpy        :: Vector{T}        # enthalpy
 
     # Numerics:
     iter            :: I             # number of iterations required
@@ -163,15 +405,6 @@ struct gmin_struct{T,I}
     status          :: I           # status of calculations
 end
 
-# struct light_gmin_struct{T <: Float32, I <: Int8} 
-#     P_kbar      :: T                    # Pressure in kbar
-#     T_C         :: T                    # Temperature in Celsius
-   
-#     ph_frac_1at :: Vector{T}            # phase fractions
-#     ph_type     :: Vector{I}            # type of phase (SS or PP)
-#     ph_id_db    :: Vector{I}            # id of phase
-#     xeos        :: Vector{Vector{T}}    # Name of phase
-# end
 struct light_gmin_struct{T <: Float32, I <: Int8} 
     P_kbar      :: T                    # Pressure in kbar
     T_C         :: T                    # Temperature in Celsius
@@ -193,11 +426,32 @@ struct light_gmin_struct{T <: Float32, I <: Int8}
     rho_M       :: T
 
     s_cp        :: Vector{T}
-
+    alpha       :: Vector{T}
 end
 
 """
-    Holds general information about solution phases
+    ss_infos
+
+    Mutable structure holding general information about a solution phase.
+
+    Fields
+    ------
+    ss_fName : String
+        Full name of the solution phase.
+    ss_name : String
+        Short name of the solution phase.
+    n_em : Int64
+        Number of endmembers.
+    n_xeos : Int64
+        Number of compositional variables.
+    n_sf : Int64
+        Number of site fractions.
+    ss_em : Vector{String}
+        Endmember names.
+    ss_xeos : Vector{String}
+        Compositional variable names.
+    ss_sf : Vector{String}
+        Site fraction names.
 """
 mutable struct ss_infos
     ss_fName:: String
@@ -211,7 +465,26 @@ mutable struct ss_infos
 end
 
 """
-    Holds general information about the database
+    db_infos
+
+    Mutable structure holding general information about the thermodynamic database.
+
+    Fields
+    ------
+    db_name : String
+        Database short name.
+    db_info : String
+        Database description.
+    db_dataset : Int64
+        Dataset identifier.
+    dataset_opt : Union{Nothing, Int64, NTuple{5,Int64}, NTuple{4,Int64}}
+        Available dataset options.
+    data_ss : Array{ss_infos}
+        Solution phase information array.
+    ss_name : Array{String}
+        Solution phase names.
+    data_pp : Array{String}
+        Pure phase names.
 """
 mutable struct db_infos
     db_name :: String
@@ -225,7 +498,22 @@ end
         
 
 """
-    Holds the MAGEMin databases & required structures for every thread
+    MAGEMin_Data{TypeGV, TypeZB, TypeDB, TypeSplxData}
+
+    Mutable structure holding the MAGEMin databases and required structures for every thread.
+
+    Fields
+    ------
+    db : String
+        Database name.
+    gv : TypeGV
+        Global variables (one per thread).
+    z_b : TypeZB
+        Bulk info structures (one per thread).
+    DB : TypeDB
+        Database structures (one per thread).
+    splx_data : TypeSplxData
+        Simplex data structures (one per thread).
 """
 mutable struct MAGEMin_Data{TypeGV, TypeZB, TypeDB, TypeSplxData}
     db          :: String
@@ -236,30 +524,71 @@ mutable struct MAGEMin_Data{TypeGV, TypeZB, TypeDB, TypeSplxData}
 end
 
 """
-    Holds the overriding Ws parameters
-0 = "mp", 1 = "mb", 2 = "ig", 3 = "igad", 4 = "um", 5 = "ume", 6 = "mtl", 7 = "mpe", 8 = "sb11", 9 = "sb21"
+    W_data{T, I}
+
+    Mutable structure holding overriding Margules (Ws) parameters.
+
+    Database mapping: 0 = "mp", 1 = "mb", 11 = "mbe", 2 = "ig", 3 = "igad", 4 = "um", 5 = "ume", 6 = "mtl", 7 = "mpe", 8 = "sb11", 9 = "sb21", 10 = "sb24".
+
+    Fields
+    ------
+    dtb : I
+        Database identifier.
+    ss_ids : I
+        Solution phase identifier.
+    n_Ws : I
+        Number of Margules parameters.
+    Ws : Matrix{T}
+        Margules parameters matrix (S, T, P × n_Ws).
 """
-mutable struct W_Data
-    SS_id   :: Vector{Int64}
-    SS_len  :: Vector{Int64}
-    Ws      :: Vector{Matrix{Float64}}
+mutable struct W_data{T <: Float64,I <: Int64}
+    dtb         :: I
+    ss_ids      :: I
+    n_Ws        :: I
+    Ws          :: Matrix{T}   #S T P * n_Ws
 end
 
 
 """
-    Function to retrieve the general information of the databases
+    retrieve_solution_phase_information(dtb)
+
+    Retrieve the general information of the thermodynamic databases (solution phases, endmembers, pure phases).
+
+    Parameters
+    ----------
+    dtb : String
+        Database name (e.g., "mp", "mb", "ig", "igad", "um", "ume", "mtl", "mpe", "sb11", "sb21", "sb24").
+
+    Returns
+    -------
+    db_inf : db_infos
+        Structure containing database information (solution phases, pure phases, endmembers).
 """
 function retrieve_solution_phase_information(dtb)
 
-    db_inf  = db_infos[db_infos("mp", "Metapelite (White et al., 2014)", 62, (62, 633, 634, 635, 636), ss_infos[ss_infos("liq_W14", "liq", 8, 7, 10, ["none", "q4L", "abL", "kspL", "anL", "slL", "fo2L", "fa2L", "h2oL"], ["none", "q", "fsp", "na", "an", "ol", "x", "h2o"], ["none", "fac", "pq", "xab", "xksp", "pan", "psil", "pol", "xFe", "xMg", "ph2o"]), ss_infos("fsp_H22", "fsp", 3, 2, 5, ["none", "ab", "an", "san"], ["none", "ca", "k"], ["none", "xNaA", "xCaA", "xKA", "xAlTB", "xSiTB"]), ss_infos("bi_W14", "bi", 7, 6, 13, ["none", "phl", "annm", "obi", "east", "tbi", "fbi", "mmbi"], ["none", "x", "m", "y", "f", "t", "Q"], ["none", "xMgM3", "xMnM3", "xFeM3", "xFe3M3", "xTiM3", "xAlM3", "xMgM12", "xMnM12", "xFeM12", "xSiT", "xAlT", "xOHV", "xOV"]), ss_infos("g_W14", "g", 5, 4, 6, ["none", "py", "alm", "spss", "gr", "kho"], ["none", "x", "z", "m", "f"], ["none", "xMgX", "xFeX", "xMnX", "xCaX", "xAlY", "xFe3Y"]), ss_infos("ep_H11", "ep", 3, 2, 4, ["none", "cz", "ep", "fep"], ["none", "f", "Q"], ["none", "xFeM1", "xAlM1", "xFeM3", "xAlM3"]), ss_infos("ma_W14", "ma", 6, 5, 10, ["none", "mut", "celt", "fcelt", "pat", "ma", "fmu"], ["none", "x", "y", "f", "n", "c"], ["none", "xKA", "xNaA", "xCaA", "xMgM2A", "xFeM2A", "xAlM2A", "xAlM2B", "xFe3M2B", "xSiT1", "xAlT1"]), ss_infos("mu_W14", "mu", 6, 5, 10, ["none", "mut", "cel", "fcel", "pat", "ma", "fmu"], ["none", "x", "y", "f", "n", "c"], ["none", "xKA", "xNaA", "xCaA", "xMgM2A", "xFeM2A", "xAlM2A", "xAlM2B", "xFe3M2B", "xSiT1", "xAlT1"]), ss_infos("opx_W14", "opx", 7, 6, 11, ["none", "en", "fs", "fm", "mgts", "fopx", "mnopx", "odi"], ["none", "x", "m", "y", "f", "c", "Q"], ["none", "xMgM1", "xFeM1", "xMnM1", "xFe3M1", "xAlM1", "xMgM2", "xFeM2", "xMnM2", "xCaM2", "xSiT", "xAlT"]), ss_infos("sa_W14", "sa", 5, 4, 8, ["none", "spr4", "spr5", "fspm", "spro", "ospr"], ["none", "x", "y", "f", "Q"], ["none", "xMgM3", "xFeM3", "xFe3M3", "xAlM3", "xMgM456", "xFeM456", "xSiT", "xAlT"]), ss_infos("cd_W14", "cd", 4, 3, 5, ["none", "crd", "fcrd", "hcrd", "mncd"], ["none", "x", "m", "h"], ["none", "xFeX", "xMgX", "xMnX", "xH2OH", "xvH"]), ss_infos("st_W14", "st", 5, 4, 7, ["none", "mstm", "fst", "mnstm", "msto", "mstt"], ["none", "x", "m", "f", "t"], ["none", "xMgX", "xFeX", "xMnX", "xAlY", "xFe3Y", "xTiY", "xvY"]), ss_infos("chl_W14", "chl", 8, 7, 12, ["none", "clin", "afchl", "ames", "daph", "ochl1", "ochl4", "f3clin", "mmchl"], ["none", "x", "y", "f", "m", "QAl", "Q1", "Q4"], ["none", "xMgM1", "xMnM1", "xFeM1", "xAlM1", "xMgM23", "xFeM23", "xMgM4", "xFeM4", "xFe3M4", "xAlM4", "xSiT2", "xAlT2"]), ss_infos("ctd_W14", "ctd", 4, 3, 5, ["none", "mctd", "fctd", "mnct", "ctdo"], ["none", "x", "m", "f"], ["none", "xAlM1A", "xFe3M1A", "xFeM1B", "xMgM1B", "xMnM1B"]), ss_infos("sp_W02", "sp", 4, 3, 5, ["none", "herc", "sp", "mt", "usp"], ["none", "x", "y", "z"], ["none", "xAl", "xFe3", "xTi", "xMg", "xFe2"]), ss_infos("mt_W00", "mt", 3, 2, 5, ["none", "imt", "dmt", "usp"], ["none", "x", "Q"], ["none", "xTiM", "xFe3M", "xFeM", "xFe3T", "xFeT"]), ss_infos("ilm_W00", "ilm", 3, 2, 6, ["none", "oilm", "dilm", "dhem"], ["none", "x", "Q"], ["none", "xFe2A", "xTiA", "xFe3A", "xFe2B", "xTiB", "xFe3B"]), ss_infos("ilmm_W14", "ilmm", 5, 4, 7, ["none", "oilm", "dilm", "dhem", "geik", "pnt"], ["none", "i", "g", "m", "Q"], ["none", "xFeA", "xTiA", "xMgA", "xMnA", "xFe3A", "xFeB", "xTiB"])], ["liq", "fsp", "bi", "g", "ep", "ma", "mu", "opx", "sa", "cd", "st", "chl", "ctd", "sp", "mt", "ilm", "ilmm"], ["q", "crst", "trd", "coe", "stv", "ky", "sill", "and", "ru", "sph", "O2", "H2O", "zo", "qfm", "mw", "qif", "nno", "hm", "iw", "cco", "aH2O", "aO2", "aMgO", "aFeO", "aAl2O3", "aTiO2"]), db_infos("mb", "Metabasite (Green et al., 2016)", 62, (62, 633, 634, 635, 636), ss_infos[ss_infos("sp_W02", "sp", 4, 3, 5, ["none", "herc", "sp", "mt", "usp"], ["none", "x", "y", "z"], ["none", "xAl", "xFe3", "xTi", "xMg", "xFe2"]), ss_infos("opx_W14", "opx", 6, 5, 9, ["none", "en", "fs", "fm", "mgts", "fopx", "odi"], ["none", "x", "y", "f", "c", "Q"], ["none", "xMgM1", "xFeM1", "xFe3M1", "xAlM1", "xMgM2", "xFeM2", "xCaM2", "xAlT", "xSiT"]), ss_infos("fsp_H22", "fsp", 3, 2, 5, ["none", "ab", "an", "san"], ["none", "ca", "k"], ["none", "xNaA", "xCaA", "xKA", "xAlTB", "xSiTB"]), ss_infos("liq_G16", "liq", 9, 8, 11, ["none", "q4L", "abL", "kspL", "wo1L", "sl1L", "fa2L", "fo2L", "h2oL", "anoL"], ["none", "q", "fsp", "na", "wo", "sil", "ol", "x", "yan"], ["none", "fac", "pq", "xab", "xksp", "pwo", "psil", "ph2o", "pan", "pol", "xFe", "xMg"]), ss_infos("mu_W14", "mu", 6, 5, 10, ["none", "mu", "cel", "fcel", "pa", "mam", "fmu"], ["none", "x", "y", "f", "n", "c"], ["none", "xKA", "xNaA", "xCaA", "xMgM2A", "xFeM2A", "xAlM2A", "xAlM2B", "xFe3M2B", "xSiT1", "xAlT1"]), ss_infos("ilmm_W14", "ilmm", 4, 3, 7, ["none", "oilm", "dilm", "dhem", "geik"], ["none", "c", "t", "Q"], ["none", "xFeA", "xTiA", "xMgA", "xFe3A", "xFeB", "xTiB", "xFe3B"]), ss_infos("ilm_W00", "ilm", 3, 2, 6, ["none", "oilm", "dilm", "dhem"], ["none", "x", "Q"], ["none", "xFe2A", "xTiA", "xFe3A", "xFe2B", "xTiB", "xFe3B"]), ss_infos("ol_H11", "ol", 2, 1, 2, ["none", "fo", "fa"], ["none", "x"], ["none", "xMgM", "xFeM"]), ss_infos("amp_G16", "amp", 11, 10, 18, ["none", "tr", "tsm", "prgm", "glm", "cumm", "grnm", "a", "b", "mrb", "kprg", "tts"], ["none", "x", "y", "z", "a", "k", "c", "f", "t", "Q1", "Q2"], ["none", "xvA", "xNaA", "xKA", "xMgM13", "xFeM13", "xMgM2", "xFeM2", "xAlM2", "xFe3M2", "xTiM2", "xCaM4", "xMgM4", "xFeM4", "xNaM4", "xSiT1", "xAlT1", "xOHV", "xOV"]), ss_infos("ep_H11", "ep", 3, 2, 4, ["none", "cz", "ep", "fep"], ["none", "f", "Q"], ["none", "xFeM1", "xAlM1", "xFeM3", "xAlM3"]), ss_infos("g_W14", "g", 4, 3, 5, ["none", "py", "alm", "gr", "kho"], ["none", "x", "z", "f"], ["none", "xMgX", "xFeX", "xCaX", "xAlY", "xFe3Y"]), ss_infos("chl_W14", "chl", 7, 6, 11, ["none", "clin", "afchl", "ames", "daph", "ochl1", "ochl4", "f3clin"], ["none", "x", "y", "f", "QAl", "Q1", "Q4"], ["none", "xMgM1", "xFeM1", "xAlM1", "xMgM23", "xFeM23", "xMgM4", "xFeM4", "xFe3M4", "xAlM4", "xSiT2", "xAlT2"]), ss_infos("bi_W14", "bi", 6, 5, 11, ["none", "phl", "annm", "obi", "east", "tbi", "fbi"], ["none", "x", "y", "f", "t", "Q"], ["none", "xMgM3", "xFeM3", "xFe3M3", "xTiM3", "xAlM3", "xMgM12", "xFeM12", "xSiT", "xAlT", "xOHV", "xOV"]), ss_infos("dio_G16", "dio", 7, 6, 12, ["none", "jd", "di", "hed", "acmm", "om", "cfm", "jac"], ["none", "x", "j", "t", "c", "Qaf", "Qfm"], ["none", "xMgM1m", "xFeM1m", "xFe3M1m", "xAlM1m", "xMgM1a", "xFeM1a", "xFe3M1a", "xAlM1a", "xNaM2c", "xCaM2c", "xNaM2n", "xCaM2n"]), ss_infos("aug_G16", "aug", 8, 7, 12, ["none", "di", "cenh", "cfs", "jdm", "acmm", "ocats", "dcats", "fmc"], ["none", "x", "y", "f", "z", "j", "Qfm", "Qa1"], ["none", "xMgM1", "xFeM1", "xAlM1", "xFe3M1", "xMgM2", "xFeM2", "xCaM2", "xNaM2", "xSiT1", "xAlT1", "xSiT2", "xAlT2"]), ss_infos("abc_H11", "abc", 2, 1, 2, ["none", "abm", "anm"], ["none", "ca"], ["none", "xNaA", "xCaA"]), ss_infos("spl_W02", "spl", 3, 2, 4, ["none", "herc", "sp", "usp"], ["none", "x", "y"], ["none", "xAl", "xTi", "xMg", "xFe2"])], ["sp", "opx", "fsp", "liq", "mu", "ilmm", "ilm", "ol", "amp", "ep", "g", "chl", "bi", "dio", "aug", "abc", "spl"], ["q", "crst", "trd", "coe", "law", "ky", "sill", "and", "ru", "sph", "ab", "H2O", "zo", "qfm", "mw", "qif", "nno", "hm", "iw", "cco", "aH2O", "aO2", "aMgO", "aFeO", "aAl2O3", "aTiO2"]), db_infos("ig", "Igneous (Green et al., 2025, corrected after Holland et al., 2018)", 636, (62, 633, 634, 635, 636), ss_infos[ss_infos("spl_T21", "spl", 8, 7, 10, ["none", "nsp", "isp", "nhc", "ihc", "nmt", "imt", "pcr", "qndm"], ["none", "x", "y", "c", "t", "Q1", "Q2", "Q3"], ["none", "xMgT", "xFeT", "xAlT", "xFe3T", "xMgM", "xFeM", "xAlM", "xFe3M", "xCrM", "xTiM"]), ss_infos("bi_G25", "bi", 6, 5, 11, ["none", "phl", "annm", "obi", "eas", "tbi", "fbi"], ["none", "x", "y", "f", "t", "Q"], ["none", "xMgM3", "xFeM3", "xFe3M3", "xTiM3", "xAlM3", "xMgM12", "xFeM12", "xSiT", "xAlT", "xOHV", "xOV"]), ss_infos("cd_G25", "cd", 3, 2, 4, ["none", "crd", "fcrd", "hcrd"], ["none", "x", "h"], ["none", "xFeX", "xMgX", "xH2OH", "xvH"]), ss_infos("cpx_W24", "cpx", 10, 9, 13, ["none", "di", "cfs", "cats", "crdi", "cess", "cbuf", "jd", "cen", "cfm", "kjd"], ["none", "x", "y", "o", "n", "Q", "f", "cr", "t", "k"], ["none", "xMgM1", "xFeM1", "xAlM1", "xFe3M1", "xCrM1", "xTiM1", "xMgM2", "xFeM2", "xCaM2", "xNaM2", "xKM2", "xSiT", "xAlT"]), ss_infos("ep_H11", "ep", 3, 2, 4, ["none", "cz", "ep", "fep"], ["none", "f", "Q"], ["none", "xFeM1", "xAlM1", "xFeM3", "xAlM3"]), ss_infos("g_W24", "g", 6, 5, 8, ["none", "py", "alm", "gr", "andr", "knom", "tig"], ["none", "x", "c", "f", "cr", "t"], ["none", "xMgM1", "xFeM1", "xCaM1", "xAlM2", "xCrM2", "xFe3M2", "xMgM2", "xTiM2"]), ss_infos("amp_G16", "amp", 11, 10, 18, ["none", "tr", "tsm", "prgm", "glm", "cumm", "grnm", "a", "b", "mrb", "kprg", "tts"], ["none", "x", "y", "z", "a", "k", "c", "f", "t", "Q1", "Q2"], ["none", "xvA", "xNaA", "xKA", "xMgM13", "xFeM13", "xMgM2", "xFeM2", "xAlM2", "xFe3M2", "xTiM2", "xCaM4", "xMgM4", "xFeM4", "xNaM4", "xSiT1", "xAlT1", "xOHV", "xOV"]), ss_infos("ilm_W24", "ilm", 5, 4, 8, ["none", "oilm", "dilm", "hm", "ogk", "dgk"], ["none", "i", "m", "Q", "Qt"], ["none", "xFeA", "xTiA", "xFe3A", "xMgA", "xFeB", "xTiB", "xFe3B", "xMgB"]), ss_infos("liq_G25w", "liq", 12, 11, 18, ["none", "q4L", "slL", "wo1L", "fo2L", "fa2L", "jdL", "hmL", "ekL", "tiL", "kjL", "ctL", "h2o1L"], ["none", "wo", "sl", "fo", "fa", "jd", "hm", "ek", "ti", "kj", "yct", "h2o"], ["none", "pq", "psl", "pwo", "pjd", "phm", "pek", "pti", "pkj", "pct", "pol", "sumT", "mgM", "feM", "CaM", "AlM", "sumM", "xh", "xv"]), ss_infos("ol_H18", "ol", 4, 3, 5, ["none", "mont", "fa", "fo", "cfm"], ["none", "x", "c", "Q"], ["none", "xMgM1", "xFeM1", "xMgM2", "xFeM2", "xCaM2"]), ss_infos("opx_W24", "opx", 9, 8, 12, ["none", "en", "fs", "fm", "odi", "mgts", "cren", "obuf", "mess", "ojd"], ["none", "x", "y", "c", "Q", "f", "t", "cr", "j"], ["none", "xMgM1", "xFeM1", "xAlM1", "xFe3M1", "xCrM1", "xTiM1", "xMgM2", "xFeM2", "xCaM2", "xNaM2", "xSiT", "xAlT"]), ss_infos("fsp_H22", "fsp", 3, 2, 5, ["none", "ab", "an", "san"], ["none", "ca", "k"], ["none", "xNaA", "xCaA", "xKA", "xAlTB", "xSiTB"]), ss_infos("fl_G25", "fl", 11, 10, 12, ["none", "qfL", "slfL", "wofL", "fofL", "fafL", "jdfL", "hmfL", "ekfL", "tifL", "kjfL", "H2O"], ["none", "wo", "sl", "fo", "fa", "jd", "hm", "ek", "ti", "kj", "h2o"], ["none", "pq", "psl", "pwo", "pfo", "pfa", "pjd", "phm", "pek", "pti", "pkj", "ph2o", "fac"]), ss_infos("mu_W14", "mu", 6, 5, 10, ["none", "mu", "cel", "fcel", "pa", "mam", "fmu"], ["none", "x", "y", "f", "n", "c"], ["none", "xKA", "xNaA", "xCaA", "xMgM2A", "xFeM2A", "xAlM2A", "xAlM2B", "xFe3M2B", "xSiT1", "xAlT1"]), ss_infos("fper", "fper", 2, 1, 2, ["none", "per", "wu"], ["none", "x"], ["none", "xFe", "xMg"]), ss_infos("chl_W14", "chl", 7, 6, 11, ["none", "clin", "afchl", "ames", "daph", "ochl1", "ochl4", "f3clin"], ["none", "x", "y", "f", "QAl", "Q1", "Q4"], ["none", "xMgM1", "xFeM1", "xAlM1", "xMgM23", "xFeM23", "xMgM4", "xFeM4", "xFe3M4", "xAlM4", "xSiT2", "xAlT2"])], ["spl", "bi", "cd", "cpx", "ep", "g", "amp", "ilm", "liq", "ol", "opx", "fsp", "fl", "mu", "fper", "chl"], ["ne", "q", "crst", "trd", "coe", "stv", "ky", "sill", "and", "ru", "sph", "O2", "H2O", "qfm", "mw", "qif", "nno", "hm", "iw", "cco", "aH2O", "aO2", "aMgO", "aFeO", "aAl2O3", "aTiO2"]), db_infos("igad", "Igneous alkaline dry (Weller et al., 2024)", 636, (62, 633, 634, 635, 636), ss_infos[ss_infos("spl_T21", "spl", 8, 7, 10, ["none", "nsp", "isp", "nhc", "ihc", "nmt", "imt", "pcr", "usp"], ["none", "x", "y", "c", "t", "Q1", "Q2", "Q3"], ["none", "xMgT", "xFeT", "xAlT", "xFe3T", "xMgM", "xFeM", "xAlM", "xFe3M", "xCrM", "xTiM"]), ss_infos("cpx_W24", "cpx", 10, 9, 13, ["none", "di", "cfs", "cats", "crdi", "cess", "cbuf", "jd", "cen", "cfm", "kjd"], ["none", "x", "y", "o", "n", "Q", "f", "cr", "t", "k"], ["none", "xMgM1", "xFeM1", "xAlM1", "xFe3M1", "xCrM1", "xTiM1", "xMgM2", "xFeM2", "xCaM2", "xNaM2", "xKM2", "xSiT", "xAlT"]), ss_infos("g_W24", "g", 6, 5, 8, ["none", "py", "alm", "gr", "andr", "knr", "tig"], ["none", "x", "c", "f", "cr", "t"], ["none", "xMgM1", "xFeM1", "xCaM1", "xAlM2", "xCrM2", "xFe3M2", "xMgM2", "xTiM2"]), ss_infos("ilm_W24", "ilm", 5, 4, 8, ["none", "oilm", "dilm", "hm", "ogk", "dgk"], ["none", "i", "m", "Q", "Qt"], ["none", "xFeA", "xTiA", "xFe3A", "xMgA", "xFeB", "xTiB", "xFe3B", "xMgB"]), ss_infos("liq_W24d", "liq", 14, 13, 18, ["none", "q3L", "sl1L", "wo1L", "fo2L", "fa2L", "nmL", "hmL", "ekL", "tiL", "kmL", "anL", "ab1L", "enL", "kfL"], ["none", "wo", "sl", "fo", "fa", "ns", "hm", "ek", "ti", "ks", "yan", "yab", "yen", "ykf"], ["none", "pq", "psl", "pwo", "pns", "phm", "pek", "pti", "pks", "pab", "pan", "pen", "pkf", "pol", "mgM", "feM", "CaM", "AlM", "sumM"]), ss_infos("ol_H18", "ol", 4, 3, 5, ["none", "mnt", "fa", "fo", "cfm"], ["none", "x", "c", "Q"], ["none", "xMgM1", "xFeM1", "xMgM2", "xFeM2", "xCaM2"]), ss_infos("opx_W24", "opx", 9, 8, 12, ["none", "en", "fs", "fm", "odi", "mgts", "cren", "obuf", "mess", "ojd"], ["none", "x", "y", "c", "Q", "f", "t", "cr", "j"], ["none", "xMgM1", "xFeM1", "xAlM1", "xFe3M1", "xCrM1", "xTiM1", "xMgM2", "xFeM2", "xCaM2", "xNaM2", "xSiT", "xAlT"]), ss_infos("fsp_H22", "fsp", 3, 2, 5, ["none", "ab", "an", "san"], ["none", "ca", "k"], ["none", "xNaA", "xCaA", "xKA", "xAlTB", "xSiTB"]), ss_infos("lct_W24", "lct", 2, 1, 2, ["none", "nlc", "klc"], ["none", "n"], ["none", "xNaA", "xKA"]), ss_infos("mel_W24", "mel", 5, 4, 8, ["none", "geh", "ak", "fak", "nml", "fge"], ["none", "x", "n", "y", "f"], ["none", "xNaM1", "xCaM1", "xMgT1", "xFeT1", "xAlT1", "xFe3T1", "xAlT2", "xSiT2"]), ss_infos("nph_W24", "nph", 6, 5, 9, ["none", "neN", "neS", "neK", "neO", "neC", "neF"], ["none", "s", "k", "Q", "f", "c"], ["none", "xNaA1", "xKA1", "xCaA1", "xNaA2", "xKA2", "xvA2", "xAlT2", "xSiT2", "xFe3T2"]), ss_infos("kals_W24", "kals", 2, 1, 2, ["none", "nks", "kls"], ["none", "k"], ["none", "xKA", "xNaA"])], ["spl", "cpx", "g", "ilm", "liq", "ol", "opx", "fsp", "lct", "mel", "nph", "kals"], ["q", "crst", "trd", "coe", "stv", "ky", "sill", "and", "ru", "sph", "O2", "qfm", "mw", "qif", "nno", "hm", "iw", "cco", "aH2O", "aO2", "aMgO", "aFeO", "aAl2O3", "aTiO2"]), db_infos("um", "Ultramafic (Evans & Frost., 2021)", 633, (62, 633, 634, 635, 636), ss_infos[ss_infos("fl_EF21", "fl", 2, 1, 2, ["none", "H2", "H2O"], ["none", "x"], ["none", "xH2", "xH2O"]), ss_infos("ol_H11", "ol", 2, 1, 2, ["none", "fo", "fa"], ["none", "x"], ["none", "xMg", "xFe"]), ss_infos("br_E13", "br", 2, 1, 2, ["none", "br", "fbr"], ["none", "x"], ["none", "xMg", "xFe"]), ss_infos("ch_EF21", "ch", 2, 1, 2, ["none", "chum", "chuf"], ["none", "x"], ["none", "xMg", "xFe"]), ss_infos("atg_EF21", "atg", 5, 4, 8, ["none", "atgf", "fatg", "atgo", "aatg", "oatg"], ["none", "x", "y", "f", "t"], ["none", "xMgM1", "xFeM1", "xFe3M1", "xAlM1", "xMgM2", "xFeM2", "xSiT", "xAlT"]), ss_infos("g_H18", "g", 2, 1, 2, ["none", "py", "alm"], ["none", "x"], ["none", "xMgM1", "xFeM1"]), ss_infos("ta_EF21", "ta", 6, 5, 9, ["none", "ta", "fta", "tao", "tats", "ota", "tap"], ["none", "x", "y", "f", "v", "Q"], ["none", "xMgM1", "xFeM1", "xvM1", "xMgM23", "xFeM23", "xFe3M23", "xAlM23", "xSiT2", "xAlT2"]), ss_infos("chl_W14", "chl", 7, 6, 11, ["none", "clin", "afchl", "ames", "daph", "ochl1", "ochl4", "f3clin"], ["none", "x", "y", "f", "m", "t", "QA1"], ["none", "xMgM1", "xFeM1", "xAlM1", "xMgM23", "xFeM23", "xMgM4", "xFeM4", "xFe3M4", "xAlM4", "xSiT2", "xAlT2"]), ss_infos("spi_W02", "spi", 3, 2, 4, ["none", "herc", "sp", "mt"], ["none", "x", "y"], ["none", "xAl", "xFe3", "xMg", "xFe2"]), ss_infos("opx_W14", "opx", 5, 4, 8, ["none", "en", "fs", "fm", "mgts", "fopx"], ["none", "x", "y", "f", "Q"], ["none", "xMgM1", "xFeM1", "xFe3M1", "xAlM1", "xMgM2", "xFeM2", "xAlT", "xSiT"]), ss_infos("po_E10", "po", 2, 1, 2, ["none", "trov", "trot"], ["none", "y"], ["none", "xfeM2", "xVM2"]), ss_infos("anth_D07", "anth", 5, 4, 9, ["none", "anth", "gedf", "fant", "a", "b"], ["none", "x", "y", "z", "a"], ["none", "xMgM4", "xFeM4", "xMgM13", "xFeM13", "xAlM2", "xMgM2", "xFeM2", "xAlT1", "xSiT1"])], ["fl", "ol", "br", "ch", "atg", "g", "ta", "chl", "spi", "opx", "po", "anth"], ["q", "crst", "trd", "coe", "stv", "ky", "sill", "and", "pyr", "O2", "qfm", "qif", "nno", "hm", "mw", "iw", "cco", "aH2O", "aO2", "aMgO", "aFeO", "aAl2O3", "aTiO2"]), db_infos("ume", "Ultramafic extended (Evans & Frost., 2021) with pl, amp and aug from Green et al., 2016", 633, (62, 633, 634, 635, 636), ss_infos[ss_infos("fl_EF21", "fl", 2, 1, 2, ["none", "H2", "H2O"], ["none", "x"], ["none", "xH2", "xH2O"]), ss_infos("ol_H11", "ol", 2, 1, 2, ["none", "fo", "fa"], ["none", "x"], ["none", "xMg", "xFe"]), ss_infos("br_E13", "br", 2, 1, 2, ["none", "br", "fbr"], ["none", "x"], ["none", "xMg", "xFe"]), ss_infos("ch_EF21", "ch", 2, 1, 2, ["none", "chum", "chuf"], ["none", "x"], ["none", "xMg", "xFe"]), ss_infos("atg_EF21", "atg", 5, 4, 8, ["none", "atgf", "fatg", "atgo", "aatg", "oatg"], ["none", "x", "y", "f", "t"], ["none", "xMgM1", "xFeM1", "xFe3M1", "xAlM1", "xMgM2", "xFeM2", "xSiT", "xAlT"]), ss_infos("g_H18", "g", 2, 1, 2, ["none", "py", "alm"], ["none", "x"], ["none", "xMgM1", "xFeM1"]), ss_infos("ta_EF21", "ta", 6, 5, 9, ["none", "ta", "fta", "tao", "tats", "ota", "tap"], ["none", "x", "y", "f", "v", "Q"], ["none", "xMgM1", "xFeM1", "xvM1", "xMgM23", "xFeM23", "xFe3M23", "xAlM23", "xSiT2", "xAlT2"]), ss_infos("chl_W14", "chl", 7, 6, 11, ["none", "clin", "afchl", "ames", "daph", "ochl1", "ochl4", "f3clin"], ["none", "x", "y", "f", "m", "t", "QA1"], ["none", "xMgM1", "xFeM1", "xAlM1", "xMgM23", "xFeM23", "xMgM4", "xFeM4", "xFe3M4", "xAlM4", "xSiT2", "xAlT2"]), ss_infos("spi_W02", "spi", 3, 2, 4, ["none", "herc", "sp", "mt"], ["none", "x", "y"], ["none", "xAl", "xFe3", "xMg", "xFe2"]), ss_infos("opx_W14", "opx", 5, 4, 8, ["none", "en", "fs", "fm", "mgts", "fopx"], ["none", "x", "y", "f", "Q"], ["none", "xMgM1", "xFeM1", "xFe3M1", "xAlM1", "xMgM2", "xFeM2", "xAlT", "xSiT"]), ss_infos("po_E10", "po", 2, 1, 2, ["none", "trov", "trot"], ["none", "y"], ["none", "xfeM2", "xVM2"]), ss_infos("anth_D07", "anth", 5, 4, 9, ["none", "anth", "gedf", "fant", "a", "b"], ["none", "x", "y", "z", "a"], ["none", "xMgM4", "xFeM4", "xMgM13", "xFeM13", "xAlM2", "xMgM2", "xFeM2", "xAlT1", "xSiT1"]), ss_infos("fsp_H22", "pl4tr", 2, 1, 4, ["none", "ab", "an"], ["none", "ca"], ["none", "xNaA", "xCaA", "xAlTB", "xSiTB"]), ss_infos("amp_G16", "amp", 9, 8, 14, ["none", "tr", "tsm", "prgm", "glm", "cumm", "grnm", "a", "b", "mrb"], ["none", "x", "y", "z", "a", "c", "f", "Q1", "Q2"], ["none", "xvA", "xNaA", "xMgM13", "xFeM13", "xMgM2", "xFeM2", "xAlM2", "xFe3M2", "xCaM4", "xMgM4", "xFeM4", "xNaM4", "xSiT1", "xAlT1"]), ss_infos("aug_G16", "aug", 8, 7, 12, ["none", "di", "cenh", "cfs", "jdm", "acmm", "ocats", "dcats", "fmc"], ["none", "x", "y", "f", "z", "j", "Qfm", "Qa1"], ["none", "xMgM1", "xFeM1", "xAlM1", "xFe3M1", "xMgM2", "xFeM2", "xCaM2", "xNaM2", "xSiT1", "xAlT1", "xSiT2", "xAlT2"])], ["fl", "ol", "br", "ch", "atg", "g", "ta", "chl", "spi", "opx", "po", "anth", "pl4tr", "amp", "aug"], ["q", "crst", "trd", "coe", "stv", "ky", "sill", "and", "pyr", "O2", "qfm", "qif", "nno", "hm", "mw", "iw", "cco", "aH2O", "aO2", "aMgO", "aFeO", "aAl2O3", "aTiO2"]), db_infos("mtl", "Mantle (Holland et al., 2013)", 633, (62, 633, 634, 635, 636), ss_infos[ss_infos("g_H13", "g", 6, 5, 8, ["none", "py", "alm", "gr", "maj", "gfm", "nagt"], ["none", "x", "c", "y", "Q", "n"], ["none", "xMgM1", "xFeM1", "xCaM1", "xNaM1", "xAlM2", "xMgM2", "xFeM2", "xSiM2"]), ss_infos("fp_H13", "fp", 2, 1, 2, ["none", "per", "fper"], ["none", "x"], ["none", "xMgM1", "xFeM1"]), ss_infos("mpv_H13", "mpv", 5, 4, 7, ["none", "mpv", "fpvm", "cpvm", "apv", "npvm"], ["none", "x", "y", "c", "n"], ["none", "xCaM1", "xMgM1", "xFeM1", "xNaM1", "xAlM1", "xAlM2", "xSiM2"]), ss_infos("cpv_H13", "cpv", 5, 4, 7, ["none", "mpv", "fpvm", "cpvm", "apv", "npvm"], ["none", "x", "y", "c", "n"], ["none", "xCaM1", "xMgM1", "xFeM1", "xNaM1", "xAlM1", "xAlM2", "xSiM2"]), ss_infos("crn_H13", "crn", 3, 2, 5, ["none", "cor", "mcor", "fcor"], ["none", "x", "y"], ["none", "xMgM1", "xFeM1", "xAlM1", "xAlM2", "xSiM2"]), ss_infos("cf_H13", "cf", 6, 5, 8, ["none", "macf", "cacf", "mscf", "fscf", "oscf", "nacfm"], ["none", "y", "x", "Q", "c", "n"], ["none", "xCaM1", "xMgM1", "xFeM1", "xNaM1", "xMgM2", "xFeM2", "xAlM2", "xSiM2"]), ss_infos("nal_H13", "nal", 7, 6, 10, ["none", "nanal", "canal", "manal", "msnal", "fsnal", "o1nal", "o2nal"], ["none", "y", "x", "Q1", "Q2", "c", "n"], ["none", "xCaM3", "xMgM3", "xFeM3", "xNaM3", "xMgM2", "xFeM2", "xMgM1", "xFeM1", "xAlM1", "xSiM1"]), ss_infos("aki_H13", "aki", 3, 2, 5, ["none", "aak", "mak", "fak"], ["none", "x", "y"], ["none", "xAlA", "xMgA", "xFeA", "xAlB", "xSiB"]), ss_infos("ol_H13", "ol", 2, 1, 2, ["none", "fo", "fa"], ["none", "x"], ["none", "pfo", "pfa"]), ss_infos("wad_H13", "wad", 2, 1, 2, ["none", "mwd", "fwd"], ["none", "x"], ["none", "pmwd", "pfwd"]), ss_infos("ring_H13", "ring", 2, 1, 2, ["none", "mrw", "frw"], ["none", "x"], ["none", "pmrw", "pfrw"]), ss_infos("cpx_H13", "cpx", 6, 5, 9, ["none", "di", "cfs", "cats", "jd", "cen", "cfm"], ["none", "x", "y", "o", "n", "Q"], ["none", "xMgM1", "xFeM1", "xAlM1", "xMgM2", "xFeM2", "xCaM2", "xNaM2", "xSiT", "xAlT"]), ss_infos("opx_H13", "opx", 5, 4, 8, ["none", "en", "fs", "fm", "odi", "mgts"], ["none", "x", "y", "c", "Q"], ["none", "xMgM1", "xFeM1", "xAlM1", "xCaM2", "xMgM2", "xFeM2", "xSiT", "xAlT"]), ss_infos("hpx_H13", "hpx", 5, 4, 8, ["none", "en", "fs", "fm", "odi", "hmts"], ["none", "x", "y", "c", "Q"], ["none", "xMgM1", "xFeM1", "xAlM1", "xCaM2", "xMgM2", "xFeM2", "xSiT", "xAlT"])], ["g", "fp", "mpv", "cpv", "crn", "cf", "nal", "aki", "ol", "wad", "ring", "cpx", "opx", "hpx"], ["q", "crst", "trd", "coe", "stv", "ky", "sill", "and"]), db_infos("mpe", "Metapelite extended (White et al., 2014 with po from Evans & Frost., 2021, amp dio and aug from Green et al., 2016)", 62, (62, 633, 634, 635, 636), ss_infos[ss_infos("liq_W14", "liq", 8, 7, 10, ["none", "q4L", "abL", "kspL", "anL", "slL", "fo2L", "fa2L", "h2oL"], ["none", "q", "fsp", "na", "an", "ol", "x", "h2o"], ["none", "fac", "pq", "xab", "xksp", "pan", "psil", "pol", "xFe", "xMg", "ph2o"]), ss_infos("fsp_H22", "fsp", 3, 2, 5, ["none", "ab", "an", "san"], ["none", "ca", "k"], ["none", "xNaA", "xCaA", "xKA", "xAlTB", "xSiTB"]), ss_infos("bi_W14", "bi", 7, 6, 13, ["none", "phl", "annm", "obi", "east", "tbi", "fbi", "mmbi"], ["none", "x", "m", "y", "f", "t", "Q"], ["none", "xMgM3", "xMnM3", "xFeM3", "xFe3M3", "xTiM3", "xAlM3", "xMgM12", "xMnM12", "xFeM12", "xSiT", "xAlT", "xOHV", "xOV"]), ss_infos("g_W14", "g", 5, 4, 6, ["none", "py", "alm", "spss", "gr", "kho"], ["none", "x", "z", "m", "f"], ["none", "xMgX", "xFeX", "xMnX", "xCaX", "xAlY", "xFe3Y"]), ss_infos("ep_H11", "ep", 3, 2, 4, ["none", "cz", "ep", "fep"], ["none", "f", "Q"], ["none", "xFeM1", "xAlM1", "xFeM3", "xAlM3"]), ss_infos("ma_W14", "ma", 6, 5, 10, ["none", "mut", "celt", "fcelt", "pat", "ma", "fmu"], ["none", "x", "y", "f", "n", "c"], ["none", "xKA", "xNaA", "xCaA", "xMgM2A", "xFeM2A", "xAlM2A", "xAlM2B", "xFe3M2B", "xSiT1", "xAlT1"]), ss_infos("mu_W14", "mu", 6, 5, 10, ["none", "mut", "cel", "fcel", "pat", "ma", "fmu"], ["none", "x", "y", "f", "n", "c"], ["none", "xKA", "xNaA", "xCaA", "xMgM2A", "xFeM2A", "xAlM2A", "xAlM2B", "xFe3M2B", "xSiT1", "xAlT1"]), ss_infos("opx_W14", "opx", 7, 6, 11, ["none", "en", "fs", "fm", "mgts", "fopx", "mnopx", "odi"], ["none", "x", "m", "y", "f", "c", "Q"], ["none", "xMgM1", "xFeM1", "xMnM1", "xFe3M1", "xAlM1", "xMgM2", "xFeM2", "xMnM2", "xCaM2", "xSiT", "xAlT"]), ss_infos("sa_W14", "sa", 5, 4, 8, ["none", "spr4", "spr5", "fspm", "spro", "ospr"], ["none", "x", "y", "f", "Q"], ["none", "xMgM3", "xFeM3", "xFe3M3", "xAlM3", "xMgM456", "xFeM456", "xSiT", "xAlT"]), ss_infos("cd_W14", "cd", 4, 3, 5, ["none", "crd", "fcrd", "hcrd", "mncd"], ["none", "x", "m", "h"], ["none", "xFeX", "xMgX", "xMnX", "xH2OH", "xvH"]), ss_infos("st_W14", "st", 5, 4, 7, ["none", "mstm", "fst", "mnstm", "msto", "mstt"], ["none", "x", "m", "f", "t"], ["none", "xMgX", "xFeX", "xMnX", "xAlY", "xFe3Y", "xTiY", "xvY"]), ss_infos("chl_W14", "chl", 8, 7, 12, ["none", "clin", "afchl", "ames", "daph", "ochl1", "ochl4", "f3clin", "mmchl"], ["none", "x", "y", "f", "m", "QAl", "Q1", "Q4"], ["none", "xMgM1", "xMnM1", "xFeM1", "xAlM1", "xMgM23", "xFeM23", "xMgM4", "xFeM4", "xFe3M4", "xAlM4", "xSiT2", "xAlT2"]), ss_infos("ctd_W14", "ctd", 4, 3, 5, ["none", "mctd", "fctd", "mnct", "ctdo"], ["none", "x", "m", "f"], ["none", "xAlM1A", "xFe3M1A", "xFeM1B", "xMgM1B", "xMnM1B"]), ss_infos("sa_W02", "sp", 4, 3, 5, ["none", "herc", "sp", "mt", "usp"], ["none", "x", "y", "z"], ["none", "xAl", "xFe3", "xTi", "xMg", "xFe2"]), ss_infos("nt_W00", "mt", 3, 2, 5, ["none", "imt", "dmt", "usp"], ["none", "x", "Q"], ["none", "xTiM", "xFe3M", "xFeM", "xFe3T", "xFeT"]), ss_infos("ilm_W00", "ilm", 3, 2, 6, ["none", "oilm", "dilm", "dhem"], ["none", "x", "Q"], ["none", "xFe2A", "xTiA", "xFe3A", "xFe2B", "xTiB", "xFe3B"]), ss_infos("ilmm_W14", "ilmm", 5, 4, 7, ["none", "oilm", "dilm", "dhem", "geik", "pnt"], ["none", "i", "g", "m", "Q"], ["none", "xFeA", "xTiA", "xMgA", "xMnA", "xFe3A", "xFeB", "xTiB"]), ss_infos("occm_F11", "occm", 5, 4, 9, ["none", "cc", "odo", "mag", "sid", "oank"], ["none", "x", "j", "q", "v"], ["none", "xCaM1", "xMgM1", "xFeM1", "xCaM2a", "xMgM2a", "xFeM2a", "xCaM2b", "xMgM2b", "xFeM2b"]), ss_infos("fl_H03", "fl", 2, 1, 2, ["none", "H2O", "CO2"], ["none", "x"], ["none", "xH2O", "xCO2"]), ss_infos("po_E10", "po", 2, 1, 2, ["none", "trov", "trot"], ["none", "y"], ["none", "xfeM2", "xVM2"]), ss_infos("dio_G16", "dio", 7, 6, 12, ["none", "jd", "di", "hed", "acmm", "om", "cfm", "jac"], ["none", "x", "j", "t", "c", "qaf", "qfm"], ["none", "xMgM1m", "xFeM1m", "xFe3M1m", "xAlM1m", "xMgM1a", "xFeM1a", "xFe3M1a", "xAlM1a", "xNaM2c", "xCaM2c", "xNaM2n", "xCaM2n"]), ss_infos("aug_G16", "aug", 8, 7, 12, ["none", "di", "cenh", "cfs", "jdm", "acmm", "ocats", "dcats", "fmc"], ["none", "x", "y", "c", "z", "j", "qfm", "qal"], ["none", "xMgM1", "xFeM1", "xAlM1", "xFe3M1", "xMgM2", "xFeM2", "xCaM2", "xNaM2", "xSiT1", "xAlT1", "xSiT2", "xAlT2"]), ss_infos("amp_G16", "amp", 11, 10, 18, ["none", "tr", "tsm", "prgm", "glm", "cumm", "grnm", "a", "b", "mrb", "kprg", "tts"], ["none", "x", "y", "z", "a", "k", "c", "f", "t", "q1", "q2"], ["none", "xvA", "xNaA", "xKA", "xMgM13", "xFeM13", "xMgM2", "xFeM2", "xAlM2", "xFe3M2", "xTiM2", "xCaM4", "xMgM4", "xFeM4", "xNaM4", "xSiT1", "xAlT1", "xOHV", "xOV"])], ["liq", "fsp", "bi", "g", "ep", "ma", "mu", "opx", "sa", "cd", "st", "chl", "ctd", "sp", "mt", "ilm", "ilmm", "occm", "fl", "po", "dio", "aug", "amp"], ["q", "crst", "trd", "coe", "stv", "ky", "sill", "and", "ru", "sph", "O2", "pyr", "gph", "law", "zo", "prl", "mpm", "pre", "qfm", "mw", "qif", "nno", "hm", "iw", "cco", "aH2O", "aO2", "aMgO", "aFeO", "aAl2O3", "aTiO2"]), db_infos("sb11", "Stixrude & Lithgow-Bertelloni (2011)", -1, (62, 633, 634, 635, 636), ss_infos[ss_infos("", "plg", 2, 2, 1, ["none", "an", "ab"], ["none", "", ""], ["none", ""]), ss_infos("", "sp", 2, 2, 2, ["none", "sp", "hc"], ["none", "", ""], ["none", "", ""]), ss_infos("", "ol", 2, 2, 1, ["none", "fo", "fa"], ["none", "", ""], ["none", ""]), ss_infos("", "wa", 2, 2, 1, ["none", "mgwa", "fewa"], ["none", "", ""], ["none", ""]), ss_infos("", "ri", 2, 2, 1, ["none", "mgri", "feri"], ["none", "", ""], ["none", ""]), ss_infos("", "opx", 4, 4, 2, ["none", "en", "fs", "mgts", "odi"], ["none", "", "", "", ""], ["none", "", ""]), ss_infos("", "cpx", 5, 5, 3, ["none", "di", "he", "cen", "cats", "jd"], ["none", "", "", "", "", ""], ["none", "", "", ""]), ss_infos("", "hpcpx", 2, 2, 1, ["none", "hpcen", "hpcfs"], ["none", "", ""], ["none", ""]), ss_infos("", "ak", 3, 3, 2, ["none", "mgak", "feak", "co"], ["none", "", "", ""], ["none", "", ""]), ss_infos("", "gtmj", 5, 5, 3, ["none", "py", "alm", "gr", "mgmj", "jdmj"], ["none", "", "", "", "", ""], ["none", "", "", ""]), ss_infos("", "pv", 3, 3, 2, ["none", "mgpv", "fepv", "alpv"], ["none", "", "", ""], ["none", "", ""]), ss_infos("", "ppv", 3, 3, 2, ["none", "mppv", "fppv", "appv"], ["none", "", "", ""], ["none", "", ""]), ss_infos("", "mw", 2, 2, 1, ["none", "pe", "wu"], ["none", "", ""], ["none", ""]), ss_infos("", "cf", 3, 3, 2, ["none", "mgcf", "fecf", "nacf"], ["none", "", "", ""], ["none", "", ""])], ["plg", "sp", "ol", "wa", "ri", "opx", "cpx", "hpcpx", "ak", "gtmj", "pv", "ppv", "mw", "cf"], ["neph", "ky", "st", "coe", "qtz", "capv", "co", "aMgO", "aFeO", "aAl2O3"]), db_infos("sb21", "Stixrude & Lithgow-Bertelloni (2021)", -1, (62, 633, 634, 635, 636), ss_infos[ss_infos("", "plg", 2, 2, 1, ["none", "an", "ab"], ["none", "", ""], ["none", ""]), ss_infos("", "sp", 2, 2, 2, ["none", "sp", "hc"], ["none", "", ""], ["none", "", ""]), ss_infos("", "ol", 2, 2, 1, ["none", "fo", "fa"], ["none", "", ""], ["none", ""]), ss_infos("", "wa", 2, 2, 1, ["none", "mgwa", "fewa"], ["none", "", ""], ["none", ""]), ss_infos("", "ri", 2, 2, 1, ["none", "mgri", "feri"], ["none", "", ""], ["none", ""]), ss_infos("", "opx", 4, 4, 2, ["none", "en", "fs", "mgts", "odi"], ["none", "", "", "", ""], ["none", "", ""]), ss_infos("", "cpx", 5, 5, 3, ["none", "di", "he", "cen", "cats", "jd"], ["none", "", "", "", "", ""], ["none", "", "", ""]), ss_infos("", "hpcpx", 2, 2, 1, ["none", "hpcen", "hpcfs"], ["none", "", ""], ["none", ""]), ss_infos("", "ak", 3, 3, 2, ["none", "mgak", "feak", "co"], ["none", "", "", ""], ["none", "", ""]), ss_infos("", "gtmj", 5, 5, 3, ["none", "py", "alm", "gr", "mgmj", "jdmj"], ["none", "", "", "", "", ""], ["none", "", "", ""]), ss_infos("", "pv", 3, 3, 2, ["none", "mgpv", "fepv", "alpv"], ["none", "", "", ""], ["none", "", ""]), ss_infos("", "ppv", 3, 3, 2, ["none", "mppv", "fppv", "appv"], ["none", "", "", ""], ["none", "", ""]), ss_infos("", "cf", 3, 3, 2, ["none", "mgcf", "fecf", "nacf"], ["none", "", "", ""], ["none", "", ""]), ss_infos("", "mw", 3, 3, 2, ["none", "pe", "wu", "anao"], ["none", "", "", ""], ["none", "", ""]), ss_infos("", "nal", 3, 3, 3, ["none", "mnal", "fnal", "nnal"], ["none", "", "", ""], ["none", "", "", ""])], ["plg", "sp", "ol", "wa", "ri", "opx", "cpx", "hpcpx", "ak", "gtmj", "pv", "ppv", "cf", "mw", "nal"], ["neph", "ky", "st", "coe", "qtz", "capv", "co", "aMgO", "aFeO", "aAl2O3"])]
-    dbs     = ["mp","mb","ig","igad","um","ume","mtl","mpe","sb11","sb21"]
+    db_inf  = db_infos[db_infos("mp", "Metapelite (White et al., 2014)", 62, (62, 633, 634, 635, 636), ss_infos[ss_infos("liq_W14", "liq", 8, 7, 10, ["none", "q4L", "abL", "kspL", "anL", "slL", "fo2L", "fa2L", "h2oL"], ["none", "q", "fsp", "na", "an", "ol", "x", "h2o"], ["none", "fac", "pq", "xab", "xksp", "pan", "psil", "pol", "xFe", "xMg", "ph2o"]), ss_infos("fsp_H22", "fsp", 3, 2, 5, ["none", "ab", "an", "san"], ["none", "ca", "k"], ["none", "xNaA", "xCaA", "xKA", "xAlTB", "xSiTB"]), ss_infos("bi_W14", "bi", 7, 6, 13, ["none", "phl", "annm", "obi", "east", "tbi", "fbi", "mmbi"], ["none", "x", "m", "y", "f", "t", "Q"], ["none", "xMgM3", "xMnM3", "xFeM3", "xFe3M3", "xTiM3", "xAlM3", "xMgM12", "xMnM12", "xFeM12", "xSiT", "xAlT", "xOHV", "xOV"]), ss_infos("g_W14", "g", 5, 4, 6, ["none", "py", "alm", "spss", "gr", "kho"], ["none", "x", "z", "m", "f"], ["none", "xMgX", "xFeX", "xMnX", "xCaX", "xAlY", "xFe3Y"]), ss_infos("ep_H11", "ep", 3, 2, 4, ["none", "cz", "ep", "fep"], ["none", "f", "Q"], ["none", "xFeM1", "xAlM1", "xFeM3", "xAlM3"]), ss_infos("ma_W14", "ma", 6, 5, 10, ["none", "mut", "celt", "fcelt", "pat", "ma", "fmu"], ["none", "x", "y", "f", "n", "c"], ["none", "xKA", "xNaA", "xCaA", "xMgM2A", "xFeM2A", "xAlM2A", "xAlM2B", "xFe3M2B", "xSiT1", "xAlT1"]), ss_infos("mu_W14", "mu", 6, 5, 10, ["none", "mut", "cel", "fcel", "pat", "ma", "fmu"], ["none", "x", "y", "f", "n", "c"], ["none", "xKA", "xNaA", "xCaA", "xMgM2A", "xFeM2A", "xAlM2A", "xAlM2B", "xFe3M2B", "xSiT1", "xAlT1"]), ss_infos("opx_W14", "opx", 7, 6, 11, ["none", "en", "fs", "fm", "mgts", "fopx", "mnopx", "odi"], ["none", "x", "m", "y", "f", "c", "Q"], ["none", "xMgM1", "xFeM1", "xMnM1", "xFe3M1", "xAlM1", "xMgM2", "xFeM2", "xMnM2", "xCaM2", "xSiT", "xAlT"]), ss_infos("sa_W14", "sa", 5, 4, 8, ["none", "spr4", "spr5", "fspm", "spro", "ospr"], ["none", "x", "y", "f", "Q"], ["none", "xMgM3", "xFeM3", "xFe3M3", "xAlM3", "xMgM456", "xFeM456", "xSiT", "xAlT"]), ss_infos("cd_W14", "cd", 4, 3, 5, ["none", "crd", "fcrd", "hcrd", "mncd"], ["none", "x", "m", "h"], ["none", "xFeX", "xMgX", "xMnX", "xH2OH", "xvH"]), ss_infos("st_W14", "st", 5, 4, 7, ["none", "mstm", "fst", "mnstm", "msto", "mstt"], ["none", "x", "m", "f", "t"], ["none", "xMgX", "xFeX", "xMnX", "xAlY", "xFe3Y", "xTiY", "xvY"]), ss_infos("chl_W14", "chl", 8, 7, 12, ["none", "clin", "afchl", "ames", "daph", "ochl1", "ochl4", "f3clin", "mmchl"], ["none", "x", "y", "f", "m", "QAl", "Q1", "Q4"], ["none", "xMgM1", "xMnM1", "xFeM1", "xAlM1", "xMgM23", "xFeM23", "xMgM4", "xFeM4", "xFe3M4", "xAlM4", "xSiT2", "xAlT2"]), ss_infos("ctd_W14", "ctd", 4, 3, 5, ["none", "mctd", "fctd", "mnct", "ctdo"], ["none", "x", "m", "f"], ["none", "xAlM1A", "xFe3M1A", "xFeM1B", "xMgM1B", "xMnM1B"]), ss_infos("sp_W02", "sp", 4, 3, 5, ["none", "herc", "sp", "mt", "usp"], ["none", "x", "y", "z"], ["none", "xAl", "xFe3", "xTi", "xMg", "xFe2"]), ss_infos("mt_W00", "mt", 3, 2, 5, ["none", "imt", "dmt", "usp"], ["none", "x", "Q"], ["none", "xTiM", "xFe3M", "xFeM", "xFe3T", "xFeT"]), ss_infos("ilm_W00", "ilm", 3, 2, 6, ["none", "oilm", "dilm", "dhem"], ["none", "x", "Q"], ["none", "xFe2A", "xTiA", "xFe3A", "xFe2B", "xTiB", "xFe3B"]), ss_infos("ilmm_W14", "ilmm", 5, 4, 7, ["none", "oilm", "dilm", "dhem", "geik", "pnt"], ["none", "i", "g", "m", "Q"], ["none", "xFeA", "xTiA", "xMgA", "xMnA", "xFe3A", "xFeB", "xTiB"])], ["liq", "fsp", "bi", "g", "ep", "ma", "mu", "opx", "sa", "cd", "st", "chl", "ctd", "sp", "mt", "ilm", "ilmm"], ["q", "crst", "trd", "coe", "stv", "ky", "sill", "and", "ru", "sph", "O2", "H2O", "zo", "cor", "qfm", "mw", "qif", "nno", "hm", "iw", "cco", "aH2O", "aO2", "aMgO", "aFeO", "aAl2O3", "aTiO2"]), db_infos("mb", "Metabasite (Green et al., 2016)", 62, (62, 633, 634, 635, 636), ss_infos[ss_infos("sp_W02", "sp", 4, 3, 5, ["none", "herc", "sp", "mt", "usp"], ["none", "x", "y", "z"], ["none", "xAl", "xFe3", "xTi", "xMg", "xFe2"]), ss_infos("opx_W14", "opx", 6, 5, 9, ["none", "en", "fs", "fm", "mgts", "fopx", "odi"], ["none", "x", "y", "f", "c", "Q"], ["none", "xMgM1", "xFeM1", "xFe3M1", "xAlM1", "xMgM2", "xFeM2", "xCaM2", "xAlT", "xSiT"]), ss_infos("fsp_H22", "fsp", 3, 2, 5, ["none", "ab", "an", "san"], ["none", "ca", "k"], ["none", "xNaA", "xCaA", "xKA", "xAlTB", "xSiTB"]), ss_infos("liq_G16", "liq", 9, 8, 11, ["none", "q4L", "abL", "kspL", "wo1L", "sl1L", "fa2L", "fo2L", "h2oL", "anoL"], ["none", "q", "fsp", "na", "wo", "sil", "ol", "x", "yan"], ["none", "fac", "pq", "xab", "xksp", "pwo", "psil", "ph2o", "pan", "pol", "xFe", "xMg"]), ss_infos("mu_W14", "mu", 6, 5, 10, ["none", "mu", "cel", "fcel", "pa", "mam", "fmu"], ["none", "x", "y", "f", "n", "c"], ["none", "xKA", "xNaA", "xCaA", "xMgM2A", "xFeM2A", "xAlM2A", "xAlM2B", "xFe3M2B", "xSiT1", "xAlT1"]), ss_infos("ilmm_W14", "ilmm", 4, 3, 7, ["none", "oilm", "dilm", "dhem", "geik"], ["none", "c", "t", "Q"], ["none", "xFeA", "xTiA", "xMgA", "xFe3A", "xFeB", "xTiB", "xFe3B"]), ss_infos("ilm_W00", "ilm", 3, 2, 6, ["none", "oilm", "dilm", "dhem"], ["none", "x", "Q"], ["none", "xFe2A", "xTiA", "xFe3A", "xFe2B", "xTiB", "xFe3B"]), ss_infos("ol_H11", "ol", 2, 1, 2, ["none", "fo", "fa"], ["none", "x"], ["none", "xMgM", "xFeM"]), ss_infos("amp_G16", "amp", 11, 10, 18, ["none", "tr", "tsm", "prgm", "glm", "cumm", "grnm", "a", "b", "mrb", "kprg", "tts"], ["none", "x", "y", "z", "a", "k", "c", "f", "t", "Q1", "Q2"], ["none", "xvA", "xNaA", "xKA", "xMgM13", "xFeM13", "xMgM2", "xFeM2", "xAlM2", "xFe3M2", "xTiM2", "xCaM4", "xMgM4", "xFeM4", "xNaM4", "xSiT1", "xAlT1", "xOHV", "xOV"]), ss_infos("ep_H11", "ep", 3, 2, 4, ["none", "cz", "ep", "fep"], ["none", "f", "Q"], ["none", "xFeM1", "xAlM1", "xFeM3", "xAlM3"]), ss_infos("g_W14", "g", 4, 3, 5, ["none", "py", "alm", "gr", "kho"], ["none", "x", "z", "f"], ["none", "xMgX", "xFeX", "xCaX", "xAlY", "xFe3Y"]), ss_infos("chl_W14", "chl", 7, 6, 11, ["none", "clin", "afchl", "ames", "daph", "ochl1", "ochl4", "f3clin"], ["none", "x", "y", "f", "QAl", "Q1", "Q4"], ["none", "xMgM1", "xFeM1", "xAlM1", "xMgM23", "xFeM23", "xMgM4", "xFeM4", "xFe3M4", "xAlM4", "xSiT2", "xAlT2"]), ss_infos("bi_W14", "bi", 6, 5, 11, ["none", "phl", "annm", "obi", "east", "tbi", "fbi"], ["none", "x", "y", "f", "t", "Q"], ["none", "xMgM3", "xFeM3", "xFe3M3", "xTiM3", "xAlM3", "xMgM12", "xFeM12", "xSiT", "xAlT", "xOHV", "xOV"]), ss_infos("dio_G16", "dio", 7, 6, 12, ["none", "jd", "di", "hed", "acmm", "om", "cfm", "jac"], ["none", "x", "j", "t", "c", "Qaf", "Qfm"], ["none", "xMgM1m", "xFeM1m", "xFe3M1m", "xAlM1m", "xMgM1a", "xFeM1a", "xFe3M1a", "xAlM1a", "xNaM2c", "xCaM2c", "xNaM2n", "xCaM2n"]), ss_infos("aug_G16", "aug", 8, 7, 12, ["none", "di", "cenh", "cfs", "jdm", "acmm", "ocats", "dcats", "fmc"], ["none", "x", "y", "f", "z", "j", "Qfm", "Qa1"], ["none", "xMgM1", "xFeM1", "xAlM1", "xFe3M1", "xMgM2", "xFeM2", "xCaM2", "xNaM2", "xSiT1", "xAlT1", "xSiT2", "xAlT2"]), ss_infos("abc_H11", "abc", 2, 1, 2, ["none", "abm", "anm"], ["none", "ca"], ["none", "xNaA", "xCaA"]), ss_infos("spl_W02", "spl", 3, 2, 4, ["none", "herc", "sp", "usp"], ["none", "x", "y"], ["none", "xAl", "xTi", "xMg", "xFe2"])], ["sp", "opx", "fsp", "liq", "mu", "ilmm", "ilm", "ol", "amp", "ep", "g", "chl", "bi", "dio", "aug", "abc", "spl"], ["q", "crst", "trd", "coe", "law", "ky", "sill", "and", "ru", "sph", "O2", "ab", "H2O", "zo", "cor", "qfm", "mw", "qif", "nno", "hm", "iw", "cco", "aH2O", "aO2", "aMgO", "aFeO", "aAl2O3", "aTiO2"]), db_infos("mbe", "Metabasite extended (Green et al., 2016 with oamp from Diener et al., 2007 and ta from Rebay et al., 2022)", 62, (62, 633, 634, 635, 636), ss_infos[ss_infos("sp_W02", "sp", 4, 3, 5, ["none", "herc", "sp", "mt", "usp"], ["none", "x", "y", "z"], ["none", "xAl", "xFe3", "xTi", "xMg", "xFe2"]), ss_infos("opx_W14", "opx", 6, 5, 9, ["none", "en", "fs", "fm", "mgts", "fopx", "odi"], ["none", "x", "y", "f", "c", "Q"], ["none", "xMgM1", "xFeM1", "xFe3M1", "xAlM1", "xMgM2", "xFeM2", "xCaM2", "xAlT", "xSiT"]), ss_infos("fsp_H22", "fsp", 3, 2, 5, ["none", "ab", "an", "san"], ["none", "ca", "k"], ["none", "xNaA", "xCaA", "xKA", "xAlTB", "xSiTB"]), ss_infos("liq_G16", "liq", 9, 8, 11, ["none", "q4L", "abL", "kspL", "wo1L", "sl1L", "fa2L", "fo2L", "h2oL", "anoL"], ["none", "q", "fsp", "na", "wo", "sil", "ol", "x", "yan"], ["none", "fac", "pq", "xab", "xksp", "pwo", "psil", "ph2o", "pan", "pol", "xFe", "xMg"]), ss_infos("mu_W14", "mu", 6, 5, 10, ["none", "mu", "cel", "fcel", "pa", "mam", "fmu"], ["none", "x", "y", "f", "n", "c"], ["none", "xKA", "xNaA", "xCaA", "xMgM2A", "xFeM2A", "xAlM2A", "xAlM2B", "xFe3M2B", "xSiT1", "xAlT1"]), ss_infos("ilmm_W14", "ilmm", 4, 3, 7, ["none", "oilm", "dilm", "dhem", "geik"], ["none", "c", "t", "Q"], ["none", "xFeA", "xTiA", "xMgA", "xFe3A", "xFeB", "xTiB", "xFe3B"]), ss_infos("ilm_W00", "ilm", 3, 2, 6, ["none", "oilm", "dilm", "dhem"], ["none", "x", "Q"], ["none", "xFe2A", "xTiA", "xFe3A", "xFe2B", "xTiB", "xFe3B"]), ss_infos("ol_H11", "ol", 2, 1, 2, ["none", "fo", "fa"], ["none", "x"], ["none", "xMgM", "xFeM"]), ss_infos("amp_G16", "amp", 11, 10, 18, ["none", "tr", "tsm", "prgm", "glm", "cumm", "grnm", "a", "b", "mrb", "kprg", "tts"], ["none", "x", "y", "z", "a", "k", "c", "f", "t", "Q1", "Q2"], ["none", "xvA", "xNaA", "xKA", "xMgM13", "xFeM13", "xMgM2", "xFeM2", "xAlM2", "xFe3M2", "xTiM2", "xCaM4", "xMgM4", "xFeM4", "xNaM4", "xSiT1", "xAlT1", "xOHV", "xOV"]), ss_infos("ep_H11", "ep", 3, 2, 4, ["none", "cz", "ep", "fep"], ["none", "f", "Q"], ["none", "xFeM1", "xAlM1", "xFeM3", "xAlM3"]), ss_infos("g_W14", "g", 4, 3, 5, ["none", "py", "alm", "gr", "kho"], ["none", "x", "z", "f"], ["none", "xMgX", "xFeX", "xCaX", "xAlY", "xFe3Y"]), ss_infos("chl_W14", "chl", 7, 6, 11, ["none", "clin", "afchl", "ames", "daph", "ochl1", "ochl4", "f3clin"], ["none", "x", "y", "f", "QAl", "Q1", "Q4"], ["none", "xMgM1", "xFeM1", "xAlM1", "xMgM23", "xFeM23", "xMgM4", "xFeM4", "xFe3M4", "xAlM4", "xSiT2", "xAlT2"]), ss_infos("bi_W14", "bi", 6, 5, 11, ["none", "phl", "annm", "obi", "east", "tbi", "fbi"], ["none", "x", "y", "f", "t", "Q"], ["none", "xMgM3", "xFeM3", "xFe3M3", "xTiM3", "xAlM3", "xMgM12", "xFeM12", "xSiT", "xAlT", "xOHV", "xOV"]), ss_infos("dio_G16", "dio", 7, 6, 12, ["none", "jd", "di", "hed", "acmm", "om", "cfm", "jac"], ["none", "x", "j", "t", "c", "Qaf", "Qfm"], ["none", "xMgM1m", "xFeM1m", "xFe3M1m", "xAlM1m", "xMgM1a", "xFeM1a", "xFe3M1a", "xAlM1a", "xNaM2c", "xCaM2c", "xNaM2n", "xCaM2n"]), ss_infos("aug_G16", "aug", 8, 7, 12, ["none", "di", "cenh", "cfs", "jdm", "acmm", "ocats", "dcats", "fmc"], ["none", "x", "y", "f", "z", "j", "Qfm", "Qa1"], ["none", "xMgM1", "xFeM1", "xAlM1", "xFe3M1", "xMgM2", "xFeM2", "xCaM2", "xNaM2", "xSiT1", "xAlT1", "xSiT2", "xAlT2"]), ss_infos("abc_H11", "abc", 2, 1, 2, ["none", "abm", "anm"], ["none", "ca"], ["none", "xNaA", "xCaA"]), ss_infos("spl_W02", "spl", 3, 2, 4, ["none", "herc", "sp", "usp"], ["none", "x", "y"], ["none", "xAl", "xTi", "xMg", "xFe2"]), ss_infos("", "ta", 5, 4, 8, ["none", "ta", "fta", "ota", "tap", "tats"], ["none", "x", "y", "z", "q"], ["none", "xvM1", "xMgM1", "xFeM1", "xMgM23", "xFeM23", "xAlM23", "xSiT1", "xAlT1"]), ss_infos("", "oamp", 9, 8, 14, ["none", "anth", "ged", "ompa", "omgl", "otr", "fanth", "omrb", "amoa", "amob"], ["none", "x", "y", "z", "a", "c", "f", "q1", "q2"], ["none", "xvA", "xNaA", "xCaM4", "xNaM4", "xMgM4", "xFeM4", "xMgM13", "xFeM13", "xAlM2", "xFe3M2", "xMgM2", "xFeM2", "xAlT1", "xSiT1"])], ["sp", "opx", "fsp", "liq", "mu", "ilmm", "ilm", "ol", "amp", "ep", "g", "chl", "bi", "dio", "aug", "abc", "spl", "ta", "oamp"], ["q", "crst", "trd", "coe", "law", "ky", "sill", "and", "ru", "sph", "O2", "ab", "H2O", "zo", "cor", "qfm", "mw", "qif", "nno", "hm", "iw", "cco", "aH2O", "aO2", "aMgO", "aFeO", "aAl2O3", "aTiO2"]), db_infos("ig", "Igneous (Green et al., 2025, corrected after Holland et al., 2018)", 636, (62, 633, 634, 635, 636), ss_infos[ss_infos("spl_T21", "spl", 8, 7, 10, ["none", "nsp", "isp", "nhc", "ihc", "nmt", "imt", "pcr", "qndm"], ["none", "x", "y", "c", "t", "Q1", "Q2", "Q3"], ["none", "xMgT", "xFeT", "xAlT", "xFe3T", "xMgM", "xFeM", "xAlM", "xFe3M", "xCrM", "xTiM"]), ss_infos("bi_G25", "bi", 6, 5, 11, ["none", "phl", "annm", "obi", "eas", "tbi", "fbi"], ["none", "x", "y", "f", "t", "Q"], ["none", "xMgM3", "xFeM3", "xFe3M3", "xTiM3", "xAlM3", "xMgM12", "xFeM12", "xSiT", "xAlT", "xOHV", "xOV"]), ss_infos("cd_G25", "cd", 3, 2, 4, ["none", "crd", "fcrd", "hcrd"], ["none", "x", "h"], ["none", "xFeX", "xMgX", "xH2OH", "xvH"]), ss_infos("cpx_W24", "cpx", 10, 9, 13, ["none", "di", "cfs", "cats", "crdi", "cess", "cbuf", "jd", "cen", "cfm", "kjd"], ["none", "x", "y", "o", "n", "Q", "f", "cr", "t", "k"], ["none", "xMgM1", "xFeM1", "xAlM1", "xFe3M1", "xCrM1", "xTiM1", "xMgM2", "xFeM2", "xCaM2", "xNaM2", "xKM2", "xSiT", "xAlT"]), ss_infos("ep_H11", "ep", 3, 2, 4, ["none", "cz", "ep", "fep"], ["none", "f", "Q"], ["none", "xFeM1", "xAlM1", "xFeM3", "xAlM3"]), ss_infos("g_W24", "g", 6, 5, 8, ["none", "py", "alm", "gr", "andr", "knom", "tig"], ["none", "x", "c", "f", "cr", "t"], ["none", "xMgM1", "xFeM1", "xCaM1", "xAlM2", "xCrM2", "xFe3M2", "xMgM2", "xTiM2"]), ss_infos("amp_G16", "amp", 11, 10, 18, ["none", "tr", "tsm", "prgm", "glm", "cumm", "grnm", "a", "b", "mrb", "kprg", "tts"], ["none", "x", "y", "z", "a", "k", "c", "f", "t", "Q1", "Q2"], ["none", "xvA", "xNaA", "xKA", "xMgM13", "xFeM13", "xMgM2", "xFeM2", "xAlM2", "xFe3M2", "xTiM2", "xCaM4", "xMgM4", "xFeM4", "xNaM4", "xSiT1", "xAlT1", "xOHV", "xOV"]), ss_infos("ilm_W24", "ilm", 5, 4, 8, ["none", "oilm", "dilm", "hm", "ogk", "dgk"], ["none", "i", "m", "Q", "Qt"], ["none", "xFeA", "xTiA", "xFe3A", "xMgA", "xFeB", "xTiB", "xFe3B", "xMgB"]), ss_infos("liq_G25w", "liq", 12, 11, 18, ["none", "q4L", "slL", "wo1L", "fo2L", "fa2L", "jdL", "hmL", "ekL", "tiL", "kjL", "ctL", "h2o1L"], ["none", "wo", "sl", "fo", "fa", "jd", "hm", "ek", "ti", "kj", "yct", "h2o"], ["none", "pq", "psl", "pwo", "pjd", "phm", "pek", "pti", "pkj", "pct", "pol", "sumT", "mgM", "feM", "CaM", "AlM", "sumM", "xh", "xv"]), ss_infos("ol_H18", "ol", 4, 3, 5, ["none", "mont", "fa", "fo", "cfm"], ["none", "x", "c", "Q"], ["none", "xMgM1", "xFeM1", "xMgM2", "xFeM2", "xCaM2"]), ss_infos("opx_W24", "opx", 9, 8, 12, ["none", "en", "fs", "fm", "odi", "mgts", "cren", "obuf", "mess", "ojd"], ["none", "x", "y", "c", "Q", "f", "t", "cr", "j"], ["none", "xMgM1", "xFeM1", "xAlM1", "xFe3M1", "xCrM1", "xTiM1", "xMgM2", "xFeM2", "xCaM2", "xNaM2", "xSiT", "xAlT"]), ss_infos("fsp_H22", "fsp", 3, 2, 5, ["none", "ab", "an", "san"], ["none", "ca", "k"], ["none", "xNaA", "xCaA", "xKA", "xAlTB", "xSiTB"]), ss_infos("fl_G25", "fl", 11, 10, 12, ["none", "qfL", "slfL", "wofL", "fofL", "fafL", "jdfL", "hmfL", "ekfL", "tifL", "kjfL", "H2O"], ["none", "wo", "sl", "fo", "fa", "jd", "hm", "ek", "ti", "kj", "h2o"], ["none", "pq", "psl", "pwo", "pfo", "pfa", "pjd", "phm", "pek", "pti", "pkj", "ph2o", "fac"]), ss_infos("mu_W14", "mu", 6, 5, 10, ["none", "mu", "cel", "fcel", "pa", "mam", "fmu"], ["none", "x", "y", "f", "n", "c"], ["none", "xKA", "xNaA", "xCaA", "xMgM2A", "xFeM2A", "xAlM2A", "xAlM2B", "xFe3M2B", "xSiT1", "xAlT1"]), ss_infos("fper", "fper", 2, 1, 2, ["none", "per", "wu"], ["none", "x"], ["none", "xFe", "xMg"]), ss_infos("chl_W14", "chl", 7, 6, 11, ["none", "clin", "afchl", "ames", "daph", "ochl1", "ochl4", "f3clin"], ["none", "x", "y", "f", "QAl", "Q1", "Q4"], ["none", "xMgM1", "xFeM1", "xAlM1", "xMgM23", "xFeM23", "xMgM4", "xFeM4", "xFe3M4", "xAlM4", "xSiT2", "xAlT2"])], ["spl", "bi", "cd", "cpx", "ep", "g", "amp", "ilm", "liq", "ol", "opx", "fsp", "fl", "mu", "fper", "chl"], ["ne", "q", "crst", "trd", "coe", "stv", "ky", "sill", "and", "ru", "sph", "O2", "H2O", "cor", "qfm", "mw", "qif", "nno", "hm", "iw", "cco", "aH2O", "aO2", "aMgO", "aFeO", "aAl2O3", "aTiO2"]), db_infos("igad", "Igneous alkaline dry (Weller et al., 2024)", 636, (62, 633, 634, 635, 636), ss_infos[ss_infos("spl_T21", "spl", 8, 7, 10, ["none", "nsp", "isp", "nhc", "ihc", "nmt", "imt", "pcr", "usp"], ["none", "x", "y", "c", "t", "Q1", "Q2", "Q3"], ["none", "xMgT", "xFeT", "xAlT", "xFe3T", "xMgM", "xFeM", "xAlM", "xFe3M", "xCrM", "xTiM"]), ss_infos("cpx_W24", "cpx", 10, 9, 13, ["none", "di", "cfs", "cats", "crdi", "cess", "cbuf", "jd", "cen", "cfm", "kjd"], ["none", "x", "y", "o", "n", "Q", "f", "cr", "t", "k"], ["none", "xMgM1", "xFeM1", "xAlM1", "xFe3M1", "xCrM1", "xTiM1", "xMgM2", "xFeM2", "xCaM2", "xNaM2", "xKM2", "xSiT", "xAlT"]), ss_infos("g_W24", "g", 6, 5, 8, ["none", "py", "alm", "gr", "andr", "knr", "tig"], ["none", "x", "c", "f", "cr", "t"], ["none", "xMgM1", "xFeM1", "xCaM1", "xAlM2", "xCrM2", "xFe3M2", "xMgM2", "xTiM2"]), ss_infos("ilm_W24", "ilm", 5, 4, 8, ["none", "oilm", "dilm", "hm", "ogk", "dgk"], ["none", "i", "m", "Q", "Qt"], ["none", "xFeA", "xTiA", "xFe3A", "xMgA", "xFeB", "xTiB", "xFe3B", "xMgB"]), ss_infos("liq_W24d", "liq", 14, 13, 18, ["none", "q3L", "sl1L", "wo1L", "fo2L", "fa2L", "nmL", "hmL", "ekL", "tiL", "kmL", "anL", "ab1L", "enL", "kfL"], ["none", "wo", "sl", "fo", "fa", "ns", "hm", "ek", "ti", "ks", "yan", "yab", "yen", "ykf"], ["none", "pq", "psl", "pwo", "pns", "phm", "pek", "pti", "pks", "pab", "pan", "pen", "pkf", "pol", "mgM", "feM", "CaM", "AlM", "sumM"]), ss_infos("ol_H18", "ol", 4, 3, 5, ["none", "mnt", "fa", "fo", "cfm"], ["none", "x", "c", "Q"], ["none", "xMgM1", "xFeM1", "xMgM2", "xFeM2", "xCaM2"]), ss_infos("opx_W24", "opx", 9, 8, 12, ["none", "en", "fs", "fm", "odi", "mgts", "cren", "obuf", "mess", "ojd"], ["none", "x", "y", "c", "Q", "f", "t", "cr", "j"], ["none", "xMgM1", "xFeM1", "xAlM1", "xFe3M1", "xCrM1", "xTiM1", "xMgM2", "xFeM2", "xCaM2", "xNaM2", "xSiT", "xAlT"]), ss_infos("fsp_H22", "fsp", 3, 2, 5, ["none", "ab", "an", "san"], ["none", "ca", "k"], ["none", "xNaA", "xCaA", "xKA", "xAlTB", "xSiTB"]), ss_infos("lct_W24", "lct", 2, 1, 2, ["none", "nlc", "klc"], ["none", "n"], ["none", "xNaA", "xKA"]), ss_infos("mel_W24", "mel", 5, 4, 8, ["none", "geh", "ak", "fak", "nml", "fge"], ["none", "x", "n", "y", "f"], ["none", "xNaM1", "xCaM1", "xMgT1", "xFeT1", "xAlT1", "xFe3T1", "xAlT2", "xSiT2"]), ss_infos("nph_W24", "nph", 6, 5, 9, ["none", "neN", "neS", "neK", "neO", "neC", "neF"], ["none", "s", "k", "Q", "f", "c"], ["none", "xNaA1", "xKA1", "xCaA1", "xNaA2", "xKA2", "xvA2", "xAlT2", "xSiT2", "xFe3T2"]), ss_infos("kals_W24", "kals", 2, 1, 2, ["none", "nks", "kls"], ["none", "k"], ["none", "xKA", "xNaA"])], ["spl", "cpx", "g", "ilm", "liq", "ol", "opx", "fsp", "lct", "mel", "nph", "kals"], ["q", "crst", "trd", "coe", "stv", "ky", "sill", "and", "ru", "sph", "O2", "cor", "qfm", "mw", "qif", "nno", "hm", "iw", "cco", "aH2O", "aO2", "aMgO", "aFeO", "aAl2O3", "aTiO2"]), db_infos("um", "Ultramafic (Evans & Frost., 2021)", 633, (62, 633, 634, 635, 636), ss_infos[ss_infos("fl_EF21", "fl", 2, 1, 2, ["none", "H2", "H2O"], ["none", "x"], ["none", "xH2", "xH2O"]), ss_infos("ol_H11", "ol", 2, 1, 2, ["none", "fo", "fa"], ["none", "x"], ["none", "xMg", "xFe"]), ss_infos("br_E13", "br", 2, 1, 2, ["none", "br", "fbr"], ["none", "x"], ["none", "xMg", "xFe"]), ss_infos("ch_EF21", "ch", 2, 1, 2, ["none", "chum", "chuf"], ["none", "x"], ["none", "xMg", "xFe"]), ss_infos("atg_EF21", "atg", 5, 4, 8, ["none", "atgf", "fatg", "atgo", "aatg", "oatg"], ["none", "x", "y", "f", "t"], ["none", "xMgM1", "xFeM1", "xFe3M1", "xAlM1", "xMgM2", "xFeM2", "xSiT", "xAlT"]), ss_infos("g_H18", "g", 2, 1, 2, ["none", "py", "alm"], ["none", "x"], ["none", "xMgM1", "xFeM1"]), ss_infos("ta_EF21", "ta", 6, 5, 9, ["none", "ta", "fta", "tao", "tats", "ota", "tap"], ["none", "x", "y", "f", "v", "Q"], ["none", "xMgM1", "xFeM1", "xvM1", "xMgM23", "xFeM23", "xFe3M23", "xAlM23", "xSiT2", "xAlT2"]), ss_infos("chl_W14", "chl", 7, 6, 11, ["none", "clin", "afchl", "ames", "daph", "ochl1", "ochl4", "f3clin"], ["none", "x", "y", "f", "m", "t", "QA1"], ["none", "xMgM1", "xFeM1", "xAlM1", "xMgM23", "xFeM23", "xMgM4", "xFeM4", "xFe3M4", "xAlM4", "xSiT2", "xAlT2"]), ss_infos("spi_W02", "spi", 3, 2, 4, ["none", "herc", "sp", "mt"], ["none", "x", "y"], ["none", "xAl", "xFe3", "xMg", "xFe2"]), ss_infos("opx_W14", "opx", 5, 4, 8, ["none", "en", "fs", "fm", "mgts", "fopx"], ["none", "x", "y", "f", "Q"], ["none", "xMgM1", "xFeM1", "xFe3M1", "xAlM1", "xMgM2", "xFeM2", "xAlT", "xSiT"]), ss_infos("po_E10", "po", 2, 1, 2, ["none", "trov", "trot"], ["none", "y"], ["none", "xfeM2", "xVM2"]), ss_infos("anth_D07", "anth", 5, 4, 9, ["none", "anth", "gedf", "fant", "a", "b"], ["none", "x", "y", "z", "a"], ["none", "xMgM4", "xFeM4", "xMgM13", "xFeM13", "xAlM2", "xMgM2", "xFeM2", "xAlT1", "xSiT1"])], ["fl", "ol", "br", "ch", "atg", "g", "ta", "chl", "spi", "opx", "po", "anth"], ["q", "crst", "trd", "coe", "stv", "ky", "sill", "and", "pyr", "O2", "hem", "cor", "qfm", "qif", "nno", "hm", "mw", "iw", "cco", "aH2O", "aO2", "aMgO", "aFeO", "aAl2O3", "aTiO2"]), db_infos("ume", "Ultramafic extended (Evans & Frost., 2021 with pl, amp and aug from Green et al., 2016)", 633, (62, 633, 634, 635, 636), ss_infos[ss_infos("fl_EF21", "fl", 2, 1, 2, ["none", "H2", "H2O"], ["none", "x"], ["none", "xH2", "xH2O"]), ss_infos("ol_H11", "ol", 2, 1, 2, ["none", "fo", "fa"], ["none", "x"], ["none", "xMg", "xFe"]), ss_infos("br_E13", "br", 2, 1, 2, ["none", "br", "fbr"], ["none", "x"], ["none", "xMg", "xFe"]), ss_infos("ch_EF21", "ch", 2, 1, 2, ["none", "chum", "chuf"], ["none", "x"], ["none", "xMg", "xFe"]), ss_infos("atg_EF21", "atg", 5, 4, 8, ["none", "atgf", "fatg", "atgo", "aatg", "oatg"], ["none", "x", "y", "f", "t"], ["none", "xMgM1", "xFeM1", "xFe3M1", "xAlM1", "xMgM2", "xFeM2", "xSiT", "xAlT"]), ss_infos("g_H18", "g", 2, 1, 2, ["none", "py", "alm"], ["none", "x"], ["none", "xMgM1", "xFeM1"]), ss_infos("ta_EF21", "ta", 6, 5, 9, ["none", "ta", "fta", "tao", "tats", "ota", "tap"], ["none", "x", "y", "f", "v", "Q"], ["none", "xMgM1", "xFeM1", "xvM1", "xMgM23", "xFeM23", "xFe3M23", "xAlM23", "xSiT2", "xAlT2"]), ss_infos("chl_W14", "chl", 7, 6, 11, ["none", "clin", "afchl", "ames", "daph", "ochl1", "ochl4", "f3clin"], ["none", "x", "y", "f", "m", "t", "QA1"], ["none", "xMgM1", "xFeM1", "xAlM1", "xMgM23", "xFeM23", "xMgM4", "xFeM4", "xFe3M4", "xAlM4", "xSiT2", "xAlT2"]), ss_infos("spi_W02", "spi", 3, 2, 4, ["none", "herc", "sp", "mt"], ["none", "x", "y"], ["none", "xAl", "xFe3", "xMg", "xFe2"]), ss_infos("opx_W14", "opx", 5, 4, 8, ["none", "en", "fs", "fm", "mgts", "fopx"], ["none", "x", "y", "f", "Q"], ["none", "xMgM1", "xFeM1", "xFe3M1", "xAlM1", "xMgM2", "xFeM2", "xAlT", "xSiT"]), ss_infos("po_E10", "po", 2, 1, 2, ["none", "trov", "trot"], ["none", "y"], ["none", "xfeM2", "xVM2"]), ss_infos("anth_D07", "anth", 5, 4, 9, ["none", "anth", "gedf", "fant", "a", "b"], ["none", "x", "y", "z", "a"], ["none", "xMgM4", "xFeM4", "xMgM13", "xFeM13", "xAlM2", "xMgM2", "xFeM2", "xAlT1", "xSiT1"]), ss_infos("fsp_H22", "pl4tr", 2, 1, 4, ["none", "ab", "an"], ["none", "ca"], ["none", "xNaA", "xCaA", "xAlTB", "xSiTB"]), ss_infos("amp_G16", "amp", 9, 8, 14, ["none", "tr", "tsm", "prgm", "glm", "cumm", "grnm", "a", "b", "mrb"], ["none", "x", "y", "z", "a", "c", "f", "Q1", "Q2"], ["none", "xvA", "xNaA", "xMgM13", "xFeM13", "xMgM2", "xFeM2", "xAlM2", "xFe3M2", "xCaM4", "xMgM4", "xFeM4", "xNaM4", "xSiT1", "xAlT1"]), ss_infos("aug_G16", "aug", 8, 7, 12, ["none", "di", "cenh", "cfs", "jdm", "acmm", "ocats", "dcats", "fmc"], ["none", "x", "y", "f", "z", "j", "Qfm", "Qa1"], ["none", "xMgM1", "xFeM1", "xAlM1", "xFe3M1", "xMgM2", "xFeM2", "xCaM2", "xNaM2", "xSiT1", "xAlT1", "xSiT2", "xAlT2"]), ss_infos("", "spl", 7, 6, 9, ["none", "nsp", "isp", "nhc", "ihc", "nmt", "imt", "pcr"], ["none", "x", "y", "c", "q1", "q2", "q3"], ["none", "xMgT", "xFeT", "xAlT", "xFe3T", "xMgM", "xFeM", "xAlM", "xFe3M", "xCrM"]), ss_infos("fl_H03", "flc", 2, 1, 2, ["none", "H2O", "CO2"], ["none", "x"], ["none", "xH2O", "xCO2"]), ss_infos("occm_F11", "occm", 5, 4, 9, ["none", "cc", "odo", "mag", "sid", "oank"], ["none", "x", "j", "q", "v"], ["none", "xCaM1", "xMgM1", "xFeM1", "xCaM2a", "xMgM2a", "xFeM2a", "xCaM2b", "xMgM2b", "xFeM2b"])], ["fl", "ol", "br", "ch", "atg", "g", "ta", "chl", "spi", "opx", "po", "anth", "pl4tr", "amp", "aug", "spl", "flc", "occm"], ["q", "crst", "trd", "coe", "stv", "ky", "sill", "and", "pyr", "O2", "hem", "H2O", "cor", "gph", "qfm", "qif", "nno", "hm", "mw", "iw", "cco", "aH2O", "aO2", "aMgO", "aFeO", "aAl2O3", "aTiO2"]), db_infos("mtl", "Mantle (Holland et al., 2013)", 633, (62, 633, 634, 635, 636), ss_infos[ss_infos("g_H13", "g", 6, 5, 8, ["none", "py", "alm", "gr", "maj", "gfm", "nagt"], ["none", "x", "c", "y", "Q", "n"], ["none", "xMgM1", "xFeM1", "xCaM1", "xNaM1", "xAlM2", "xMgM2", "xFeM2", "xSiM2"]), ss_infos("fp_H13", "fp", 2, 1, 2, ["none", "per", "fper"], ["none", "x"], ["none", "xMgM1", "xFeM1"]), ss_infos("mpv_H13", "mpv", 5, 4, 7, ["none", "mpv", "fpvm", "cpvm", "apv", "npvm"], ["none", "x", "y", "c", "n"], ["none", "xCaM1", "xMgM1", "xFeM1", "xNaM1", "xAlM1", "xAlM2", "xSiM2"]), ss_infos("cpv_H13", "cpv", 5, 4, 7, ["none", "mpv", "fpvm", "cpvm", "apv", "npvm"], ["none", "x", "y", "c", "n"], ["none", "xCaM1", "xMgM1", "xFeM1", "xNaM1", "xAlM1", "xAlM2", "xSiM2"]), ss_infos("crn_H13", "crn", 3, 2, 5, ["none", "cor", "mcor", "fcor"], ["none", "x", "y"], ["none", "xMgM1", "xFeM1", "xAlM1", "xAlM2", "xSiM2"]), ss_infos("cf_H13", "cf", 6, 5, 8, ["none", "macf", "cacf", "mscf", "fscf", "oscf", "nacfm"], ["none", "y", "x", "Q", "c", "n"], ["none", "xCaM1", "xMgM1", "xFeM1", "xNaM1", "xMgM2", "xFeM2", "xAlM2", "xSiM2"]), ss_infos("nal_H13", "nal", 7, 6, 10, ["none", "nanal", "canal", "manal", "msnal", "fsnal", "o1nal", "o2nal"], ["none", "y", "x", "Q1", "Q2", "c", "n"], ["none", "xCaM3", "xMgM3", "xFeM3", "xNaM3", "xMgM2", "xFeM2", "xMgM1", "xFeM1", "xAlM1", "xSiM1"]), ss_infos("aki_H13", "aki", 3, 2, 5, ["none", "aak", "mak", "fak"], ["none", "x", "y"], ["none", "xAlA", "xMgA", "xFeA", "xAlB", "xSiB"]), ss_infos("ol_H13", "ol", 2, 1, 2, ["none", "fo", "fa"], ["none", "x"], ["none", "pfo", "pfa"]), ss_infos("wad_H13", "wad", 2, 1, 2, ["none", "mwd", "fwd"], ["none", "x"], ["none", "pmwd", "pfwd"]), ss_infos("ring_H13", "ring", 2, 1, 2, ["none", "mrw", "frw"], ["none", "x"], ["none", "pmrw", "pfrw"]), ss_infos("cpx_H13", "cpx", 6, 5, 9, ["none", "di", "cfs", "cats", "jd", "cen", "cfm"], ["none", "x", "y", "o", "n", "Q"], ["none", "xMgM1", "xFeM1", "xAlM1", "xMgM2", "xFeM2", "xCaM2", "xNaM2", "xSiT", "xAlT"]), ss_infos("opx_H13", "opx", 5, 4, 8, ["none", "en", "fs", "fm", "odi", "mgts"], ["none", "x", "y", "c", "Q"], ["none", "xMgM1", "xFeM1", "xAlM1", "xCaM2", "xMgM2", "xFeM2", "xSiT", "xAlT"]), ss_infos("hpx_H13", "hpx", 5, 4, 8, ["none", "en", "fs", "fm", "odi", "hmts"], ["none", "x", "y", "c", "Q"], ["none", "xMgM1", "xFeM1", "xAlM1", "xCaM2", "xMgM2", "xFeM2", "xSiT", "xAlT"])], ["g", "fp", "mpv", "cpv", "crn", "cf", "nal", "aki", "ol", "wad", "ring", "cpx", "opx", "hpx"], ["q", "crst", "trd", "coe", "stv", "ky", "sill", "and"]), db_infos("mpe", "Metapelite extended (White et al., 2014 with po from Evans & Frost., 2021, amp dio and aug from Green et al., 2016)", 62, (62, 633, 634, 635, 636), ss_infos[ss_infos("liq_W14", "liq", 8, 7, 10, ["none", "q4L", "abL", "kspL", "anL", "slL", "fo2L", "fa2L", "h2oL"], ["none", "q", "fsp", "na", "an", "ol", "x", "h2o"], ["none", "fac", "pq", "xab", "xksp", "pan", "psil", "pol", "xFe", "xMg", "ph2o"]), ss_infos("fsp_H22", "fsp", 3, 2, 5, ["none", "ab", "an", "san"], ["none", "ca", "k"], ["none", "xNaA", "xCaA", "xKA", "xAlTB", "xSiTB"]), ss_infos("bi_W14", "bi", 7, 6, 13, ["none", "phl", "annm", "obi", "east", "tbi", "fbi", "mmbi"], ["none", "x", "m", "y", "f", "t", "Q"], ["none", "xMgM3", "xMnM3", "xFeM3", "xFe3M3", "xTiM3", "xAlM3", "xMgM12", "xMnM12", "xFeM12", "xSiT", "xAlT", "xOHV", "xOV"]), ss_infos("g_W14", "g", 5, 4, 6, ["none", "py", "alm", "spss", "gr", "kho"], ["none", "x", "z", "m", "f"], ["none", "xMgX", "xFeX", "xMnX", "xCaX", "xAlY", "xFe3Y"]), ss_infos("ep_H11", "ep", 3, 2, 4, ["none", "cz", "ep", "fep"], ["none", "f", "Q"], ["none", "xFeM1", "xAlM1", "xFeM3", "xAlM3"]), ss_infos("ma_W14", "ma", 6, 5, 10, ["none", "mut", "celt", "fcelt", "pat", "ma", "fmu"], ["none", "x", "y", "f", "n", "c"], ["none", "xKA", "xNaA", "xCaA", "xMgM2A", "xFeM2A", "xAlM2A", "xAlM2B", "xFe3M2B", "xSiT1", "xAlT1"]), ss_infos("mu_W14", "mu", 6, 5, 10, ["none", "mut", "cel", "fcel", "pat", "ma", "fmu"], ["none", "x", "y", "f", "n", "c"], ["none", "xKA", "xNaA", "xCaA", "xMgM2A", "xFeM2A", "xAlM2A", "xAlM2B", "xFe3M2B", "xSiT1", "xAlT1"]), ss_infos("opx_W14", "opx", 7, 6, 11, ["none", "en", "fs", "fm", "mgts", "fopx", "mnopx", "odi"], ["none", "x", "m", "y", "f", "c", "Q"], ["none", "xMgM1", "xFeM1", "xMnM1", "xFe3M1", "xAlM1", "xMgM2", "xFeM2", "xMnM2", "xCaM2", "xSiT", "xAlT"]), ss_infos("sa_W14", "sa", 5, 4, 8, ["none", "spr4", "spr5", "fspm", "spro", "ospr"], ["none", "x", "y", "f", "Q"], ["none", "xMgM3", "xFeM3", "xFe3M3", "xAlM3", "xMgM456", "xFeM456", "xSiT", "xAlT"]), ss_infos("cd_W14", "cd", 4, 3, 5, ["none", "crd", "fcrd", "hcrd", "mncd"], ["none", "x", "m", "h"], ["none", "xFeX", "xMgX", "xMnX", "xH2OH", "xvH"]), ss_infos("st_W14", "st", 5, 4, 7, ["none", "mstm", "fst", "mnstm", "msto", "mstt"], ["none", "x", "m", "f", "t"], ["none", "xMgX", "xFeX", "xMnX", "xAlY", "xFe3Y", "xTiY", "xvY"]), ss_infos("chl_W14", "chl", 8, 7, 12, ["none", "clin", "afchl", "ames", "daph", "ochl1", "ochl4", "f3clin", "mmchl"], ["none", "x", "y", "f", "m", "QAl", "Q1", "Q4"], ["none", "xMgM1", "xMnM1", "xFeM1", "xAlM1", "xMgM23", "xFeM23", "xMgM4", "xFeM4", "xFe3M4", "xAlM4", "xSiT2", "xAlT2"]), ss_infos("ctd_W14", "ctd", 4, 3, 5, ["none", "mctd", "fctd", "mnct", "ctdo"], ["none", "x", "m", "f"], ["none", "xAlM1A", "xFe3M1A", "xFeM1B", "xMgM1B", "xMnM1B"]), ss_infos("sa_W02", "sp", 4, 3, 5, ["none", "herc", "sp", "mt", "usp"], ["none", "x", "y", "z"], ["none", "xAl", "xFe3", "xTi", "xMg", "xFe2"]), ss_infos("mt_W00", "mt", 3, 2, 5, ["none", "imt", "dmt", "usp"], ["none", "x", "Q"], ["none", "xTiM", "xFe3M", "xFeM", "xFe3T", "xFeT"]), ss_infos("ilm_W00", "ilm", 3, 2, 6, ["none", "oilm", "dilm", "dhem"], ["none", "x", "Q"], ["none", "xFe2A", "xTiA", "xFe3A", "xFe2B", "xTiB", "xFe3B"]), ss_infos("ilmm_W14", "ilmm", 5, 4, 7, ["none", "oilm", "dilm", "dhem", "geik", "pnt"], ["none", "i", "g", "m", "Q"], ["none", "xFeA", "xTiA", "xMgA", "xMnA", "xFe3A", "xFeB", "xTiB"]), ss_infos("occm_F11", "occm", 5, 4, 9, ["none", "cc", "odo", "mag", "sid", "oank"], ["none", "x", "j", "q", "v"], ["none", "xCaM1", "xMgM1", "xFeM1", "xCaM2a", "xMgM2a", "xFeM2a", "xCaM2b", "xMgM2b", "xFeM2b"]), ss_infos("fl_H03", "fl", 2, 1, 2, ["none", "H2O", "CO2"], ["none", "x"], ["none", "xH2O", "xCO2"]), ss_infos("po_E10", "po", 2, 1, 2, ["none", "trov", "trot"], ["none", "y"], ["none", "xfeM2", "xVM2"]), ss_infos("dio_G16", "dio", 7, 6, 12, ["none", "jd", "di", "hed", "acmm", "om", "cfm", "jac"], ["none", "x", "j", "t", "c", "qaf", "qfm"], ["none", "xMgM1m", "xFeM1m", "xFe3M1m", "xAlM1m", "xMgM1a", "xFeM1a", "xFe3M1a", "xAlM1a", "xNaM2c", "xCaM2c", "xNaM2n", "xCaM2n"]), ss_infos("aug_G16", "aug", 8, 7, 12, ["none", "di", "cenh", "cfs", "jdm", "acmm", "ocats", "dcats", "fmc"], ["none", "x", "y", "c", "z", "j", "qfm", "qal"], ["none", "xMgM1", "xFeM1", "xAlM1", "xFe3M1", "xMgM2", "xFeM2", "xCaM2", "xNaM2", "xSiT1", "xAlT1", "xSiT2", "xAlT2"]), ss_infos("amp_G16", "amp", 11, 10, 18, ["none", "tr", "tsm", "prgm", "glm", "cumm", "grnm", "a", "b", "mrb", "kprg", "tts"], ["none", "x", "y", "z", "a", "k", "c", "f", "t", "q1", "q2"], ["none", "xvA", "xNaA", "xKA", "xMgM13", "xFeM13", "xMgM2", "xFeM2", "xAlM2", "xFe3M2", "xTiM2", "xCaM4", "xMgM4", "xFeM4", "xNaM4", "xSiT1", "xAlT1", "xOHV", "xOV"]), ss_infos("", "oamp", 9, 8, 14, ["none", "anth", "ged", "ompa", "omgl", "otr", "fanth", "omrb", "amoa", "amob"], ["none", "x", "y", "z", "a", "c", "f", "q1", "q2"], ["none", "xvA", "xNaA", "xCaM4", "xNaM4", "xMgM4", "xFeM4", "xMgM13", "xFeM13", "xAlM2", "xFe3M2", "xMgM2", "xFeM2", "xAlT1", "xSiT1"])], ["liq", "fsp", "bi", "g", "ep", "ma", "mu", "opx", "sa", "cd", "st", "chl", "ctd", "sp", "mt", "ilm", "ilmm", "occm", "fl", "po", "dio", "aug", "amp", "oamp"], ["q", "crst", "trd", "coe", "stv", "ky", "sill", "and", "ru", "sph", "O2", "pyr", "gph", "law", "zo", "prl", "mpm", "pre", "cor", "qfm", "mw", "qif", "nno", "hm", "iw", "cco", "aH2O", "aO2", "aMgO", "aFeO", "aAl2O3", "aTiO2"]), db_infos("sb11", "Stixrude & Lithgow-Bertelloni (2011)", -1, (62, 633, 634, 635, 636), ss_infos[ss_infos("", "plg", 2, 2, 1, ["none", "an", "ab"], ["none", "", ""], ["none", ""]), ss_infos("", "sp", 2, 2, 2, ["none", "sp", "hc"], ["none", "", ""], ["none", "", ""]), ss_infos("", "ol", 2, 2, 1, ["none", "fo", "fa"], ["none", "", ""], ["none", ""]), ss_infos("", "wa", 2, 2, 1, ["none", "mgwa", "fewa"], ["none", "", ""], ["none", ""]), ss_infos("", "ri", 2, 2, 1, ["none", "mgri", "feri"], ["none", "", ""], ["none", ""]), ss_infos("", "opx", 4, 4, 2, ["none", "en", "fs", "mgts", "odi"], ["none", "", "", "", ""], ["none", "", ""]), ss_infos("", "cpx", 5, 5, 3, ["none", "di", "he", "cen", "cats", "jd"], ["none", "", "", "", "", ""], ["none", "", "", ""]), ss_infos("", "hpcpx", 2, 2, 1, ["none", "hpcen", "hpcfs"], ["none", "", ""], ["none", ""]), ss_infos("", "ak", 3, 3, 2, ["none", "mgak", "feak", "co"], ["none", "", "", ""], ["none", "", ""]), ss_infos("", "gtmj", 5, 5, 3, ["none", "py", "alm", "gr", "mgmj", "jdmj"], ["none", "", "", "", "", ""], ["none", "", "", ""]), ss_infos("", "pv", 3, 3, 2, ["none", "mgpv", "fepv", "alpv"], ["none", "", "", ""], ["none", "", ""]), ss_infos("", "ppv", 3, 3, 2, ["none", "mppv", "fppv", "appv"], ["none", "", "", ""], ["none", "", ""]), ss_infos("", "mw", 2, 2, 1, ["none", "pe", "wu"], ["none", "", ""], ["none", ""]), ss_infos("", "cf", 3, 3, 2, ["none", "mgcf", "fecf", "nacf"], ["none", "", "", ""], ["none", "", ""])], ["plg", "sp", "ol", "wa", "ri", "opx", "cpx", "hpcpx", "ak", "gtmj", "pv", "ppv", "mw", "cf"], ["neph", "ky", "st", "coe", "qtz", "capv", "co", "aMgO", "aFeO", "aAl2O3"]), db_infos("sb21", "Stixrude & Lithgow-Bertelloni (2021)", -1, (62, 633, 634, 635, 636), ss_infos[ss_infos("", "plg", 2, 2, 1, ["none", "an", "ab"], ["none", "", ""], ["none", ""]), ss_infos("", "sp", 2, 2, 2, ["none", "sp", "hc"], ["none", "", ""], ["none", "", ""]), ss_infos("", "ol", 2, 2, 1, ["none", "fo", "fa"], ["none", "", ""], ["none", ""]), ss_infos("", "wa", 2, 2, 1, ["none", "mgwa", "fewa"], ["none", "", ""], ["none", ""]), ss_infos("", "ri", 2, 2, 1, ["none", "mgri", "feri"], ["none", "", ""], ["none", ""]), ss_infos("", "opx", 4, 4, 2, ["none", "en", "fs", "mgts", "odi"], ["none", "", "", "", ""], ["none", "", ""]), ss_infos("", "cpx", 5, 5, 3, ["none", "di", "he", "cen", "cats", "jd"], ["none", "", "", "", "", ""], ["none", "", "", ""]), ss_infos("", "hpcpx", 2, 2, 1, ["none", "hpcen", "hpcfs"], ["none", "", ""], ["none", ""]), ss_infos("", "ak", 3, 3, 2, ["none", "mgak", "feak", "co"], ["none", "", "", ""], ["none", "", ""]), ss_infos("", "gtmj", 5, 5, 3, ["none", "py", "alm", "gr", "mgmj", "jdmj"], ["none", "", "", "", "", ""], ["none", "", "", ""]), ss_infos("", "pv", 3, 3, 2, ["none", "mgpv", "fepv", "alpv"], ["none", "", "", ""], ["none", "", ""]), ss_infos("", "ppv", 3, 3, 2, ["none", "mppv", "fppv", "appv"], ["none", "", "", ""], ["none", "", ""]), ss_infos("", "cf", 3, 3, 2, ["none", "mgcf", "fecf", "nacf"], ["none", "", "", ""], ["none", "", ""]), ss_infos("", "mw", 3, 3, 2, ["none", "pe", "wu", "anao"], ["none", "", "", ""], ["none", "", ""]), ss_infos("", "nal", 3, 3, 3, ["none", "mnal", "fnal", "nnal"], ["none", "", "", ""], ["none", "", "", ""])], ["plg", "sp", "ol", "wa", "ri", "opx", "cpx", "hpcpx", "ak", "gtmj", "pv", "ppv", "cf", "mw", "nal"], ["neph", "ky", "st", "coe", "qtz", "capv", "co", "aMgO", "aFeO", "aAl2O3"]), db_infos("sb24", "Stixrude & Lithgow-Bertelloni (2024)", -1, (-1, -1, -1, -1, -1), ss_infos[ss_infos("", "plg", 2, 2, 1, ["none", "an", "ab"], ["none", "", ""], ["none", ""]), ss_infos("", "sp", 4, 4, 2, ["none", "sp", "hc", "smag", "picr"], ["none", "", "", "", ""], ["none", "", ""]), ss_infos("", "ol", 2, 2, 1, ["none", "fo", "fa"], ["none", "", ""], ["none", ""]), ss_infos("", "wa", 2, 2, 1, ["none", "mgwa", "fewa"], ["none", "", ""], ["none", ""]), ss_infos("", "ri", 2, 2, 1, ["none", "mgri", "feri"], ["none", "", ""], ["none", ""]), ss_infos("", "opx", 4, 4, 2, ["none", "en", "fs", "mgts", "odi"], ["none", "", "", "", ""], ["none", "", ""]), ss_infos("", "cpx", 6, 6, 3, ["none", "di", "he", "cen", "cats", "jd", "acm"], ["none", "", "", "", "", "", ""], ["none", "", "", ""]), ss_infos("", "hpcpx", 2, 2, 1, ["none", "mgc2", "fec2"], ["none", "", ""], ["none", ""]), ss_infos("", "ak", 5, 5, 2, ["none", "mgak", "feak", "co", "hem", "esk"], ["none", "", "", "", "", ""], ["none", "", ""]), ss_infos("", "gtmj", 7, 7, 3, ["none", "py", "alm", "gr", "mgmj", "jdmj", "knor", "andr"], ["none", "", "", "", "", "", "", ""], ["none", "", "", ""]), ss_infos("", "pv", 7, 7, 2, ["none", "mgpv", "fepv", "alpv", "hepv", "hlpv", "fapv", "crpv"], ["none", "", "", "", "", "", "", ""], ["none", "", ""]), ss_infos("", "ppv", 5, 5, 2, ["none", "mppv", "fppv", "appv", "hppv", "cppv"], ["none", "", "", "", "", ""], ["none", "", ""]), ss_infos("", "cf", 5, 5, 3, ["none", "mgcf", "fecf", "nacf", "hmag", "crcf"], ["none", "", "", "", "", ""], ["none", "", "", ""]), ss_infos("", "mw", 5, 5, 2, ["none", "pe", "wu", "wuls", "mag", "anao"], ["none", "", "", "", "", ""], ["none", "", ""]), ss_infos("", "nal", 3, 3, 3, ["none", "mnal", "fnal", "nnal"], ["none", "", "", ""], ["none", "", "", ""])], ["plg", "sp", "ol", "wa", "ri", "opx", "cpx", "hpcpx", "ak", "gtmj", "pv", "ppv", "cf", "mw", "nal"], ["neph", "ky", "st", "coe", "qtz", "capv", "O2", "fea", "fee", "feg", "apbo", "wo", "lppv", "pwo", "aMgO", "aFeO", "aAl2O3"])]
+    dbs     = ["mp","mb","mbe","ig","igad","um","ume","mtl","mpe","sb11","sb21","sb24"]
     id      = findall(dbs .== dtb)[1]
 
     return db_inf[id]
 end
 
 """
-    Function to retrieve the list of indexes of the solution phases to be removed from the minimization
+    remove_phases(list, dtb)
+
+    Retrieve the list of indexes of the solution phases to be removed from the minimization.
+
+    Parameters
+    ----------
+    list : Union{Nothing, Vector{String}}
+        List of phase names to remove, or `nothing` to remove none.
+    dtb : String
+        Database name (e.g., "mp", "ig").
+
+    Returns
+    -------
+    rm_list : Union{Nothing, Vector{Int64}}
+        Vector of phase indexes to remove (negative for pure phases), or `nothing` if no phases to remove.
 """
 function remove_phases( list        :: Union{Nothing,Vector{String}},
                         dtb         :: String)
@@ -294,9 +623,41 @@ function remove_phases( list        :: Union{Nothing,Vector{String}},
 end
 
 """
-    Dat = Initialize_MAGEMin(db = "ig"; verbose::Union{Bool, Int64} = true)
+    Initialize_MAGEMin(db="ig"; verbose=0, dataset=nothing, limitCaOpx=0, CaOpxLim=0.0, mbCpx=1, mbIlm=0, mpSp=0, mpIlm=0, ig_ed=0, buffer="NONE", solver=0)
 
-Initializes MAGEMin on one or more threads, for the database `db`. You can suppress all output with `verbose=false`. `verbose=true` will give a brief summary of the result, whereas `verbose=1` will give more details about the computations.
+    Initialize MAGEMin on one or more threads for the specified database.
+
+    Parameters
+    ----------
+    db : String, optional
+        Database name (default: "ig"). Options: "mp", "mb", "mbe", "ig", "igad", "um", "ume", "mtl", "mpe", "sb11", "sb21", "sb24".
+    verbose : Union{Int64, Bool}, optional
+        Verbosity level (default: 0). `false` or `-1` suppresses output, `true` or `0` gives a brief summary, `1` gives detailed output.
+    dataset : Union{Nothing, Int64}, optional
+        Dataset identifier (default: nothing). Must be in `available_TC_ds` if specified.
+    limitCaOpx : Int64, optional
+        Flag to limit Ca in orthopyroxene (default: 0).
+    CaOpxLim : Float64, optional
+        Ca limit value for orthopyroxene (default: 0.0).
+    mbCpx : Int64, optional
+        Metabasite clinopyroxene model flag (default: 1).
+    mbIlm : Int64, optional
+        Metabasite ilmenite model flag (default: 0).
+    mpSp : Int64, optional
+        Metapelite spinel model flag (default: 0).
+    mpIlm : Int64, optional
+        Metapelite ilmenite model flag (default: 0).
+    ig_ed : Int64, optional
+        Igneous extended database flag (default: 0).
+    buffer : String, optional
+        Buffer type (default: "NONE").
+    solver : Int64, optional
+        Solver type (default: 0).
+
+    Returns
+    -------
+    data : MAGEMin_Data
+        Initialized MAGEMin data structure containing per-thread databases and variables.
 """
 function Initialize_MAGEMin(db = "ig";  verbose     ::Union{Int64,Bool} = 0,
                                         dataset     ::Union{Nothing,Int64} = nothing,
@@ -306,8 +667,9 @@ function Initialize_MAGEMin(db = "ig";  verbose     ::Union{Int64,Bool} = 0,
                                         mbIlm       ::Int64             = 0,
                                         mpSp        ::Int64             = 0,
                                         mpIlm       ::Int64             = 0,
+                                        ig_ed       ::Int64             = 0,
                                         buffer      ::String            = "NONE",
-                                        solver      ::Int64             = 2         )
+                                        solver      ::Int64             = 0         )
 
     gv, z_b, DB, splx_data = init_MAGEMin(db;   verbose     = verbose,
                                                 dataset     = dataset,
@@ -315,6 +677,7 @@ function Initialize_MAGEMin(db = "ig";  verbose     ::Union{Int64,Bool} = 0,
                                                 mbIlm       = mbIlm,
                                                 mpSp        = mpSp,
                                                 mpIlm       = mpIlm,
+                                                ig_ed       = ig_ed,
                                                 limitCaOpx  = limitCaOpx,
                                                 CaOpxLim    = CaOpxLim,
                                                 buffer      = buffer,
@@ -341,6 +704,7 @@ function Initialize_MAGEMin(db = "ig";  verbose     ::Union{Int64,Bool} = 0,
                                                     mbIlm       = mbIlm,
                                                     mpSp        = mpSp,
                                                     mpIlm       = mpIlm,
+                                                    ig_ed       = ig_ed,
                                                     limitCaOpx  = limitCaOpx,
                                                     CaOpxLim    = CaOpxLim,
                                                     buffer      = buffer,
@@ -357,8 +721,18 @@ end
 
 
 """
-    Finalize_MAGEMin(dat::MAGEMin_Data)
-Finalizes MAGEMin and clears variables
+    Finalize_MAGEMin(dat)
+
+    Finalize MAGEMin and free all allocated memory.
+
+    Parameters
+    ----------
+    dat : MAGEMin_Data
+        MAGEMin data structure to finalize.
+
+    Returns
+    -------
+    nothing
 """
 function Finalize_MAGEMin(dat::MAGEMin_Data)
     for id in 1:Threads.maxthreadid()
@@ -370,9 +744,47 @@ end
 
 
 """
-    gv, DB = init_MAGEMin(;EM_database=0)
+    init_MAGEMin(db="ig"; verbose=0, dataset=nothing, mbCpx=0, mbIlm=0, mpSp=0, mpIlm=0, ig_ed=0, limitCaOpx=0, CaOpxLim=1.0, buffer="NONE", solver=0)
 
-Initializes MAGEMin (including setting global options) and loads the Database.
+    Initialize MAGEMin (including setting global options) and load the database for a single thread.
+
+    Parameters
+    ----------
+    db : String, optional
+        Database name (default: "ig").
+    verbose : Union{Int64, Bool}, optional
+        Verbosity level (default: 0).
+    dataset : Union{Nothing, Int}, optional
+        Dataset identifier (default: nothing).
+    mbCpx : Int64, optional
+        Metabasite clinopyroxene model flag (default: 0).
+    mbIlm : Int64, optional
+        Metabasite ilmenite model flag (default: 0).
+    mpSp : Int64, optional
+        Metapelite spinel model flag (default: 0).
+    mpIlm : Int64, optional
+        Metapelite ilmenite model flag (default: 0).
+    ig_ed : Int64, optional
+        Igneous extended database flag (default: 0).
+    limitCaOpx : Int64, optional
+        Flag to limit Ca in orthopyroxene (default: 0).
+    CaOpxLim : Float64, optional
+        Ca limit value for orthopyroxene (default: 1.0).
+    buffer : String, optional
+        Buffer type (default: "NONE").
+    solver : Int64, optional
+        Solver type (default: 0).
+
+    Returns
+    -------
+    gv : global_variables
+        Global variables structure.
+    z_b : bulk_infos
+        Bulk rock information structure.
+    DB : Database
+        Thermodynamic database structure.
+    splx_data : simplex_data
+        Simplex data structure.
 """
 function  init_MAGEMin( db          :: String               =  "ig";
                         verbose     :: Union{Int64,Bool}    =   0,
@@ -381,10 +793,11 @@ function  init_MAGEMin( db          :: String               =  "ig";
                         mbIlm       :: Int64                =   0,
                         mpSp        :: Int64                =   0,
                         mpIlm       :: Int64                =   0,
+                        ig_ed       :: Int64                =   0,
                         limitCaOpx  :: Int64                =   0,
                         CaOpxLim    :: Float64              =   1.0,
                         buffer      :: String               =  "NONE",
-                        solver      :: Int64                =   2           )
+                        solver      :: Int64                =   0           )
 
     z_b         = LibMAGEMin.bulk_infos()
     gv          = LibMAGEMin.global_variables()
@@ -392,7 +805,7 @@ function  init_MAGEMin( db          :: String               =  "ig";
     DB          = LibMAGEMin.Database()
     gv          = LibMAGEMin.global_variable_alloc( pointer_from_objref(z_b))
 
-    sb = ["sb11","sb21"]
+    sb = ["sb11","sb21","sb24"]
     if db in sb
         rg = "sb"
     else
@@ -405,6 +818,9 @@ function  init_MAGEMin( db          :: String               =  "ig";
             unsafe_copyto!(convert(Ptr{UInt8}, gv.db), pointer(db), length(db) + 1)
         elseif db == "mb"
             gv.EM_database = 1
+            unsafe_copyto!(convert(Ptr{UInt8}, gv.db), pointer(db), length(db) + 1)
+        elseif db == "mbe"
+            gv.EM_database = 11
             unsafe_copyto!(convert(Ptr{UInt8}, gv.db), pointer(db), length(db) + 1)
         elseif db == "ig"
             gv.EM_database = 2
@@ -435,6 +851,9 @@ function  init_MAGEMin( db          :: String               =  "ig";
         elseif db == "sb21"
             gv.EM_database = 1
             unsafe_copyto!(convert(Ptr{UInt8}, gv.db), pointer(db), length(db) + 1)
+        elseif db == "sb24"
+            gv.EM_database = 2
+            unsafe_copyto!(convert(Ptr{UInt8}, gv.db), pointer(db), length(db) + 1)
         else 
             print("Database not implemented... using default sb11\n")
             gv.EM_database = 0
@@ -446,11 +865,13 @@ function  init_MAGEMin( db          :: String               =  "ig";
     gv.mbIlm        = mbIlm
     gv.mpSp         = mpSp
     gv.mpIlm        = mpIlm
+    gv.ig_ed        = ig_ed
 
     gv.limitCaOpx   = limitCaOpx
     gv.CaOpxLim     = CaOpxLim
     gv.solver       = solver
-    gv.buffer       = pointer(buffer)
+    unsafe_copyto!(convert(Ptr{UInt8}, gv.buffer), pointer(buffer), length(buffer) + 1)
+
 
     if !isnothing(dataset) && rg == "tc" && dataset in available_TC_ds
         gv.EM_dataset = dataset
@@ -467,8 +888,22 @@ function  init_MAGEMin( db          :: String               =  "ig";
 end
 
 """
-    finalize_MAGEMin(gv,DB)
-Cleans up the memory
+    finalize_MAGEMin(gv, DB, z_b)
+
+    Free the memory allocated by `init_MAGEMin`.
+
+    Parameters
+    ----------
+    gv : global_variables
+        Global variables structure.
+    DB : Database
+        Thermodynamic database structure.
+    z_b : bulk_infos
+        Bulk rock information structure.
+
+    Returns
+    -------
+    nothing
 """
 function  finalize_MAGEMin(gv,DB, z_b)
     LibMAGEMin.FreeDatabases(gv, DB, z_b)
@@ -482,14 +917,16 @@ function single_point_minimization(     P           ::  T1,
                                         MAGEMin_db  ::  MAGEMin_Data;
                                         light       ::  Bool                            = false,
                                         name_solvus ::  Bool                            = false,
+                                        fixed_bulk  ::  Bool                            = false,
                                         test        ::  Int64                           = 0, # if using a build-in test case,
                                         X           ::  VecOrMat                        = nothing,      
                                         B           ::  Union{Nothing, T1 }             = nothing,
                                         G           ::  Union{Nothing, Vector{LibMAGEMin.mSS_data},Vector{Vector{LibMAGEMin.mSS_data}}}  = nothing,
                                         scp         ::  Int64                           = 0,
+                                        dT          ::  T1                              = 2.0,
                                         iguess      ::  Bool                            = false,
                                         rm_list     ::  Union{Nothing, Vector{Int64}}   = nothing,
-                                        W           ::  Union{Nothing, W_Data}          = nothing,
+                                        W           ::  Union{Nothing, Vector{MAGEMin_C.W_data{Float64, Int64}}}          = nothing,
                                         Xoxides     = Vector{String},
                                         sys_in      = "mol",
                                         rg          = "tc",
@@ -510,11 +947,13 @@ function single_point_minimization(     P           ::  T1,
                                                 MAGEMin_db;
                                                 light       =   light,
                                                 name_solvus =   name_solvus,
+                                                fixed_bulk  =   fixed_bulk,
                                                 test        =   test,
                                                 X           =   X,
                                                 B           =   B,
                                                 G           =   G,   
                                                 scp         =   scp,
+                                                dT          =   dT,
                                                 iguess      =   iguess,
                                                 rm_list     =   rm_list,
                                                 W           =   W,
@@ -528,83 +967,88 @@ end
 
 
 """
-Out_PT =multi_point_minimization(P::T2,T::T2,MAGEMin_db::MAGEMin_Data;test::Int64=0,X::Union{Nothing, AbstractVector{Float64}, AbstractVector{<:AbstractVector{Float64}}}=nothing,B::Union{Nothing, T1, Vector{T1}}=nothing,W::Union{Nothing, W_Data}=nothing,Xoxides=Vector{String},sys_in="mol",progressbar=true, 
-                                callback_fn ::Union{Nothing, Function}= nothing,  
-                                callback_int::Int64 = 1) where {T1 <: Float64, T2 <: AbstractVector{T1}}
+    multi_point_minimization(P, T, MAGEMin_db; light=false, name_solvus=false, fixed_bulk=false, test=0, X=nothing, B=nothing, G=nothing, scp=0, dT=2.0, iguess=false, rm_list=nothing, W=nothing, Xoxides=Vector{String}, sys_in="mol", rg="tc", progressbar=true, callback_fn=nothing, callback_int=1)
 
+    Perform (parallel) MAGEMin calculations for a range of points as a function of pressure, temperature and/or composition.
 
-Perform (parallel) MAGEMin calculations for a range of points as a function of pressure `P`, temperature `T` and/or composition `X`. The database `MAGEMin_db` must be initialised before calling the routine.
-The bulk-rock composition can either be set to be one of the pre-defined build-in test cases, or can be specified specifically by passing `X`, `Xoxides` and `sys_in` (that specifies whether the input is in "mol" or "wt").
+    The bulk-rock composition can either be set to be one of the pre-defined build-in test cases, or can be specified specifically by passing `X`, `Xoxides` and `sys_in`.
 
-Below a few examples:
+    Parameters
+    ----------
+    P : AbstractVector{Float64}
+        Pressure vector [kbar].
+    T : AbstractVector{Float64}
+        Temperature vector [°C].
+    MAGEMin_db : MAGEMin_Data
+        Initialized MAGEMin data structure.
+    light : Bool, optional
+        If true, return a light output structure (default: false).
+    name_solvus : Bool, optional
+        If true, rename phases with solvus names (default: false).
+    fixed_bulk : Bool, optional
+        If true, use fixed bulk composition (default: false).
+    test : Int64, optional
+        Build-in test case number (default: 0).
+    X : VecOrMat, optional
+        Bulk rock composition(s). Single vector for all points, or vector of vectors for per-point composition (default: nothing).
+    B : Union{Nothing, Vector{Float64}}, optional
+        Buffer values per point (default: nothing).
+    G : Union{Nothing, Vector{LibMAGEMin.mSS_data}, Vector{Vector{LibMAGEMin.mSS_data}}}, optional
+        Initial guess data (default: nothing).
+    scp : Int64, optional
+        Sub-solidus computation parameter (default: 0).
+    dT : Float64, optional
+        Temperature increment for sub-solidus detection (default: 2.0).
+    iguess : Union{Vector{Bool}, Bool}, optional
+        Whether to use initial guess (default: false).
+    rm_list : Union{Nothing, Vector{Int64}}, optional
+        List of phase indexes to remove (default: nothing).
+    W : Union{Nothing, Vector{W_data{Float64, Int64}}}, optional
+        Overriding Margules parameters (default: nothing).
+    Xoxides : Vector{String}
+        Oxide names corresponding to `X`.
+    sys_in : String, optional
+        Input system units, \"mol\" or \"wt\" (default: \"mol\").
+    rg : String, optional
+        Research group, \"tc\" or \"sb\" (default: \"tc\").
+    progressbar : Bool, optional
+        Show progress bar (default: true).
+    callback_fn : Union{Nothing, Function}, optional
+        Callback function called periodically (default: nothing).
+    callback_int : Int64, optional
+        Callback interval in number of points (default: 1).
 
-Example 1 - build-in test vs. pressure and temperature
-===
-```julia
-julia> data = Initialize_MAGEMin("ig", verbose=false);
-julia> n = 10
-julia> P = rand(8:40.0,n)
-julia> T = rand(800:1500.0,n)
-julia> out = multi_point_minimization(P, T, data, test=0)
-julia> Finalize_MAGEMin(data)
-```
+    Returns
+    -------
+    Out_PT : Vector{gmin_struct{Float64, Int64}} or Vector{light_gmin_struct{Float32, Int8}}
+        Vector of minimization results for each P-T point.
 
-Example 2 - Specify constant bulk rock composition for all points:
-===
-```julia
-julia> data = Initialize_MAGEMin("ig", verbose=false);
-julia> n = 10
-julia> P = fill(10.0,n)
-julia> T = fill(1100.0,n)
-julia> Xoxides = ["SiO2"; "Al2O3"; "CaO"; "MgO"; "FeO"; "Fe2O3"; "K2O"; "Na2O"; "TiO2"; "Cr2O3"; "H2O"];
-julia> X = [48.43; 15.19; 11.57; 10.13; 6.65; 1.64; 0.59; 1.87; 0.68; 0.0; 3.0];
-julia> sys_in = "wt"
-julia> out = multi_point_minimization(P, T, data, X=X, Xoxides=Xoxides, sys_in=sys_in)
-julia> Finalize_MAGEMin(data)
-```
-
-Example 3 - Different bulk rock composition for different points
-===
-```julia
-julia> data = Initialize_MAGEMin("ig", verbose=false);
-julia> P = [10.0, 20.0]
-julia> T = [1100.0, 1200]
-julia> Xoxides = ["SiO2"; "Al2O3"; "CaO"; "MgO"; "FeO"; "Fe2O3"; "K2O"; "Na2O"; "TiO2"; "Cr2O3"; "H2O"];
-julia> X1 = [48.43; 15.19; 11.57; 10.13; 6.65; 1.64; 0.59; 1.87; 0.68; 0.0; 3.0];
-julia> X2 = [49.43; 14.19; 11.57; 10.13; 6.65; 1.64; 0.59; 1.87; 0.68; 0.0; 3.0];
-julia> X = [X1,X2]
-julia> sys_in = "wt"
-julia> out = multi_point_minimization(P, T, data, X=X, Xoxides=Xoxides, sys_in=sys_in)
-julia> Finalize_MAGEMin(data)
-```
-
-Activating multithreading on julia
-===
-
-To take advantage of multithreading, you need to start julia from the terminal with:
-```bash
-\$ julia -t auto
-```
-which will automatically use all threads on your machine. Alternatively, use `julia -t 4` to start it on 4 threads.
-If you are interested to see what you can do on your machine type:
-```
-julia> versioninfo()
-```
-
+    Examples
+    --------
+    ```julia
+    data = Initialize_MAGEMin("ig", verbose=false);
+    n = 10
+    P = rand(8:40.0,n)
+    T = rand(800:1500.0,n)
+    out = multi_point_minimization(P, T, data, test=0)
+    Finalize_MAGEMin(data)
+    ```
 """
 function multi_point_minimization(P           ::  T2,
                                   T           ::  T2,
                                   MAGEMin_db  ::  MAGEMin_Data;
                                   light       ::  Bool                            = false,
                                   name_solvus ::  Bool                            = false,
+                                  fixed_bulk  ::  Bool                            = false,
                                   test        ::  Int64                           = 0, # if using a build-in test case,
                                   X           ::  VecOrMat                        = nothing,
                                   B           ::  Union{Nothing, Vector{T1}}  = nothing,
                                   G           ::  Union{Nothing, Vector{LibMAGEMin.mSS_data},Vector{Vector{LibMAGEMin.mSS_data}}}  = nothing,
                                   scp         ::  Int64                           = 0, 
-                                  iguess      ::  Bool                            = false,    
+                                  dT          ::  T1                              = 2.0,
+                                  iguess      ::  Union{Vector{Bool},Bool}        = false,
                                   rm_list     ::  Union{Nothing, Vector{Int64}}   = nothing,
-                                  W           ::  Union{Nothing, W_Data}          = nothing,
+                                  W           ::  Union{Nothing, Vector{MAGEMin_C.W_data{Float64, Int64}}}  = nothing,
                                   Xoxides     = Vector{String},
                                   sys_in      :: String                           = "mol",
                                   rg          :: String                           = "tc",
@@ -662,9 +1106,11 @@ function multi_point_minimization(P           ::  T2,
         end
 
         Gi          = isnothing(G) ? nothing :  G[i]
+        ig          =  isa(iguess, Vector{Bool}) ? iguess[i] : iguess
+
         buffer      = isnothing(B) ? 0.0 :      B[i] 
         out         = point_wise_minimization(  P[i], T[i], gv, z_b, DB, splx_data;
-                                                light=light, buffer_n=buffer, name_solvus=name_solvus, Gi=Gi, W=W, scp=scp, iguess=iguess, rm_list=rm_list)
+                                                light=light, buffer_n=buffer, name_solvus=name_solvus, fixed_bulk=fixed_bulk, Gi=Gi, W=W, scp=scp, dT=dT, iguess=ig, rm_list=rm_list)
 
         Out_PT[i]   = deepcopy(out)
 
@@ -686,7 +1132,67 @@ function multi_point_minimization(P           ::  T2,
     return Out_PT
 end
 
+"""
+    AMR_minimization(init_sub, ref_lvl, Prange, Trange, MAGEMin_db; test=0, X=nothing, B=0.0, scp=0, dT=2.0, iguess=false, rm_list=nothing, W=nothing, Xoxides=Vector{String}, sys_in="mol", rg="tc", progressbar=true)
 
+    Perform an Adaptive Mesh Refinement (AMR) minimization for a range of points as a function of pressure, temperature and/or composition.
+
+    Parameters
+    ----------
+    init_sub : Int64
+        Initial number of subdivisions.
+    ref_lvl : Int64
+        Number of refinement levels.
+    Prange : Union{Float64, NTuple{2, Float64}}
+        Pressure range [kbar] as a tuple (Pmin, Pmax) or single value.
+    Trange : Union{Float64, NTuple{2, Float64}}
+        Temperature range [°C] as a tuple (Tmin, Tmax) or single value.
+    MAGEMin_db : MAGEMin_Data
+        Initialized MAGEMin data structure.
+    test : Int64, optional
+        Build-in test case number (default: 0).
+    X : VecOrMat, optional
+        Bulk rock composition(s) (default: nothing).
+    B : Union{Nothing, Float64, Vector{Float64}}, optional
+        Buffer value(s) (default: 0.0).
+    scp : Int64, optional
+        Sub-solidus computation parameter (default: 0).
+    dT : Float64, optional
+        Temperature increment for sub-solidus detection (default: 2.0).
+    iguess : Union{Vector{Bool}, Bool}, optional
+        Whether to use initial guess (default: false).
+    rm_list : Union{Nothing, Vector{Int64}}, optional
+        List of phase indexes to remove (default: nothing).
+    W : Union{Nothing, Vector{W_data{Float64, Int64}}}, optional
+        Overriding Margules parameters (default: nothing).
+    Xoxides : Vector{String}
+        Oxide names corresponding to `X`.
+    sys_in : String, optional
+        Input system units, \"mol\" or \"wt\" (default: \"mol\").
+    rg : String, optional
+        Research group, \"tc\" or \"sb\" (default: \"tc\").
+    progressbar : Bool, optional
+        Show progress bar (default: true).
+
+    Returns
+    -------
+    Out_XY : Vector{gmin_struct{Float64, Int64}}
+        Vector of minimization results for each refined P-T point.
+
+    Examples
+    --------
+    ```julia
+    data        = Initialize_MAGEMin("mp", verbose=-1, solver=0);
+    init_sub    =  1
+    ref_lvl     =  2
+    Prange      = (1.0,10.0)
+    Trange      = (400.0,800.0)
+    Xoxides     = ["SiO2","Al2O3","CaO","MgO","FeO","K2O","Na2O","TiO2","O","MnO","H2O"]
+    X           = [70.999,12.805,0.771,3.978,6.342,2.7895,1.481,0.758,0.72933,0.075,30.0]
+    sys_in      = "mol"
+    out         = AMR_minimization(init_sub, ref_lvl, Prange, Trange, data, X=X, Xoxides=Xoxides, sys_in=sys_in)
+    ```
+"""
 function AMR_minimization(  init_sub    ::  Int64,
                             ref_lvl     ::  Int64,
                             Prange      ::  Union{T1, NTuple{2, T1}},
@@ -696,9 +1202,10 @@ function AMR_minimization(  init_sub    ::  Int64,
                             X           ::  VecOrMat                        = nothing,
                             B           ::  Union{Nothing, T1, Vector{T1}}  = 0.0,
                             scp         ::  Int64                           = 0,  
-                            iguess      ::  Bool                            = false,   
+                            dT          ::  T1                              = 2.0,
+                            iguess      ::  Union{Vector{Bool},Bool}        = false,
                             rm_list     ::  Union{Nothing, Vector{Int64}}   = nothing,
-                            W           ::  Union{Nothing, W_Data}          = nothing,
+                            W           ::  Union{Nothing, Vector{MAGEMin_C.W_data{Float64, Int64}}}  = nothing,
                             Xoxides     =  Vector{String},
                             sys_in      ::  String                          = "mol",
                             rg          ::  String                          = "tc",
@@ -745,7 +1252,7 @@ function AMR_minimization(  init_sub    ::  Int64,
                 end
             end
             Out_XY_new  =   multi_point_minimization(   Pvec, Tvec, MAGEMin_db,
-                                                        X=Xvec, B=Bvec, G=Gvec, Xoxides=Xoxides, sys_in=sys_in, scp=scp, iguess=iguess, rm_list=rm_list, rg=rg, test=test); 
+                                                        X=Xvec, B=Bvec, G=Gvec, Xoxides=Xoxides, sys_in=sys_in, scp=scp, dT=dT, iguess=iguess, rm_list=rm_list, rg=rg, test=test); 
         else
             println("There is no new point to compute...")
         end
@@ -765,17 +1272,26 @@ function AMR_minimization(  init_sub    ::  Int64,
 end
 
 
-
-
 """
-bulk_rock = use_predefined_bulk_rock(gv, test=-1, db="ig")
+    use_predefined_bulk_rock(gv, test=0, db="ig")
 
-Returns the pre-defined bulk rock composition of a given test
+    Return the pre-defined bulk rock composition for a given built-in test case.
+
+    Parameters
+    ----------
+    gv : LibMAGEMin.global_variables
+        Global variables structure.
+    test : Int64, optional
+        Built-in test case number (default: 0).
+    db : String, optional
+        Database identifier, e.g. "ig", "mp", "mb" (default: "ig").
+
+    Returns
+    -------
+    gv : LibMAGEMin.global_variables
+        Updated global variables with bulk rock composition set.
 """
 function use_predefined_bulk_rock(gv, test=0, db="ig")
-
-    # test = unsafe_string.(gv.research_group)
-    # println(typeof(gv.research_group))
 
     rg = unsafe_string(gv.research_group)
 
@@ -784,6 +1300,9 @@ function use_predefined_bulk_rock(gv, test=0, db="ig")
             gv.test = test
             gv = LibMAGEMin.get_bulk_metapelite(gv)
         elseif  db == "mb"
+            gv.test = test
+            gv = LibMAGEMin.get_bulk_metabasite(gv)
+        elseif  db == "mbe"
             gv.test = test
             gv = LibMAGEMin.get_bulk_metabasite(gv)
         elseif  db == "ig"
@@ -814,6 +1333,9 @@ function use_predefined_bulk_rock(gv, test=0, db="ig")
         elseif  db == "sb21"
             gv.test = test
             gv = LibMAGEMin.get_bulk_stx21(gv)
+        elseif  db == "sb24"
+            gv.test = test
+            gv = LibMAGEMin.get_bulk_stx24(gv)
         else
             print("Database not implemented...\n")
         end
@@ -827,8 +1349,21 @@ function use_predefined_bulk_rock(gv, test=0, db="ig")
 end
 
 """
-    data = use_predefined_bulk_rock(data::MAGEMin_Data, test=0)
-Returns the pre-defined bulk rock composition of a given test
+    use_predefined_bulk_rock(data::MAGEMin_Data, test=0)
+
+    Return the pre-defined bulk rock composition for a given built-in test case (multi-threaded version).
+
+    Parameters
+    ----------
+    data : MAGEMin_Data
+        Initialized MAGEMin data structure.
+    test : Int64, optional
+        Built-in test case number (default: 0).
+
+    Returns
+    -------
+    data : MAGEMin_Data
+        Updated MAGEMin data structure with bulk rock composition set for all threads.
 """
 function use_predefined_bulk_rock(data::MAGEMin_Data, test=0)  
     nt = Threads.maxthreadid()
@@ -838,6 +1373,29 @@ function use_predefined_bulk_rock(data::MAGEMin_Data, test=0)
     return data
 end
 
+"""
+    define_bulk_rock(gv, bulk_in, bulk_in_ox, sys_in, db)
+
+    Define the bulk-rock composition in the global variables structure, converting it to the appropriate format for MAGEMin.
+
+    Parameters
+    ----------
+    gv : LibMAGEMin.global_variables
+        Global variables structure.
+    bulk_in : AbstractVector{Float64}
+        Input bulk rock composition.
+    bulk_in_ox : Vector{String}
+        Oxide names corresponding to `bulk_in`.
+    sys_in : String
+        Input system units, "mol" or "wt".
+    db : String
+        Database identifier, e.g. "ig", "mp", "mb".
+
+    Returns
+    -------
+    gv : LibMAGEMin.global_variables
+        Updated global variables with normalized bulk rock composition.
+"""
 function define_bulk_rock(gv, bulk_in, bulk_in_ox, sys_in,db)
 
     bulk_rock, ox   = convertBulk4MAGEMin(bulk_in,bulk_in_ox,sys_in,db)     # conversion changes the system unit to mol
@@ -849,21 +1407,37 @@ function define_bulk_rock(gv, bulk_in, bulk_in_ox, sys_in,db)
 end
 
 
-function normalize(vector::Vector{Float64})
+function normalize(vector::AbstractVector{Float64})
     return vector ./ sum(vector)
 end
 
+"""
+    wt2mol(bulk_wt, bulk_ox)
 
-function wt2mol(    bulk_wt     :: Vector{Float64},
-                    bulk_ox     :: Vector{String}) 
+    Convert bulk-rock composition from weight fraction to molar fraction.
 
-    ref_ox          = ["SiO2"; "Al2O3"; "CaO"; "MgO"; "FeO"; "Fe2O3"; "K2O"; "Na2O"; "TiO2"; "O"; "Cr2O3"; "MnO"; "H2O"; "CO2"; "S"];
-    ref_MolarMass   = [60.08; 101.96; 56.08; 40.30; 71.85; 159.69; 94.2; 61.98; 79.88; 16.0; 151.99; 70.937; 18.015; 44.01; 32.06];      #Molar mass of oxides
+    Parameters
+    ----------
+    bulk_wt : AbstractVector{Float64}
+        Bulk rock composition in weight fraction.
+    bulk_ox : AbstractVector{String}
+        Oxide names corresponding to `bulk_wt`.
+
+    Returns
+    -------
+    bulk_mol : Vector{Float64}
+        Bulk rock composition in molar fraction (normalized to 100).
+"""
+function wt2mol(    bulk_wt     :: AbstractVector{Float64},
+                    bulk_ox     :: AbstractVector{String}) 
+
+    ref_ox          = ["SiO2"; "Al2O3"; "CaO"; "MgO"; "FeO"; "Fe2O3"; "K2O"; "Na2O"; "TiO2"; "O"; "Cr2O3"; "MnO"; "H2O"; "CO2"; "S"; "Fe"];
+    ref_MolarMass   = [60.08; 101.96; 56.08; 40.30; 71.85; 159.69; 94.2; 61.98; 79.88; 16.0; 151.99; 70.937; 18.015; 44.01; 32.06; 55.85];      #Molar mass of oxides
 
     bulk_mol = zeros(length(bulk_ox));
     bulk_wt  = normalize(bulk_wt)
 
-    for i = 1:length(bulk_ox)
+    for i = axes(bulk_ox,1)
         id = findfirst(ref_ox .== bulk_ox[i]);
         bulk_mol[i] = bulk_wt[i]/ref_MolarMass[id];
     end
@@ -873,16 +1447,34 @@ function wt2mol(    bulk_wt     :: Vector{Float64},
     return bulk_mol
 end
 
-function mol2wt(    bulk_mol     :: Vector{Float64},
-                    bulk_ox      :: Vector{String}) 
 
-    ref_ox          = ["SiO2"; "Al2O3"; "CaO"; "MgO"; "FeO"; "Fe2O3"; "K2O"; "Na2O"; "TiO2"; "O"; "Cr2O3"; "MnO"; "H2O"; "CO2"; "S"];
-    ref_MolarMass   = [60.08; 101.96; 56.08; 40.30; 71.85; 159.69; 94.2; 61.98; 79.88; 16.0; 151.99; 70.937; 18.015; 44.01; 32.06];      #Molar mass of oxides
+"""
+    mol2wt(bulk_mol, bulk_ox)
+
+    Convert bulk-rock composition from molar fraction to weight fraction.
+
+    Parameters
+    ----------
+    bulk_mol : AbstractVector{Float64}
+        Bulk rock composition in molar fraction.
+    bulk_ox : AbstractVector{String}
+        Oxide names corresponding to `bulk_mol`.
+
+    Returns
+    -------
+    bulk_wt : Vector{Float64}
+        Bulk rock composition in weight fraction (normalized to 100).
+"""
+function mol2wt(    bulk_mol     :: AbstractVector{Float64},
+                    bulk_ox      :: AbstractVector{String}) 
+
+    ref_ox          = ["SiO2"; "Al2O3"; "CaO"; "MgO"; "FeO"; "Fe2O3"; "K2O"; "Na2O"; "TiO2"; "O"; "Cr2O3"; "MnO"; "H2O"; "CO2"; "S"; "Fe"];
+    ref_MolarMass   = [60.08; 101.96; 56.08; 40.30; 71.85; 159.69; 94.2; 61.98; 79.88; 16.0; 151.99; 70.937; 18.015; 44.01; 32.06; 55.85];      #Molar mass of oxides
 
     bulk_wt = zeros(length(bulk_ox));
     bulk_mol = normalize(bulk_mol)
 
-    for i = 1:length(bulk_ox)
+    for i = axes(bulk_ox,1)
         id = findfirst(ref_ox .== bulk_ox[i]);
         bulk_wt[i] = bulk_mol[i]*ref_MolarMass[id];
     end
@@ -893,10 +1485,69 @@ function mol2wt(    bulk_mol     :: Vector{Float64},
 end
 
 """
-    MAGEMin_bulk, MAGEMin_ox; = convertBulk4MAGEMin(bulk_in::T1,bulk_in_ox::Vector{String},sys_in::String,db::String) where {T1 <: AbstractVector{Float64}}
+    FeO2Fe_O!(bulk_mol, bulk_ox)
 
-receives bulk-rock composition in [mol,wt] fraction and associated oxide list and sends back bulk-rock composition converted for MAGEMin use
+    Convert bulk-rock composition from FeO + extra oxygen to total Fe + total O (used for SB24). Modifies `bulk_mol` and `bulk_ox` in place.
 
+    Parameters
+    ----------
+    bulk_mol : AbstractVector{Float64}
+        Bulk rock composition in molar fraction (modified in place).
+    bulk_ox : AbstractVector{String}
+        Oxide names corresponding to `bulk_mol` (modified in place).
+
+    Returns
+    -------
+    bulk_mol : AbstractVector{Float64}
+        Updated bulk rock composition with Fe and O instead of FeO.
+    bulk_ox : AbstractVector{String}
+        Updated oxide names with "Fe" and "O" replacing "FeO".
+"""
+function FeO2Fe_O!(    bulk_mol     :: AbstractVector{Float64},
+                       bulk_ox      :: AbstractVector{String}) 
+    
+    if ("Fe" in bulk_ox && "O" in bulk_ox) # Don't call if composition is already being passed as Fe + O
+        # nothing to do
+    elseif ("FeO" in bulk_ox && "Fe2O3" in bulk_ox) # If FeO and Fe2O3 are given, deduce bulk
+        tmp_idFeO, tmp_idFe2O3  = findfirst(bulk_ox .== "FeO"), findfirst(bulk_ox .== "Fe2O3")
+        nFeᵀ, nOᵀ = (bulk_mol[tmp_idFeO] + 2bulk_mol[tmp_idFe2O3]), (bulk_mol[tmp_idFeO] + 3bulk_mol[tmp_idFe2O3])
+        bulk_mol[tmp_idFeO] = nFeᵀ; bulk_mol[tmp_idFe2O3]   = nOᵀ; 
+        bulk_ox[tmp_idFeO]  = "Fe"; bulk_ox[tmp_idFe2O3]  = "O"
+    elseif ("FeO" in bulk_ox && !("O" in bulk_ox)) # If only FeO is present, assume excess oxygen to be zero
+        push!(bulk_ox, "O"); push!(bulk_mol, 0.0);
+    else # Recompute FeO + O -> Fe + O (negative O for reduced systems, positive for oxidized systems)
+        tmp_idFeO, tmp_idO  = findfirst(bulk_ox .== "FeO"), findfirst(bulk_ox .== "O")
+        XFe2O3 = bulk_mol[tmp_idO]; XFeO = bulk_mol[tmp_idFeO] - 2XFe2O3
+        nFeᵀ, nOᵀ           = (2XFe2O3 + XFeO), (XFeO + 3XFe2O3)
+        bulk_mol[tmp_idO]   = nOᵀ; bulk_mol[tmp_idFeO] = nFeᵀ;
+        bulk_ox[tmp_idFeO]  = "Fe"
+    end
+    return bulk_mol, bulk_ox
+end
+
+
+"""
+    convertBulk4MAGEMin(bulk_in, bulk_in_ox, sys_in, db)
+
+    Convert a bulk-rock composition (in mol or wt fraction) and its associated oxide list into the format expected by MAGEMin.
+
+    Parameters
+    ----------
+    bulk_in : AbstractVector{Float64}
+        Input bulk rock composition.
+    bulk_in_ox : Vector{String}
+        Oxide names corresponding to `bulk_in`.
+    sys_in : String
+        Input system units, "mol" or "wt".
+    db : String
+        Database identifier, e.g. "ig", "mp", "mb", "sb24".
+
+    Returns
+    -------
+    MAGEMin_bulk : Vector{Float64}
+        Bulk rock composition converted and normalized for MAGEMin (summing to 100).
+    MAGEMin_ox : Vector{String}
+        Oxide names in the order expected by MAGEMin for the given database.
 """
 function convertBulk4MAGEMin(   bulk_in     :: T1,
                                 bulk_in_ox  :: Vector{String},
@@ -905,12 +1556,14 @@ function convertBulk4MAGEMin(   bulk_in     :: T1,
 
     bulk_in = normalize(bulk_in);                            
 
-	ref_ox          = ["SiO2"; "Al2O3"; "CaO"; "MgO"; "FeO"; "Fe2O3"; "K2O"; "Na2O"; "TiO2"; "O"; "Cr2O3"; "MnO"; "H2O"; "CO2"; "S"];
-	ref_MolarMass   = [60.08; 101.96; 56.08; 40.30; 71.85; 159.69; 94.2; 61.98; 79.88; 16.0; 151.99; 70.937; 18.015; 44.01; 32.06];      #Molar mass of oxides
+    ref_ox          = ["SiO2"; "Al2O3"; "CaO"; "MgO"; "FeO"; "Fe2O3"; "K2O"; "Na2O"; "TiO2"; "O"; "Cr2O3"; "MnO"; "H2O"; "CO2"; "S"; "Fe"];
+	ref_MolarMass   = [60.08; 101.96; 56.08; 40.30; 71.85; 159.69; 94.2; 61.98; 79.88; 16.0; 151.99; 70.937; 18.015; 44.01; 32.06; 55.85];      #Molar mass of oxides
 
     if db       == "mp"
         MAGEMin_ox      = ["SiO2"; "Al2O3"; "CaO"; "MgO"; "FeO"; "K2O"; "Na2O"; "TiO2"; "O"; "MnO"; "H2O"];
     elseif db   == "mb"
+        MAGEMin_ox      = ["SiO2"; "Al2O3"; "CaO"; "MgO"; "FeO"; "K2O"; "Na2O"; "TiO2"; "O"; "H2O"];
+    elseif db   == "mbe"
         MAGEMin_ox      = ["SiO2"; "Al2O3"; "CaO"; "MgO"; "FeO"; "K2O"; "Na2O"; "TiO2"; "O"; "H2O"];
     elseif db   == "ig"
 	    MAGEMin_ox      = ["SiO2"; "Al2O3"; "CaO"; "MgO"; "FeO"; "K2O"; "Na2O"; "TiO2"; "O"; "Cr2O3"; "H2O"];
@@ -919,7 +1572,7 @@ function convertBulk4MAGEMin(   bulk_in     :: T1,
     elseif db   == "um"
         MAGEMin_ox      = ["SiO2"; "Al2O3"; "MgO"; "FeO"; "O"; "H2O"; "S"];
     elseif db   == "ume"
-        MAGEMin_ox      = ["SiO2"; "Al2O3"; "MgO"; "FeO"; "O"; "H2O"; "S"; "CaO";"Na2O"];
+        MAGEMin_ox      = ["SiO2"; "Al2O3"; "MgO"; "FeO"; "O"; "H2O"; "S"; "CaO";"Na2O";"Cr2O3";"CO2"];
     elseif db   == "mtl"
         MAGEMin_ox      = ["SiO2"; "Al2O3"; "CaO"; "MgO"; "FeO";"Na2O"];
     elseif db   == "mpe"
@@ -928,171 +1581,184 @@ function convertBulk4MAGEMin(   bulk_in     :: T1,
         MAGEMin_ox      = ["SiO2"; "CaO"; "Al2O3"; "FeO"; "MgO";"Na2O"];
     elseif db   == "sb21"
         MAGEMin_ox      = ["SiO2"; "CaO"; "Al2O3"; "FeO"; "MgO";"Na2O"];
+    elseif db   == "sb24"
+        # Recompute FeO + O -> Fe + O (negative O for reduced systems, positive for oxidized systems)
+        MAGEMin_ox      = ["SiO2"; "CaO"; "Al2O3"; "MgO"; "Na2O"; "O"; "Cr2O3"; "Fe"];
     else
         print("Database not implemented...\n")
     end
 
-    # here we kick out oxides that are not part of the database
-    filter = setdiff(bulk_in_ox,MAGEMin_ox)
-    keep_ids = []
-    if !isempty(filter)
-        tmp_id    = findall(filter .!= "Fe2O3")
-        if !isempty(tmp_id)
-            filter = filter[tmp_id]
-            
-            for i=1:length(bulk_in_ox)
-                if bulk_in_ox[i] in filter
-                else
-                    push!(keep_ids,i)
-                end
-            end
+    # Keep oxides in MAGEMin_ox or special Fe species (Fe, FeO, Fe2O3)
+    keep_mask = in(MAGEMin_ox).(bulk_in_ox) .| in(["Fe", "FeO", "Fe2O3"]).(bulk_in_ox)
+    bulk_in_ox = bulk_in_ox[keep_mask]
+    bulk_in = bulk_in[keep_mask]
 
-            bulk_in_ox  = bulk_in_ox[keep_ids]
-            bulk_in     = bulk_in[keep_ids]
-        end
+    # Initialize output vectors
+    MAGEMin_bulk = zeros(length(MAGEMin_ox))
+    
+    # Get molar mass indices for each input oxide
+    ox_indices = findfirst.(isequal.(bulk_in_ox), Ref(ref_ox))
+    
+    # Convert to mol (or copy if already in mol)
+    if sys_in == "wt"
+        bulk = bulk_in ./ ref_MolarMass[ox_indices]
+    elseif sys_in == "mol"
+        bulk = copy(bulk_in)
+    else
+        println("System unit not implemented -> use 'mol' or 'wt' -> falling back to 'mol'")
+        bulk = copy(bulk_in)
     end
 
-	MAGEMin_bulk    = zeros(length(MAGEMin_ox));
-    bulk            = zeros(length(MAGEMin_ox));
+    # Handle SB24 Fe2O3 conversion
+    Xox_cp = copy(bulk_in_ox)
+    (db == "sb24") && (FeO2Fe_O!(bulk, Xox_cp))
+    bulk = normalize(bulk)
+
+    # Map bulk composition to MAGEMin oxide order
+    for i in eachindex(MAGEMin_ox)
+        idx = findfirst(isequal(MAGEMin_ox[i]), Xox_cp)
+        if !isnothing(idx)
+            MAGEMin_bulk[i] = bulk[idx]
+        end
+    end
     
-	# convert to mol, if system unit = wt
-	if sys_in == "wt"
-		for i=1:length(bulk_in_ox)
-            id = findall(ref_ox .== bulk_in_ox[i])[1];
-			bulk[i] = bulk_in[i]/ref_MolarMass[id];
-		end
-    else
-		for i=1:length(bulk_in_ox)
-			bulk[i] = bulk_in[i];
-		end
-	end
-
-	bulk = normalize(bulk);
-
-	for i=1:length(MAGEMin_ox)
-        id = findall(bulk_in_ox .== MAGEMin_ox[i]);
-		if ~isempty(id)
-			MAGEMin_bulk[i] = bulk[id[1]];
-		end
-	end
-    idFe2O3 = findall(bulk_in_ox .== "Fe2O3");
-
-    if ~isempty(idFe2O3)
-        idFeO = findall(MAGEMin_ox .== "FeO");
-        MAGEMin_bulk[idFeO[1]] += bulk[idFe2O3[1]]*2.0;
-
-        idO = findall(MAGEMin_ox .== "O");
-        MAGEMin_bulk[idO[1]] += bulk[idFe2O3[1]];
+    # Redistribute Fe2O3 to FeO and O for non-SB24 databases
+    idx_Fe2O3 = findfirst(isequal("Fe2O3"), Xox_cp)
+    if !isnothing(idx_Fe2O3) && db != "sb24"
+        idx_FeO = findfirst(isequal("FeO"), MAGEMin_ox)
+        idx_O = findfirst(isequal("O"), MAGEMin_ox)
+        if !isnothing(idx_FeO)
+            MAGEMin_bulk[idx_FeO] += bulk[idx_Fe2O3] * 2.0
+        end
+        if !isnothing(idx_O)
+            MAGEMin_bulk[idx_O] += bulk[idx_Fe2O3]
+        end
     end
 
     MAGEMin_bulk .= normalize(MAGEMin_bulk);
 
-    # check which component can safely be put to 0.0
-    d = []
-    c = collect(1:length(MAGEMin_ox))
-    # c should be swt to all first here
-    if db       == "mp"
-        c = findall(MAGEMin_ox .!= "TiO2" .&& MAGEMin_ox .!= "O" .&& MAGEMin_ox .!= "MnO" .&& MAGEMin_ox .!= "H2O");
-        d = findall(MAGEMin_ox .== "TiO2" .|| MAGEMin_ox .== "O" .|| MAGEMin_ox .!= "MnO");
-    elseif db   == "mb"               #for the metabasite database it is better to set a low value for H2O as dry system haw not been validated by Eleanor
-        c = findall(MAGEMin_ox .!= "TiO2" .&& MAGEMin_ox .!= "O");
-        d = findall(MAGEMin_ox .== "TiO2" .|| MAGEMin_ox .== "O");
-    elseif db   == "ig"
-        c = findall(MAGEMin_ox .!= "K2O" .&& MAGEMin_ox .!= "Cr2O3" .&& MAGEMin_ox .!= "TiO2" .&& MAGEMin_ox .!= "O" .&& MAGEMin_ox .!= "H2O");
-        d = findall(MAGEMin_ox .== "K2O" .|| MAGEMin_ox .== "Cr2O3" .|| MAGEMin_ox .== "TiO2" .|| MAGEMin_ox .== "O");# .|| MAGEMin_ox .== "H2O");
-    elseif db   == "igad"
-        c = findall(MAGEMin_ox .!= "Cr2O3" .&& MAGEMin_ox .!= "TiO2" .&& MAGEMin_ox .!= "O");
-        d = findall(MAGEMin_ox .== "Cr2O3" .|| MAGEMin_ox .== "TiO2" .|| MAGEMin_ox .== "O");
-    elseif db == "um"
-        c = findall( MAGEMin_ox .!= "S" .&& MAGEMin_ox .!= "O" .&& MAGEMin_ox .!= "H2O");
-        d = findall( MAGEMin_ox .== "S" .|| MAGEMin_ox .== "O");
-    elseif db == "ume"
-        c = findall( MAGEMin_ox .!= "S" .&& MAGEMin_ox .!= "O" .&& MAGEMin_ox .!= "H2O");
-        d = findall( MAGEMin_ox .== "S" .|| MAGEMin_ox .== "O");
-    elseif db == "mpe"
-        c = findall(MAGEMin_ox .!= "CO2" .&& MAGEMin_ox .!= "S" .&& MAGEMin_ox .!= "TiO2" .&& MAGEMin_ox .!= "O" .&& MAGEMin_ox .!= "MnO" .&& MAGEMin_ox .!= "H2O");
-        d = findall(MAGEMin_ox .== "CO2" .||MAGEMin_ox .== "S" .|| MAGEMin_ox .== "TiO2" .|| MAGEMin_ox .== "O" .|| MAGEMin_ox .!= "MnO");
-    end
+    # Define core and optional oxides for each database
+    oxide_config = Dict(
+        "mp"   => (core=["SiO2", "Al2O3", "CaO", "MgO", "FeO", "K2O", "Na2O"],  
+                   optional=["TiO2", "O", "MnO", "H2O"]),
 
+        "mb"   => (core=["SiO2", "Al2O3", "CaO", "MgO", "FeO", "K2O", "Na2O", "H2O"],
+                   optional=["TiO2", "O"]),
+
+        "mbe"  => (core=["SiO2", "Al2O3", "CaO", "MgO", "FeO", "K2O", "Na2O", "H2O"],
+                   optional=["TiO2", "O"]),
+
+        "ig"   => (core=["SiO2", "Al2O3", "CaO", "MgO", "FeO", "Na2O"],
+                   optional=["K2O", "Cr2O3", "TiO2", "O", "H2O"]),
+
+        "igad" => (core=["SiO2", "Al2O3", "CaO", "MgO", "FeO", "K2O", "Na2O"],
+                   optional=["Cr2O3", "TiO2", "O", "H2O"]),
+
+        "um"   => (core=["SiO2", "Al2O3", "MgO", "FeO"],
+                   optional=["S", "O", "H2O"]),
+
+        "ume"  => (core=["SiO2", "Al2O3", "MgO", "FeO", "Na2O", "CaO"],
+                   optional=["S", "O", "Cr2O3", "CO2", "H2O"]),
+                   
+        "mpe"  => (core=["SiO2", "Al2O3", "CaO", "MgO", "FeO", "K2O", "Na2O"],
+                   optional=["CO2", "S", "TiO2", "O", "MnO", "H2O"]),
+    )
+
+    # Get core and optional indices for current database
+    config  = get(oxide_config, db, (core=1:length(MAGEMin_ox), optional=Int64[]))
+    c       = findall(in(config.core).(MAGEMin_ox))
+    d       = findall(in(config.optional).(MAGEMin_ox))
+
+    # Set core oxides to minimum 1e-4 if below threshold
     id0 = findall(MAGEMin_bulk[c] .< 1e-4)
     if ~isempty(id0)
         MAGEMin_bulk[c[id0]] .= 1e-4;
     end
 
+    # Set optional oxides to 0 if near zero
     id1 = findall(MAGEMin_bulk[d] .< 2e-5 .&& MAGEMin_bulk[d] .> -2e-5)
     if ~isempty(id1)
         MAGEMin_bulk[d[id1]] .= 0.0;
     end
     MAGEMin_bulk .= normalize(MAGEMin_bulk).*100.0
+
     return MAGEMin_bulk, MAGEMin_ox;
 end
 
 
 """
-    point_wise_minimization(P::Float64,T::Float64, gv, z_b, DB, splx_data, sys_in::String="mol")
+    point_wise_minimization(P, T, gv, z_b, DB, splx_data; light=false, name_solvus=false, fixed_bulk=false, buffer_n=0.0, Gi=nothing, scp=0, dT=2.0, iguess=false, rm_list=nothing, W=nothing)
 
-Computes the stable assemblage at `P` [kbar], `T` [C] and for a given bulk rock composition
+    Compute the stable mineral assemblage at given pressure and temperature for a specified bulk rock composition.
 
+    Parameters
+    ----------
+    P : Float64
+        Pressure [kbar].
+    T : Float64
+        Temperature [°C].
+    gv : LibMAGEMin.global_variables
+        Global variables structure (must have bulk rock composition set).
+    z_b : LibMAGEMin.bulk_infos
+        Bulk rock information structure.
+    DB : LibMAGEMin.Database
+        Database structure.
+    splx_data : LibMAGEMin.simplex_datas
+        Simplex data structure.
+    light : Bool, optional
+        Return a lightweight output structure (default: false).
+    name_solvus : Bool, optional
+        Resolve solvus naming (default: false).
+    fixed_bulk : Bool, optional
+        Use fixed bulk composition (default: false).
+    buffer_n : Float64, optional
+        Buffer value (default: 0.0).
+    Gi : Union{Nothing, Vector{LibMAGEMin.mSS_data}}, optional
+        Initial guess from previous minimization (default: nothing).
+    scp : Int64, optional
+        Sub-solidus computation parameter (default: 0).
+    dT : Float64, optional
+        Temperature increment for sub-solidus detection (default: 2.0).
+    iguess : Bool, optional
+        Whether to use initial guess (default: false).
+    rm_list : Union{Nothing, Vector{Int64}}, optional
+        List of phase indexes to remove (default: nothing).
+    W : Union{Nothing, Vector{W_data{Float64, Int64}}}, optional
+        Overriding Margules parameters (default: nothing).
 
-# Example 1
+    Returns
+    -------
+    out : gmin_struct{Float64, Int64}
+        Structure containing the minimization results (stable phases, fractions, thermodynamic properties, etc.).
 
-This is an example of how to use it for a predefined bulk rock composition:
-```julia
-julia> db          = "ig"  # database: ig, igneous (Holland et al., 2018); mp, metapelite (White et al 2014b)
-julia> gv, z_b, DB, splx_data      = init_MAGEMin(db);
-julia> test        = 0;
-julia> sys_in      = "mol"     #default is mol, if wt is provided conversion will be done internally (MAGEMin works on mol basis)
-julia> gv          = use_predefined_bulk_rock(gv, test, db)
-julia> P           = 8.0;
-julia> T           = 800.0;
-julia> gv.verbose  = -1;        # switch off any verbose
-julia> out         = point_wise_minimization(P,T, gv, z_b, DB, splx_data, sys_in)
-Pressure          : 8.0      [kbar]
-Temperature       : 800.0    [Celsius]
-     Stable phase | Fraction (mol fraction)
-              opx   0.24229
-               ol   0.58808
-              cpx   0.14165
-              spl   0.02798
-     Stable phase | Fraction (wt fraction)
-              opx   0.23908
-               ol   0.58673
-              cpx   0.14583
-              spl   0.02846
-Gibbs free energy : -797.749183  (26 iterations; 94.95 ms)
-Oxygen fugacity          : 9.645393319147175e-12
-```
+    Examples
+    --------
+    Using a predefined bulk rock composition:
+    ```julia
+    db          = "ig"
+    gv, z_b, DB, splx_data = init_MAGEMin(db);
+    test        = 0;
+    sys_in      = "mol"
+    gv          = use_predefined_bulk_rock(gv, test, db)
+    P           = 8.0;
+    T           = 800.0;
+    gv.verbose  = -1;
+    out         = point_wise_minimization(P, T, gv, z_b, DB, splx_data, sys_in)
+    ```
 
-# Example 2
-And here a case in which you specify your own bulk rock composition.
-We convert that in the correct format, using the `convertBulk4MAGEMin` function.
-```julia
-julia> db          = "ig"  # database: ig, igneous (Holland et al., 2018); mp, metapelite (White et al 2014b)
-julia> gv, z_b, DB, splx_data      = init_MAGEMin(db);
-julia> bulk_in_ox = ["SiO2"; "Al2O3"; "CaO"; "MgO"; "FeO"; "Fe2O3"; "K2O"; "Na2O"; "TiO2"; "Cr2O3"; "H2O"];
-julia> bulk_in    = [48.43; 15.19; 11.57; 10.13; 6.65; 1.64; 0.59; 1.87; 0.68; 0.0; 3.0];
-julia> sys_in     = "wt"
-julia> gv         = define_bulk_rock(gv, bulk_in, bulk_in_ox, sys_in, db);
-julia> P,T         = 10.0, 1100.0;
-julia> gv.verbose  = -1;        # switch off any verbose
-julia> out         = point_wise_minimization(P,T, gv, z_b, DB, splx_data, sys_in)
-Pressure          : 10.0      [kbar]
-Temperature       : 1100.0    [Celsius]
-     Stable phase | Fraction (mol fraction)
-             pl4T   0.01114
-              liq   0.74789
-              cpx   0.21862
-              opx   0.02154
-     Stable phase | Fraction (wt fraction)
-             pl4T   0.01168
-              liq   0.72576
-              cpx   0.23872
-              opx   0.02277
-Gibbs free energy : -907.27887  (47 iterations; 187.11 ms)
-Oxygen fugacity          : 0.02411835177808492
-julia> finalize_MAGEMin(gv,DB)
-```
-
+    Using a custom bulk rock composition:
+    ```julia
+    db          = "ig"
+    gv, z_b, DB, splx_data = init_MAGEMin(db);
+    bulk_in_ox  = ["SiO2"; "Al2O3"; "CaO"; "MgO"; "FeO"; "Fe2O3"; "K2O"; "Na2O"; "TiO2"; "Cr2O3"; "H2O"];
+    bulk_in     = [48.43; 15.19; 11.57; 10.13; 6.65; 1.64; 0.59; 1.87; 0.68; 0.0; 3.0];
+    sys_in      = "wt"
+    gv          = define_bulk_rock(gv, bulk_in, bulk_in_ox, sys_in, db);
+    P, T        = 10.0, 1100.0;
+    gv.verbose  = -1;
+    out         = point_wise_minimization(P, T, gv, z_b, DB, splx_data, sys_in)
+    finalize_MAGEMin(gv, DB)
+    ```
 """
 function point_wise_minimization(   P       ::Float64,
                                     T       ::Float64,
@@ -1102,9 +1768,11 @@ function point_wise_minimization(   P       ::Float64,
                                     splx_data;
                                     light       = false,
                                     name_solvus = false,
+                                    fixed_bulk  = false,
                                     buffer_n    = 0.0,
                                     Gi          = nothing,
                                     scp         = 0,
+                                    dT          = 2.0,
                                     iguess      = false,
                                     rm_list     = nothing,
                                     W           = nothing   )
@@ -1141,7 +1809,40 @@ function point_wise_minimization(   P       ::Float64,
         gv.mpIlm        = 2
     end
     
+
     gv      = LibMAGEMin.ComputeG0_point(gv.EM_database, z_b, gv, DB.PP_ref_db,DB.SS_ref_db);
+
+    # here we can over-ride default W's
+    if ~isnothing(W)
+        n_over  = length(W)
+        Pw      = z_b.P
+        Tw      = z_b.T
+        for n=1:n_over
+
+            if gv.EM_database == W[n].dtb
+                ss          = W[n].ss_ids
+                SS_ref_db   = unsafe_wrap(Vector{LibMAGEMin.SS_ref},DB.SS_ref_db,gv.len_ss);
+                n_W         = SS_ref_db[ss].n_w;
+                if W[n].n_Ws == n_W
+                    # override = 1
+                    # unsafe_copyto!(pointer(SS_ref_db[ss].override), pointer(override), 1) 
+                    # SS_ref_db[ss].override = 1;                                                     # set the override flag to 1
+                    # Wdef    = unsafe_wrap(Vector{Cdouble},SS_ref_db[ss].W, SS_ref_db[ss].n_w);      # retrieve default Ws
+                    new_Ws  = zeros(n_W)
+                    for i=1:n_W
+                        new_Ws[i] = W[n].Ws[i,1] + W[n].Ws[i,2]*Tw + W[n].Ws[i,3]*Pw 
+                    end
+                    unsafe_copyto!(SS_ref_db[ss].W, pointer(new_Ws), SS_ref_db[ss].n_w) 
+                else
+                    print(" Wrong number of W's, please make sure the custom Ws are linked to the right solution model\n Ws override will be ignored\n")
+                    println(" n_W target= $(n_W), n_W provided = $(W[n].n_Ws)")
+                end
+            end
+            
+        end
+    end
+
+    # gv      = LibMAGEMin.ComputeG0_point(gv.EM_database, z_b, gv, DB.PP_ref_db,DB.SS_ref_db);
 
     #= THIS IS WHERE pwm_init ends =#
     if ~isnothing(rm_list)
@@ -1173,18 +1874,12 @@ function point_wise_minimization(   P       ::Float64,
         end
     end
 
-    # here we can over-ride default W's
-    if ~isnothing(W)
-        if gv.EM_database == W.database    # check if the database fit
-        else
-            print(" Wrong database number, please make sure the custom Ws are linked to the right database\n")
-        end
-    end
-
     if iguess == true && Gi !== nothing
         SS_ref_db   = unsafe_wrap(Vector{LibMAGEMin.SS_ref},DB.SS_ref_db,gv.len_ss);
+        PP_ref_db   = unsafe_wrap(Vector{LibMAGEMin.PP_ref},DB.PP_ref_db,gv.len_pp);
         n_SS_PC     = unsafe_wrap(Vector{Cint},gv.n_SS_PC,gv.len_ss);
         rg          = unsafe_string(gv.research_group)
+        
         # retrieve dimensions
         np          = z_b.nzEl_val
         nzEl_array  = unsafe_wrap(Vector{Cint},z_b.nzEl_array, gv.len_ox) .+ 1
@@ -1197,6 +1892,75 @@ function point_wise_minimization(   P       ::Float64,
             LibMAGEMin.SB_PC_init(PC_read,gv)
         end
     
+        if fixed_bulk == true
+            gv.fixed_bulk = 1
+            # Declare array to be copied in splx_data
+            A_jll       = zeros(np,np)
+            g0_A_jll    = zeros(np)
+            ph_id_A_jll = zeros(Int32,np,4)
+            n_pc_ss     = zeros(gv.len_ss)
+
+            # fill the arrays to be copied in splx_data
+            for i = 1:np
+                if Gi[i].ph_type == "pp"
+                    ph_id = Gi[i].ph_id+1
+                    g0_A_jll[i] = PP_ref_db[ph_id].gbase*PP_ref_db[ph_id].factor
+                    A_jll[i,:]  = Gi[i].comp_Ppc[nzEl_array]
+
+                    ph_id_A_jll[i,1] = 1
+                    ph_id_A_jll[i,2] = ph_id-1
+                    ph_id_A_jll[i,3] = 0
+                    ph_id_A_jll[i,4] = 0
+                elseif Gi[i].ph_type == "ss"
+                    ph_id   = Gi[i].ph_id+1
+                    ph      = Gi[i].ph_name
+
+                    unsafe_copyto!(SS_ref_db[ph_id].gb_lvl,SS_ref_db[ph_id].gbase, SS_ref_db[ph_id].n_em)
+                    unsafe_copyto!(SS_ref_db[ph_id].iguess,pointer(Gi[i].xeos_Ppc), SS_ref_db[ph_id].n_xeos)
+                    if rg == "tc"
+                        SS_ref_db[ph_id] = LibMAGEMin.PC_function(gv, PC_read, SS_ref_db[ph_id], z_b, ph_id-1)
+                    elseif rg == "sb"
+                        SS_ref_db[ph_id] = LibMAGEMin.SB_PC_function(gv, PC_read, SS_ref_db[ph_id], z_b, ph_id-1)
+                    end
+                    g0_A_jll[i] = SS_ref_db[ph_id].df
+                    A_jll[i,:]  = Gi[i].comp_Ppc[nzEl_array]
+                    ph_id_A_jll[i,1] = 3
+                    ph_id_A_jll[i,2] = ph_id-1
+                    ph_id_A_jll[i,3] = 0
+                    ph_id_A_jll[i,4] = n_pc_ss[ph_id]
+                    n_pc_ss[ph_id]  += 1
+                elseif Gi[i].ph_type == "ss_em"
+                    ph_id   = Gi[i].ph_id+1
+                    em_id   = Gi[i].em_id+1
+                    ape     = unsafe_wrap(Vector{Cdouble},SS_ref_db[ph_id].ape, SS_ref_db[ph_id].n_em)
+                    gbase   = unsafe_wrap(Vector{Cdouble},SS_ref_db[ph_id].gbase, SS_ref_db[ph_id].n_em)
+                    comp_ptr= unsafe_wrap(Vector{Ptr{Cdouble}},SS_ref_db[ph_id].Comp, SS_ref_db[ph_id].n_em)
+                    Comp    = unsafe_wrap(Vector{Cdouble},comp_ptr[em_id], gv.len_ox)
+                    factor 	= z_b.fbc/ape[em_id]
+                    ph      = Gi[i].ph_name
+
+                    g0_A_jll[i] = gbase[em_id]*factor;
+                    A_jll[i,:]  = Comp[nzEl_array]*factor
+                    ph_id_A_jll[i,1] = 2
+                    ph_id_A_jll[i,2] = ph_id-1
+                    ph_id_A_jll[i,3] = 0
+                    ph_id_A_jll[i,4] = em_id-1
+                end
+            end
+            # copy to the appropriate places
+            ph_id_A = unsafe_wrap(Vector{Ptr{Int32}},splx_data.ph_id_A, np)
+
+            for i=1:np
+                unsafe_copyto!(ph_id_A[i],pointer(ph_id_A_jll[i,:]),4)
+            end
+
+            unsafe_copyto!(splx_data.A,pointer(vec(A_jll)),np*np)
+            unsafe_copyto!(splx_data.A1,pointer(vec(A_jll)),np*np)
+            unsafe_copyto!(splx_data.g0_A,pointer(g0_A_jll),np)
+        else
+            gv.fixed_bulk = 0
+        end
+
         # add pseudocompounds
         n_mSS = length(Gi)
         for i = 1:n_mSS
@@ -1213,14 +1977,14 @@ function point_wise_minimization(   P       ::Float64,
                 if tot_pc[1] < n_SS_PC[ph_id]   # here we make sure we have the space to store the pseudocompound
 
                     m_pc        = id_pc[1]+1;
-                    info        = unsafe_wrap(Vector{Cint},SS_ref_db[ph_id].info,           gv.n_pc)
-                    factor_pc   = unsafe_wrap(Vector{Cdouble},SS_ref_db[ph_id].factor_pc,   gv.n_pc)
-                    DF_pc       = unsafe_wrap(Vector{Cdouble},SS_ref_db[ph_id].DF_pc,       gv.n_pc)
-                    G_pc        = unsafe_wrap(Vector{Cdouble},SS_ref_db[ph_id].G_pc,        gv.n_pc)
+                    info        = unsafe_wrap(Vector{Cint},SS_ref_db[ph_id].info,           SS_ref_db[ph_id].n_pc)
+                    factor_pc   = unsafe_wrap(Vector{Cdouble},SS_ref_db[ph_id].factor_pc,   SS_ref_db[ph_id].n_pc)
+                    DF_pc       = unsafe_wrap(Vector{Cdouble},SS_ref_db[ph_id].DF_pc,       SS_ref_db[ph_id].n_pc)
+                    G_pc        = unsafe_wrap(Vector{Cdouble},SS_ref_db[ph_id].G_pc,        SS_ref_db[ph_id].n_pc)
         
-                    ptr_comp_pc = unsafe_wrap(Vector{Ptr{Cdouble}},SS_ref_db[ph_id].comp_pc,gv.n_pc)
-                    ptr_p_pc    = unsafe_wrap(Vector{Ptr{Cdouble}},SS_ref_db[ph_id].p_pc,   gv.n_pc)
-                    ptr_xeos_pc = unsafe_wrap(Vector{Ptr{Cdouble}},SS_ref_db[ph_id].xeos_pc,gv.n_pc)
+                    ptr_comp_pc = unsafe_wrap(Vector{Ptr{Cdouble}},SS_ref_db[ph_id].comp_pc,SS_ref_db[ph_id].n_pc)
+                    ptr_p_pc    = unsafe_wrap(Vector{Ptr{Cdouble}},SS_ref_db[ph_id].p_pc,   SS_ref_db[ph_id].n_pc)
+                    ptr_xeos_pc = unsafe_wrap(Vector{Ptr{Cdouble}},SS_ref_db[ph_id].xeos_pc,SS_ref_db[ph_id].n_pc)
         
                     unsafe_copyto!(SS_ref_db[ph_id].gb_lvl,SS_ref_db[ph_id].gbase, SS_ref_db[ph_id].n_em)
                     xeos        = Gi[i].xeos_Ppc
@@ -1282,14 +2046,27 @@ function point_wise_minimization(   P       ::Float64,
     # here we compute specific heat capacity using reactions
     if (scp == 1)
         mSS_vec     = deepcopy(out.mSS_vec)
-        dT          = 2.0;
+        # dT          = 2.0;
+        dP          = 0.002;
         out_W       = point_wise_minimization_with_guess(mSS_vec, P, T-dT, gv, z_b, DB, splx_data)
         out_E       = point_wise_minimization_with_guess(mSS_vec, P, T+dT, gv, z_b, DB, splx_data)
         hcp         = -(T+273.15)*(out_E.G_system + out_W.G_system - 2.0*out.G_system)/(dT*dT);
-        # hcp         = ((T+273.15)*(out_E.entropy - out.entropy)/(dT));
 
-        s_cp        = hcp/out.M_sys*1e6;
-        out.s_cp   .= s_cp
+        out_N       = point_wise_minimization_with_guess(mSS_vec, P+dP, T, gv, z_b, DB, splx_data)
+        out_NE      = point_wise_minimization_with_guess(mSS_vec, P+dP, T+dT, gv, z_b, DB, splx_data)
+        dGdT_N 		= (out_NE.G_system - out_N.G_system)	/(dT);
+        dGdT_P 		= (out_E.G_system - out.G_system)	    /(dT);
+
+        out.entropy     .= -(out_E.G_system - out_W.G_system)/(2.0*dT);
+        # out.entropy     .= -(out_E.G_system - out.G_system)/(dT);
+
+        # out_mW       = point_wise_minimization_with_guess(mSS_vec, P, T-dT/2.0, gv, z_b, DB, splx_data)
+        # out_mE       = point_wise_minimization_with_guess(mSS_vec, P, T+dT/2.0, gv, z_b, DB, splx_data)
+        # out.entropy     .= -(out_mE.G_system - out_mW.G_system)/(dT);
+
+        out.enthalpy    .= out.entropy*(T+273.15) .+ out.G_system;
+        out.s_cp        .= hcp/out.M_sys*1e6;
+        out.alpha       .= 1.0/( (out_N.G_system - out.G_system)/dP * 10.0)*((dGdT_N-dGdT_P)/(dP))
     end
 
     return out
@@ -1298,9 +2075,23 @@ end
 
 
 """
-    out = point_wise_minimization(P::Number,T::Number, data::MAGEMin_Data)
+    point_wise_minimization(P, T, data::MAGEMin_Data)
 
-Performs a point-wise optimization for a given pressure `P` and temperature `T` for the data specified in the MAGEMin database `MAGEMin_Data` (where also compoition is specified)
+    Perform a point-wise Gibbs energy minimization for a given pressure and temperature using the `MAGEMin_Data` structure.
+
+    Parameters
+    ----------
+    P : Number
+        Pressure [kbar].
+    T : Number
+        Temperature [°C].
+    data : MAGEMin_Data
+        Initialized MAGEMin data structure (composition must be set beforehand).
+
+    Returns
+    -------
+    out : gmin_struct{Float64, Int64}
+        Structure containing the minimization results.
 """
 point_wise_minimization(P       ::  Number,
                         T       ::  Number,
@@ -1311,11 +2102,13 @@ point_wise_minimization(P       ::  Number,
                         buffer_n::  Float64     = 0.0,
                         Gi      ::  Union{Nothing, Vector{LibMAGEMin.mSS_data}}  = nothing,
                         scp     ::  Int64       = 0,
+                        dT      ::  Float64     = 2.0,
                         iguess  ::  Bool        = false,
                         rm_list ::  Union{Nothing, Vector{Int64}}   = nothing,
                         name_solvus::Bool       = false,
-                        W       ::  Union{Nothing, W_Data} = nothing) = 
-                        point_wise_minimization(Float64(P),Float64(T), gv, z_b, DB, splx_data; buffer_n, Gi, scp, iguess, rm_list, name_solvus, W)
+                        fixed_bulk::Bool        = false,
+                        W       ::  Union{Nothing, Vector{MAGEMin_C.W_data{Float64, Int64}}} = nothing) = 
+                        point_wise_minimization(Float64(P),Float64(T), gv, z_b, DB, splx_data; buffer_n, Gi, scp, dT, iguess, rm_list, name_solvus, fixed_bulk, W)
 
 point_wise_minimization(P       ::  Number,
                         T       ::  Number,
@@ -1327,11 +2120,13 @@ point_wise_minimization(P       ::  Number,
                         buffer_n::  Float64     = 0.0,
                         Gi      ::  Union{Nothing, Vector{LibMAGEMin.mSS_data}}  = nothing,
                         scp     ::  Int64       = 0,
+                        dT      ::  Float64     = 2.0,
                         iguess  ::  Bool        = false,
                         rm_list ::  Union{Nothing, Vector{Int64}}   = nothing,
                         name_solvus::Bool       = false,
-                        W       ::  Union{Nothing, W_Data} = nothing) = 
-                        point_wise_minimization(Float64(P),Float64(T), gv, z_b, DB, splx_data; buffer_n, Gi, scp, iguess, rm_list, name_solvus, W)
+                        fixed_bulk::Bool        = false,
+                        W       ::  Union{Nothing, Vector{MAGEMin_C.W_data{Float64, Int64}}} = nothing) = 
+                        point_wise_minimization(Float64(P),Float64(T), gv, z_b, DB, splx_data; buffer_n, Gi, scp, dT, iguess, rm_list, name_solvus, fixed_bulk, W)
 
 point_wise_minimization(P       ::  Number,
                         T       ::  Number,
@@ -1339,18 +2134,63 @@ point_wise_minimization(P       ::  Number,
                         buffer_n::  Float64     = 0.0,
                         Gi      ::  Union{Nothing, Vector{LibMAGEMin.mSS_data}}  = nothing,
                         scp     ::  Int64       = 0,
+                        dT      ::  Float64     = 2.0,
                         iguess  ::  Bool        = false,
                         rm_list ::  Union{Nothing, Vector{Int64}}   = nothing,
                         name_solvus::Bool       = false,
-                        W       ::  Union{Nothing, W_Data} = nothing) = 
-                        point_wise_minimization(Float64(P),Float64(T), data.gv[1], data.z_b[1], data.DB[1], data.splx_data[1]; buffer_n, Gi, scp, iguess, rm_list, name_solvus, W)
+                        fixed_bulk::Bool        = false,
+                        W       ::  Union{Nothing, Vector{MAGEMin_C.W_data{Float64, Int64}}} = nothing) = 
+                        point_wise_minimization(Float64(P),Float64(T), data.gv[1], data.z_b[1], data.DB[1], data.splx_data[1]; buffer_n, Gi, scp, dT, iguess, rm_list, name_solvus, fixed_bulk, W)
 
 
 """
-    Function to provide single point minimization and give access to G0 and W's (Margules) parameters
-    The objective here is to be able to use MAGEMin for thermodynamic database inversion/calibration
+    pwm_init(P, T, gv, z_b, DB, splx_data; G0=true)
+
+    Initialize a single point minimization and optionally compute G0 and Margules (W) parameters. Intended for thermodynamic database inversion/calibration workflows.
+
+    Parameters
+    ----------
+    P : Float64
+        Pressure [kbar].
+    T : Float64
+        Temperature [°C].
+    gv : LibMAGEMin.global_variables
+        Global variables structure.
+    z_b : LibMAGEMin.bulk_infos
+        Bulk rock information structure.
+    DB : LibMAGEMin.Database
+        Database structure.
+    splx_data : LibMAGEMin.simplex_datas
+        Simplex data structure.
+    G0 : Bool, optional
+        Whether to compute G0 (default: true).
+
+    Returns
+    -------
+    gv : LibMAGEMin.global_variables
+        Updated global variables.
+    z_b : LibMAGEMin.bulk_infos
+        Updated bulk rock information.
+    DB : LibMAGEMin.Database
+        Updated database.
+    splx_data : LibMAGEMin.simplex_datas
+        Updated simplex data.
+
+    Examples
+    --------
+    ```julia
+    dtb     = "mp"
+    gv, z_b, DB, splx_data = init_MAGEMin(dtb);
+    Xoxides = ["SiO2"; "TiO2"; "Al2O3"; "FeO"; "MnO"; "MgO"; "CaO"; "Na2O"; "K2O"; "H2O"; "O"];
+    X       = [58.509, 1.022, 14.858, 4.371, 0.141, 4.561, 5.912, 3.296, 2.399, 10.0, 0.0];
+    sys_in  = "wt"
+    gv      = define_bulk_rock(gv, X, Xoxides, sys_in, dtb);
+    P, T    = 6.0, 500.0
+    gv, z_b, DB, splx_data = pwm_init(P, T, gv, z_b, DB, splx_data);
+    out     = pwm_run(gv, z_b, DB, splx_data);
+    ```
 """
-function pwm_init(P::Float64,T::Float64, gv, z_b, DB, splx_data)
+function pwm_init(P::Float64,T::Float64, gv, z_b, DB, splx_data; G0 = true)
 
     # input_data      =   LibMAGEMin.io_data();                           # zero (not used actually)
 
@@ -1370,15 +2210,17 @@ function pwm_init(P::Float64,T::Float64, gv, z_b, DB, splx_data)
     LibMAGEMin.reset_SS(gv,z_b, DB.SS_ref_db)
     LibMAGEMin.reset_sp(gv, DB.sp)
 
-    gv      = LibMAGEMin.ComputeG0_point(gv.EM_database, z_b, gv, DB.PP_ref_db,DB.SS_ref_db);
+    if G0 == true
+        gv      = LibMAGEMin.ComputeG0_point(gv.EM_database, z_b, gv, DB.PP_ref_db,DB.SS_ref_db);
+    end
 
     return (gv, z_b, DB, splx_data)
 end
 
-pwm_init(P::Number,T::Number, gv, z_b, DB, splx_data) = pwm_init(Float64(P),Float64(T), gv, z_b, DB, splx_data)
+pwm_init(P::Number,T::Number, gv, z_b, DB, splx_data) = pwm_init(Float64(P),Float64(T), gv, z_b, DB, splx_data; G0 = true)
 
 
-function pwm_run(gv, z_b, DB, splx_data)
+function pwm_run(gv, z_b, DB, splx_data; name_solvus = false)
     input_data      =   LibMAGEMin.io_data();                           # zero (not used actually)
 
     time = @elapsed  gv      = LibMAGEMin.ComputeEquilibrium_Point(gv.EM_database, input_data, z_b, gv, pointer_from_objref(splx_data),	DB.PP_ref_db,DB.SS_ref_db,DB.cp);
@@ -1393,154 +2235,34 @@ function pwm_run(gv, z_b, DB, splx_data)
     LibMAGEMin.PrintOutput(gv, 0, 1, DB, time, z_b);
 
     # Transform results to a more convenient julia struct
-    out = create_gmin_struct(DB, gv, time);
+    out = create_gmin_struct(DB, gv, time; name_solvus = name_solvus);
 
     # LibMAGEMin.FreeDatabases(gv, DB, z_b);
 
     return out
 end
 
-# pwm_run(gv, z_b, DB, splx_data) = pwm_run( gv, z_b, DB, splx_data)
-
-
-function get_mineral_name(db, ss, SS_vec)
-
-    mineral_name = ss
-   
-    if db == "ig" || db == "igad"
-        x = SS_vec.compVariables
-        if ss == "spl"
-            if x[3] - 0.5 > 0.0;        mineral_name = "cm";
-            elseif x[4] - 0.5 > 0.0;    mineral_name = "usp";
-            elseif x[2] - 0.5 > 0.0;    mineral_name = "mgt";
-            else                        mineral_name = "spl";    end
-        elseif ss == "fsp"
-            if x[2] - 0.5 > 0.0;       mineral_name = "afs";
-            else                        mineral_name = "pl";    end
-        elseif ss == "mu"
-            if x[4] - 0.5 > 0.0;        mineral_name = "pat";
-            else                        mineral_name = "mu";    end
-        elseif ss == "amp"
-            if x[3] - 0.5 > 0.0;        mineral_name = "gl";
-            elseif -x[3] -x[4] + 0.2 > 0.0;   mineral_name = "act";
-            else
-                if x[6] < 0.1;          mineral_name = "cumm"; 
-                elseif -1/2*x[4]+x[6]-x[7]-x[8]-x[2]+x[3]>0.5;      mineral_name = "tr";       
-                else                    mineral_name = "amp";    end
-            end  
-        elseif ss == "ilm"
-            if -x[1] + 0.5 > 0.0;       mineral_name = "hem";
-            else                        mineral_name = "ilm";   end 
-        elseif ss == "nph"
-            if x[2] - 0.5 > 0.0;       mineral_name = "K-nph";
-            else                        mineral_name = "nph";   end 
-        elseif ss == "cpx"
-            if x[3] - 0.6 > 0.0;        mineral_name = "pig";
-            elseif x[4] - 0.5 > 0.0;    mineral_name = "Na-cpx";
-            else                        mineral_name = "cpx";   end 
-        end
-
-    elseif db == "mp" || db == "mpe" || db == "mb" || db == "ume"
-        x = SS_vec.compVariables
-        if ss == "sp"
-            if x[2] - 0.5 > 0.0;        mineral_name = "sp";
-            else                        mineral_name = "mt";    end
-        elseif ss == "fsp"
-            if x[2] - 0.5 > 0.0;       mineral_name = "afs";
-            else                        mineral_name = "pl";    end
-        elseif ss == "mu"
-            if x[4] - 0.5 > 0.0;        mineral_name = "pat";
-            else                        mineral_name = "mu";    end
-        elseif ss == "amp"
-            if x[3] - 0.5 > 0.0;        mineral_name = "gl";
-            elseif -x[3]-x[4]+0.2>0.0;  mineral_name = "act";
-            else
-                if x[6] < 0.1;          mineral_name = "cumm"; 
-                elseif -1/2*x[4]+x[6]-x[7]-x[8]-x[2]+x[3]>0.5;      mineral_name = "tr";     
-                else                    mineral_name = "amp";    end
-            end  
-        elseif ss == "ilmm"
-            if x[1] - 0.5 > 0.0;        mineral_name = "ilmm";
-            else                        mineral_name = "hemm";   end 
-        elseif ss == "ilm"
-            if 1.0 - x[1] > 0.5;        mineral_name = "hem";
-            else                        mineral_name = "ilm";   end 
-        elseif ss == "dio"
-            if x[2] > 0.0 && x[2] <= 0.3;       mineral_name = "dio";
-            elseif x[2] > 0.3 && x[2] <= 0.7;   mineral_name = "omph";
-            else                                mineral_name = "jd";   end 
-        elseif ss == "occm"
-            if x[2] > 0.5;              mineral_name = "sid";
-            elseif x[3] > 0.5;          mineral_name = "ank";  
-            elseif x[1] > 0.25 && x[3] < 0.01;         mineral_name = "mag";  
-            else                        mineral_name = "cc";   end 
-
-        end
-
-    end
-
-    return mineral_name
-end
 
 """
-    This function returns the solution phase name given the mineral name (handling solvus -> solution phase)
-"""
-function get_ss_from_mineral(db, mrl, mbCpx)
+    create_gmin_struct(DB, gv, time; name_solvus=false)
 
-    ss = mrl
-   
-    if db =="ig" || db == "igad"
+    Extract the output of a pointwise MAGEMin optimization into a Julia structure.
 
-        if mrl == "cm" || mrl == "mgt" || mrl == "usp"
-            ss = "spl"
-        elseif mrl == "pat" || mrl == "mu"
-            ss = "mu"
-        elseif mrl == "afs" || mrl == "pl"
-            ss = "fsp"
-        elseif mrl == "gl" || mrl == "act" || mrl == "amp" || mrl == "cumm" || mrl == "tr"
-            ss = "amp"
-        elseif mrl == "hem" || mrl == "ilm"
-            ss = "ilm"
-        elseif mrl == "pig" || mrl == "Na-cpx"
-            ss = "cpx"
-        elseif mrl == "K-nph"
-            ss = "nph"
-        end
+    Parameters
+    ----------
+    DB : LibMAGEMin.Database
+        Database structure.
+    gv : LibMAGEMin.global_variables
+        Global variables structure.
+    time : Float64
+        Elapsed computation time [s].
+    name_solvus : Bool, optional
+        Resolve solvus naming (default: false).
 
-    elseif db == "mp" || db == "mpe" || db == "mb" || db == "ume"
-
-        if mrl == "mt" || mrl == "sp"
-            ss = "sp"
-        elseif mrl == "afs" || mrl == "pl"
-            ss = "fsp"
-        elseif mrl == "pat" || mrl == "mu"
-            ss = "mu"
-        elseif mrl == "gl" || mrl == "act" || mrl == "amp" || mrl == "cumm" || mrl == "tr"
-            ss = "amp"
-        elseif mrl == "hem" || mrl == "ilm"
-            ss = "ilm"
-        elseif mrl == "hemm" || mrl == "ilmm"
-            ss = "ilmm"
-        elseif mrl == "omph" || mrl == "dio" || mrl == "jd"
-            if mbCpx == 0
-                ss = "dio"
-            else
-                ss = "aug"
-            end
-        elseif mrl == "sid" || mrl == "mag" || mrl == "ank" || mrl == "cc"
-            ss = "occm"
-        end
-
-
-    end
-
-    return ss
-end
-
-"""
-    out = create_gmin_struct(gv, z_b)
-
-This extracts the output of a pointwise MAGEMin optimization and adds it into a julia structure
+    Returns
+    -------
+    out : gmin_struct{Float64, Int64}
+        Structure containing the full minimization results.
 """
 function create_gmin_struct(DB, gv, time; name_solvus = false)
 
@@ -1584,9 +2306,14 @@ function create_gmin_struct(DB, gv, time; name_solvus = false)
     frac_S_vol   = stb.frac_S_vol
     frac_F_vol   = stb.frac_F_vol
 
+    entropy_S = stb.entropy_S
+    entropy_M = stb.entropy_M
+    entropy_F = stb.entropy_F
+
     # Solid, melt, fluid densities
-    alpha   = stb.alpha
+    alpha   = [stb.alpha]
     V       = stb.V
+    V_cm3 = stb.V_cm3
     # cp      = stb.cp
     s_cp    = [stb.s_cp]
     rho     = stb.rho
@@ -1607,8 +2334,8 @@ function create_gmin_struct(DB, gv, time; name_solvus = false)
     aFeO    = stb.aFeO
 
     # thermodynamic properties
-    entropy = stb.entropy
-    enthalpy= stb.enthalpy
+    entropy = [stb.entropy]
+    enthalpy= [stb.enthalpy]
 
     # Stable assemblage info
     n_ph     =  stb.n_ph        # total # of stable phases
@@ -1636,6 +2363,11 @@ function create_gmin_struct(DB, gv, time; name_solvus = false)
             ph[i] = get_mineral_name(database, ph[i], SS_vec[i])
         end
     end
+
+    # create dictionaries for easy access to the phase symbols; has to be after the name_solvus is set!
+    SS_syms = Dict( Symbol("$(ph[i])") => i for i=1:n_SS )
+    PP_syms = Dict( Symbol("$(ph[i])") => i-n_SS for i=n_SS+1:n_SS+n_PP )
+
     # extract information about metastable solution phases
     mSS_vec = convert.(LibMAGEMin.mSS_data, unsafe_wrap(Vector{LibMAGEMin.mstb_SS_phase},stb.mSS,n_mSS))
 
@@ -1659,6 +2391,14 @@ function create_gmin_struct(DB, gv, time; name_solvus = false)
     if isinf(Vs_S)
         Vs_S = NaN
     end
+
+    if frac_M > 0.0
+        eta_M = compute_melt_viscosity_G08(oxides, bulk_M, T_C; A = -4.55)
+    else
+        eta_M = NaN
+    end
+
+
     # Store all in output struct
     out = gmin_struct{Float64,Int64}( MAGEMin_ver, dataset, database, buffer, buffer_n, G_system, Gamma, P_kbar, T_C, X, M_sys,
                 bulk, bulk_M, bulk_S, bulk_F,
@@ -1666,11 +2406,13 @@ function create_gmin_struct(DB, gv, time; name_solvus = false)
                 frac_M, frac_S, frac_F,
                 frac_M_wt, frac_S_wt, frac_F_wt,
                 frac_M_vol, frac_S_vol, frac_F_vol,
-                alpha, V, #=cp,=# s_cp,
-                rho, rho_M, rho_S, rho_F,
+                entropy_S, entropy_M, entropy_F,
+                alpha, V,V_cm3, s_cp,
+                rho, rho_M, rho_S, rho_F, eta_M,
                 fO2, dQFM, aH2O, aSiO2, aTiO2, aAl2O3, aMgO, aFeO,
                 n_PP, n_SS, n_mSS,
                 ph_frac, ph_frac_wt, ph_frac_1at, ph_frac_vol, ph_type, ph_id, ph_id_db, ph, sol_name,
+                SS_syms, PP_syms,
                 SS_vec,  mSS_vec, PP_vec,
                 oxides,  elements,
                 stb.Vp, stb.Vs, Vp_S, Vs_S, stb.bulkMod, stb.shearMod, stb.bulkModulus_M,  stb.bulkModulus_S, stb.shearModulus_S,
@@ -1682,32 +2424,22 @@ end
 
 
 """
-    out = create_light_gmin_struct(gv, z_b)
+    create_light_gmin_struct(DB, gv)
 
-This extracts the output of a pointwise MAGEMin optimization and adds it into a julia structure
+    Extract a lightweight output of a pointwise MAGEMin optimization into a Julia structure (Float32/Int8 types).
+
+    Parameters
+    ----------
+    DB : LibMAGEMin.Database
+        Database structure.
+    gv : LibMAGEMin.global_variables
+        Global variables structure.
+
+    Returns
+    -------
+    out : light_gmin_struct{Float32, Int8}
+        Lightweight structure containing essential minimization results.
 """
-# function create_light_gmin_struct(DB)
-
-#     stb      = unsafe_load(DB.sp)
-#     n_ph     =  stb.n_ph        # total # of stable phases
-#     n_PP     =  stb.n_PP        # number of pure phases
-#     n_SS     =  stb.n_SS        # number of solid solutions
-
-#     P_kbar   = Float32(stb.P)
-#     T_C      = Float32(stb.T-273.15)
-
-#     ph_frac_1at =  Float32.(unsafe_wrap(Vector{Cdouble},  stb.ph_frac_1at,        n_ph))
-#     ph_type     =  Int8.(unsafe_wrap(Vector{Cint},        stb.ph_type,            n_ph))
-#     ph_id_db    =  Int8.(unsafe_wrap(Vector{Cint},        stb.ph_id_db,           n_ph))
-
-#     # extract info about compositional variables of the solution models:
-#     SS_vec  = convert.(LibMAGEMin.SS_data, unsafe_wrap(Vector{LibMAGEMin.stb_SS_phase},stb.SS,n_SS))
-#     xeos     = [Float32.(SS_vec[i].compVariables) for i=1:n_SS]
-#     # Store all in output struct
-#     out = light_gmin_struct{Float32,Int8}( P_kbar, T_C, ph_frac_1at, ph_type, ph_id_db, xeos)
-
-#    return out
-# end
 function create_light_gmin_struct(DB,gv)
 
     stb         = unsafe_load(DB.sp)
@@ -1735,12 +2467,12 @@ function create_light_gmin_struct(DB,gv)
     rho_M       = Float32.(stb.rho_M)
 
     s_cp        = Float32.([stb.s_cp])
-
+    alpha       = Float32.([stb.alpha])
     out = light_gmin_struct{Float32,Int8}(  P_kbar, T_C, ph_frac_wt, ph_type, ph_id_db,
                                             frac_S_wt, frac_F_wt, frac_M_wt,
                                             bulk_S_wt, bulk_F_wt, bulk_M_wt,
                                             rho_S, rho_F, rho_M,
-                                            s_cp)
+                                            s_cp,alpha)
 
    return out
 end
@@ -1773,7 +2505,12 @@ end
 """
     print_info(g::gmin_struct)
 
-Prints a more extensive overview of the simulation results
+    Print an extensive overview of the minimization results, including stable phases, compositions, thermodynamic properties, and numerics.
+
+    Parameters
+    ----------
+    g : gmin_struct
+        Output structure from a MAGEMin minimization.
 """
 function print_info(g::gmin_struct)
 
@@ -1948,13 +2685,13 @@ function print_info(g::gmin_struct)
     print("$(lpad(round(sum(g.ph_frac_wt),digits=5),8," ")) ")
     print("$(lpad(round(sum(g.ph_frac_vol),digits=5),8," ")) ")
     print("$(lpad(round(g.G_system,digits=5),20," ")) ")
-    print("$(lpad(round(g.alpha,digits=5),29," ")) ")
-    print("$(lpad(round(g.cp,digits=5),29," ")) ")
+    print("$(lpad(round(g.alpha[1],digits=5),29," ")) ")
+    # print("$(lpad(round(g.cp,digits=5),29," ")) ")
     print("$(lpad(round(g.s_cp[1],digits=5),29," ")) ")
     print("$(lpad(round(g.V,digits=5),29," ")) ")
     print("$(lpad(round(g.rho,digits=5),29," ")) ")
-    print("$(lpad(round(g.entropy,digits=5),21," ")) ")
-    print("$(lpad(round(g.enthalpy,digits=5),13," ")) ")
+    print("$(lpad(round(g.entropy[1],digits=5),21," ")) ")
+    print("$(lpad(round(g.enthalpy[1],digits=5),13," ")) ")
     print("$(lpad(round(g.bulkMod,digits=5),13," ")) ")
     print("$(lpad(round(g.shearMod,digits=5),13," ")) ")
     print("$(lpad(round(g.Vp,digits=5),10," ")) ")
@@ -1989,7 +2726,31 @@ end
 
 
 """
-    out = function point_wise_minimization_with_guess(mSS_vec :: Vector{mSS_data}, P, T, gv, z_b, DB, splx_data)
+    point_wise_minimization_with_guess(mSS_vec, P, T, gv, z_b, DB, splx_data)
+
+    Perform a point-wise Gibbs energy minimization using an initial guess from metastable solution phase data.
+
+    Parameters
+    ----------
+    mSS_vec : Vector{LibMAGEMin.mSS_data}
+        Vector of metastable solution phase data used as initial guess.
+    P : Float64
+        Pressure [kbar].
+    T : Float64
+        Temperature [°C].
+    gv : LibMAGEMin.global_variables
+        Global variables structure.
+    z_b : LibMAGEMin.bulk_infos
+        Bulk rock information structure.
+    DB : LibMAGEMin.Database
+        Database structure.
+    splx_data : LibMAGEMin.simplex_datas
+        Simplex data structure.
+
+    Returns
+    -------
+    out : gmin_struct{Float64, Int64}
+        Structure containing the minimization results.
 """
 function point_wise_minimization_with_guess(    mSS_vec ::  Vector{LibMAGEMin.mSS_data},
                                                 P       ::  Float64,
@@ -2034,6 +2795,226 @@ function point_wise_minimization_with_guess(    mSS_vec ::  Vector{LibMAGEMin.mS
 
             tot_pc      = unsafe_wrap(Vector{Cint},SS_ref_db[ph_id].tot_pc, 1)
             id_pc       = unsafe_wrap(Vector{Cint},SS_ref_db[ph_id].id_pc, 1)
+            info        = unsafe_wrap(Vector{Cint},SS_ref_db[ph_id].info, SS_ref_db[ph_id].n_pc)
+            factor_pc   = unsafe_wrap(Vector{Cdouble},SS_ref_db[ph_id].factor_pc, SS_ref_db[ph_id].n_pc)
+            DF_pc       = unsafe_wrap(Vector{Cdouble},SS_ref_db[ph_id].DF_pc, SS_ref_db[ph_id].n_pc)
+            G_pc        = unsafe_wrap(Vector{Cdouble},SS_ref_db[ph_id].G_pc, SS_ref_db[ph_id].n_pc)
+
+            # here we make sure the pseudocompound can be added
+            if id_pc[1]+1 < SS_ref_db[ph_id].n_pc 
+
+                m_pc        = id_pc[1]+1;
+                ptr_comp_pc = unsafe_wrap(Vector{Ptr{Cdouble}},SS_ref_db[ph_id].comp_pc,SS_ref_db[ph_id].n_pc)
+                ptr_p_pc    = unsafe_wrap(Vector{Ptr{Cdouble}},SS_ref_db[ph_id].p_pc,SS_ref_db[ph_id].n_pc)
+                ptr_xeos_pc = unsafe_wrap(Vector{Ptr{Cdouble}},SS_ref_db[ph_id].xeos_pc,SS_ref_db[ph_id].n_pc)
+
+                unsafe_copyto!(SS_ref_db[ph_id].gb_lvl,SS_ref_db[ph_id].gbase, SS_ref_db[ph_id].n_em)
+                xeos        = mSS_vec[i].xeos_Ppc
+
+                # retrieve bounds
+                bounds_ref      = zeros( n_xeos,2)
+                ptr_bounds_ref  = unsafe_wrap(Vector{Ptr{Cdouble}}, SS_ref_db[ph_id].bounds_ref, n_xeos)
+
+                for k=1:n_xeos
+                    bounds_ref[k,:] = unsafe_wrap(Vector{Cdouble}, ptr_bounds_ref[k], 2)
+                    if xeos[k] < bounds_ref[k,1]
+                        xeos[k] = bounds_ref[k,1]
+                    elseif xeos[k] > bounds_ref[k,2]
+                        xeos[k] = bounds_ref[k,2]
+                    end
+                end
+
+                # get solution phase information for given compositional variables
+                unsafe_copyto!(SS_ref_db[ph_id].iguess,pointer(xeos), n_xeos)
+                if rg == "tc"
+                    SS_ref_db[ph_id] = LibMAGEMin.PC_function(gv, PC_read, SS_ref_db[ph_id], z_b, ph_id-1)
+                elseif rg == "sb"
+                    SS_ref_db[ph_id] = LibMAGEMin.SB_PC_function(gv, PC_read, SS_ref_db[ph_id], z_b, ph_id-1)
+                end
+
+                # copy solution phase composition
+                ss_comp     = unsafe_wrap(Vector{Cdouble}, SS_ref_db[ph_id].ss_comp, gv.len_ox)
+  
+                # println("ph $ph n_pc $(SS_ref_db[ph_id].n_pc) m_pc $m_pc")
+                comp_pc     = unsafe_wrap(Vector{Cdouble}, ptr_comp_pc[m_pc], gv.len_ox)
+                comp_pc    .= ss_comp .* SS_ref_db[ph_id].factor;
+
+                # copy endmember fraction
+                p           = unsafe_wrap(Vector{Cdouble}, SS_ref_db[ph_id].p, n_em)
+                p_pc        = unsafe_wrap(Vector{Cdouble}, ptr_p_pc[m_pc], n_em)
+                p_pc       .= p
+
+                # copy compositional variables
+                xeos_pc     = unsafe_wrap(Vector{Cdouble}, ptr_xeos_pc[m_pc], n_xeos)
+                xeos_pc    .= xeos
+
+                info[m_pc]      = 1;
+                factor_pc[m_pc] = SS_ref_db[ph_id].factor;
+                DF_pc[m_pc]     = SS_ref_db[ph_id].df;
+                G_pc[m_pc]      = SS_ref_db[ph_id].df;
+
+                tot_pc .+= 1;
+                id_pc  .+= 1;
+            end
+        end
+    end
+
+    gv.leveling_mode = 1
+    out = deepcopy(pwm_run(gv, z_b, DB, splx_data))
+
+    return out
+end
+
+
+
+"""
+    point_wise_metastability(out, P, T, gv, z_b, DB, splx_data)
+
+    Compute the metastability of the solution phases from a previous minimization result at new pressure and temperature conditions.
+
+    Parameters
+    ----------
+    out : gmin_struct{Float64, Int64}
+        Output structure from a previous MAGEMin minimization.
+    P : Float64
+        Pressure [kbar].
+    T : Float64
+        Temperature [°C].
+    gv : LibMAGEMin.global_variables
+        Global variables structure.
+    z_b : LibMAGEMin.bulk_infos
+        Bulk rock information structure.
+    DB : LibMAGEMin.Database
+        Database structure.
+    splx_data : LibMAGEMin.simplex_datas
+        Simplex data structure.
+
+    Returns
+    -------
+    out : gmin_struct{Float64, Int64}
+        Structure containing the metastability results at the new P-T conditions.
+
+    Examples
+    --------
+    ```julia
+    using MAGEMin_C
+    data    = Initialize_MAGEMin("mp", verbose=-1; solver=0);
+    P, T    = 6.0, 630.0
+    Xoxides = ["SiO2"; "TiO2"; "Al2O3"; "FeO"; "MnO"; "MgO"; "CaO"; "Na2O"; "K2O"; "H2O"; "O"];
+    X       = [58.509, 1.022, 14.858, 4.371, 0.141, 4.561, 5.912, 3.296, 2.399, 10.0, 0.0];
+    sys_in  = "wt"
+    out     = single_point_minimization(P, T, data, X=X, Xoxides=Xoxides, sys_in=sys_in)
+    Pmeta, Tmeta = 6.0, 500.0
+    out2    = point_wise_metastability(out, Pmeta, Tmeta, data)
+    ```
+"""
+function point_wise_metastability(  out     :: MAGEMin_C.gmin_struct{Float64, Int64},
+                                    P       :: Float64,
+                                    T       :: Float64,
+                                    gv, z_b, DB, splx_data)
+
+    mSS_vec = deepcopy(out.mSS_vec)                                
+    gv      = define_bulk_rock(gv, out.bulk, out.oxides, "mol", out.database);
+    # initialize MAGEMin up to G0 computation included
+    gv, z_b, DB, splx_data = pwm_init(P, T, gv, z_b, DB, splx_data);
+    gv.verbose = -1
+
+    ############################################################################
+    # retrieve Pure Phases information
+    PP_ref_db   = unsafe_wrap(Vector{LibMAGEMin.PP_ref},DB.PP_ref_db,gv.len_pp);
+
+    # retrieve Solution Phases information
+    SS_ref_db   = unsafe_wrap(Vector{LibMAGEMin.SS_ref},DB.SS_ref_db,gv.len_ss);
+
+    # retrieve dimensions
+    np          = z_b.nzEl_val
+    nzEl_array  = unsafe_wrap(Vector{Cint},z_b.nzEl_array, gv.len_ox) .+ 1
+    nzEl_array  = nzEl_array[1:np]
+
+    # Declare array to be copied in splx_data
+    A_jll       = zeros(np,np)
+    g0_A_jll    = zeros(np)
+    ph_id_A_jll = zeros(Int32,np,4)
+
+    n_pc_ss     = zeros(gv.len_ss)
+
+    rg          = unsafe_string(gv.research_group)
+
+    PC_read = Vector{LibMAGEMin.PC_type}(undef,gv.len_ss)
+    if rg == "tc"
+        LibMAGEMin.TC_PC_init(PC_read,gv)
+    elseif rg == "sb"
+        LibMAGEMin.SB_PC_init(PC_read,gv)
+    end
+    
+    # fill the arrays to be copied in splx_data
+    for i = 1:np
+        if mSS_vec[i].ph_type == "pp"
+            ph_id = mSS_vec[i].ph_id+1
+            g0_A_jll[i] = PP_ref_db[ph_id].gbase*PP_ref_db[ph_id].factor
+            A_jll[i,:]  = mSS_vec[i].comp_Ppc[nzEl_array]
+
+            ph_id_A_jll[i,1] = 1
+            ph_id_A_jll[i,2] = ph_id-1
+            ph_id_A_jll[i,3] = 0
+            ph_id_A_jll[i,4] = 0
+        elseif mSS_vec[i].ph_type == "ss"
+            ph_id   = mSS_vec[i].ph_id+1
+            ph      = mSS_vec[i].ph_name
+
+            unsafe_copyto!(SS_ref_db[ph_id].gb_lvl,SS_ref_db[ph_id].gbase, SS_ref_db[ph_id].n_em)
+            unsafe_copyto!(SS_ref_db[ph_id].iguess,pointer(mSS_vec[i].xeos_Ppc), SS_ref_db[ph_id].n_xeos)
+            SS_ref_db[ph_id] = LibMAGEMin.PC_function(gv, PC_read, SS_ref_db[ph_id], z_b, ph_id-1)
+
+            g0_A_jll[i] = SS_ref_db[ph_id].df
+            A_jll[i,:]  = mSS_vec[i].comp_Ppc[nzEl_array]
+            ph_id_A_jll[i,1] = 3
+            ph_id_A_jll[i,2] = ph_id-1
+            ph_id_A_jll[i,3] = 0
+            ph_id_A_jll[i,4] = n_pc_ss[ph_id]
+            n_pc_ss[ph_id]  += 1
+        elseif mSS_vec[i].ph_type == "ss_em"
+            ph_id   = mSS_vec[i].ph_id+1
+            em_id   = mSS_vec[i].em_id+1
+            ape     = unsafe_wrap(Vector{Cdouble},SS_ref_db[ph_id].ape, SS_ref_db[ph_id].n_em)
+            gbase   = unsafe_wrap(Vector{Cdouble},SS_ref_db[ph_id].gbase, SS_ref_db[ph_id].n_em)
+            comp_ptr= unsafe_wrap(Vector{Ptr{Cdouble}},SS_ref_db[ph_id].Comp, SS_ref_db[ph_id].n_em)
+            Comp    = unsafe_wrap(Vector{Cdouble},comp_ptr[em_id], gv.len_ox)
+            factor 	= z_b.fbc/ape[em_id]
+            ph      = mSS_vec[i].ph_name
+
+            g0_A_jll[i] = gbase[em_id]*factor;
+            A_jll[i,:]  = Comp[nzEl_array]*factor
+            ph_id_A_jll[i,1] = 2
+            ph_id_A_jll[i,2] = ph_id-1
+            ph_id_A_jll[i,3] = 0
+            ph_id_A_jll[i,4] = em_id-1
+        end
+    end
+
+    # copy to the appropriate places
+    ph_id_A = unsafe_wrap(Vector{Ptr{Int32}},splx_data.ph_id_A, np)
+
+    for i=1:np
+        unsafe_copyto!(ph_id_A[i],pointer(ph_id_A_jll[i,:]),4)
+    end
+
+    unsafe_copyto!(splx_data.A,pointer(vec(A_jll)),np*np)
+    unsafe_copyto!(splx_data.A1,pointer(vec(A_jll)),np*np)
+    unsafe_copyto!(splx_data.g0_A,pointer(g0_A_jll),np)
+
+    # add pseudocompounds
+    n_mSS = length(mSS_vec)
+    for i = 1:n_mSS
+
+        if mSS_vec[i].ph_type == "ss"
+            ph          = mSS_vec[i].ph_name
+            ph_id       = mSS_vec[i].ph_id+1
+            n_xeos      = SS_ref_db[ph_id].n_xeos
+            n_em        = SS_ref_db[ph_id].n_em
+
+            tot_pc      = unsafe_wrap(Vector{Cint},SS_ref_db[ph_id].tot_pc, 1)
+            id_pc       = unsafe_wrap(Vector{Cint},SS_ref_db[ph_id].id_pc, 1)
             info        = unsafe_wrap(Vector{Cint},SS_ref_db[ph_id].info, gv.max_n_mSS)
             factor_pc   = unsafe_wrap(Vector{Cdouble},SS_ref_db[ph_id].factor_pc, gv.max_n_mSS)
             DF_pc       = unsafe_wrap(Vector{Cdouble},SS_ref_db[ph_id].DF_pc, gv.max_n_mSS)
@@ -2062,11 +3043,7 @@ function point_wise_minimization_with_guess(    mSS_vec ::  Vector{LibMAGEMin.mS
 
             # get solution phase information for given compositional variables
             unsafe_copyto!(SS_ref_db[ph_id].iguess,pointer(xeos), n_xeos)
-            if rg == "tc"
-                SS_ref_db[ph_id] = LibMAGEMin.PC_function(gv, PC_read, SS_ref_db[ph_id], z_b, ph_id-1)
-            elseif rg == "sb"
-                SS_ref_db[ph_id] = LibMAGEMin.SB_PC_function(gv, PC_read, SS_ref_db[ph_id], z_b, ph_id-1)
-            end
+            SS_ref_db[ph_id] = LibMAGEMin.PC_function(gv, PC_read, SS_ref_db[ph_id], z_b, ph_id-1)
 
             # copy solution phase composition
             ss_comp     = unsafe_wrap(Vector{Cdouble}, SS_ref_db[ph_id].ss_comp, gv.len_ox)
@@ -2092,18 +3069,33 @@ function point_wise_minimization_with_guess(    mSS_vec ::  Vector{LibMAGEMin.mS
         end
     end
 
-    gv.leveling_mode = 1
-    out = deepcopy(pwm_run(gv, z_b, DB, splx_data))
+    gv.leveling_mode    = 2
+    gv.solver           = 3    #this deactivates minimization 
+    out                 = deepcopy(pwm_run(gv, z_b, DB, splx_data))
 
     return out
 end
+
+point_wise_metastability(           out     :: MAGEMin_C.gmin_struct{Float64, Int64},
+                                    P       :: Float64,
+                                    T       :: Float64,
+                                    data    ::  MAGEMin_Data) =
+                                    point_wise_metastability(out, P, T, data.gv[1], data.z_b[1], data.DB[1], data.splx_data[1])
+
 
 
 # The following section add post-processing routines
 include("TE_ph_models.jl")
 include("TE_partitioning.jl")
-include("Zircon_saturation.jl")
+include("TE_saturation_models.jl")
 include("export2CSV.jl")
+include("External_routines.jl")
 
 # Loading Adaptive mesh refinement functions
 include("AMR.jl")
+
+
+
+const out_TE_struct = out_tepm
+const out_struct    = gmin_struct{Float64, Int64}
+

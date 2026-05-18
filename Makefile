@@ -1,7 +1,6 @@
 # CC=gcc
-CC=gcc
+CC=gcc 
 CXX=g++
-#clang 
 
 UNAME_S := $(shell uname -s)
 
@@ -10,14 +9,13 @@ EXE_NAME:= MAGEMin
 # Check if USE_MPI is set (default: 1)
 USE_MPI ?= 1
 
-CCFLAGS = -Wall -O3 -g -fPIC -Wno-unused-variable -Wno-unused-but-set-variable -march=native -funroll-loops -flto
+CCFLAGS = -Wall -O3 -g -fPIC -Wno-unused-variable -Wno-unused-but-set-variable -march=native -funroll-loops
 CXXFLAGS= -Wall -O3 -g -fPIC -std=c++17 -flto
 ifeq ($(UNAME_S),Darwin)
 	INC      = -I/opt/homebrew/include 
 	LIBS     = -lm -framework Accelerate /opt/homebrew/lib/libnlopt.dylib
 	ifeq ($(USE_MPI),1)
 		CCFLAGS += -DUSE_MPI
-		CXXFLAGS += -DUSE_MPI
 		LIBS    += /opt/homebrew/lib/libmpi.dylib
 	endif
 endif
@@ -25,14 +23,12 @@ ifeq ($(UNAME_S),Linux)
 	LIBS     = -lm -llapacke -lnlopt -g -L/usr/lib 
 	ifeq ($(USE_MPI),1)
 		CCFLAGS += -DUSE_MPI
-		CXXFLAGS += -DUSE_MPI
 		LIBS    += -L/usr/lib/x86_64-linux-gnu/openmpi/lib -lmpi
 		INC      = -I/usr/lib/x86_64-linux-gnu/openmpi/include/
 	endif
 endif
-	EXE_NAME = MAGEMin
 
-SOURCES=src/MAGEMin_modified.c 					\
+SOURCES=src/MAGEMin_modified.c \
 		src/initialize.c 						\
 		src/TC_database/TC_init_database.c		\
 		src/TC_database/TC_endmembers.c			\
@@ -60,6 +56,7 @@ SOURCES=src/MAGEMin_modified.c 					\
 		src/TC_database/SS_xeos_PC_mpe.c		\
 		src/SB_database/SS_xeos_PC_sb11.c		\
 		src/SB_database/SS_xeos_PC_sb21.c		\
+		src/SB_database/SS_xeos_PC_sb24.c		\
 		src/pp_min_function.c 					\
 		src/ss_min_function.c 					\
 		src/simplex_levelling.c 				\
@@ -71,15 +68,13 @@ OBJECTS=$(SOURCES:.c=.o)
 CPP_SRC = src/MAGEMin_cpp.cc
 CPP_OBJ = src/MAGEMin_cpp.o
 
-#.c.o: $(SOURCES)
-#	$(CC) $(CCFLAGS) -c $< -o $@ $(INC)
+
 
 
 .c.o:
 	$(CC) $(CCFLAGS) -c $< -o $@ $(INC)
  
- 
-all: $(OBJECTS) 
+all: $(OBJECTS)
 	# $(CC)  -o $(EXE_NAME) $(OBJECTS) $(INC) $(LIBS)  -flto
 	# rm src/*.o src/TC_database/*.o
 	# g++ -fPIC -c src/MAGEMin_cpp.cc -o MAGEMin_cpp.o
@@ -87,14 +82,10 @@ all: $(OBJECTS)
 	
 	$(CXX) $(CXXFLAGS) -c $(CPP_SRC) -o $(CPP_OBJ) $(INC)
 	$(CXX) -shared -o libMAGEMin_cpp.so $(CPP_OBJ) $(OBJECTS) $(LIBS) -Wl,-rpath,'$ORIGIN'
-
-
-# $(CPP_OBJ): $(CPP_SRC)
+	rm src/*.o src/TC_database/*.o
 
 lib: $(OBJECTS)
 	$(CC) -shared -fPIC -o libMAGEMin.dylib $(OBJECTS) $(INC) $(LIBS) -flto
  
 clean:
 	rm -f src/*.o  src/TC_database/*.o src/SB_database/*.o *.dylib MAGEMin
-# rm -f *.dylib MAGEMin
-	

@@ -3,7 +3,7 @@
  **   Project      : MAGEMin
  **   License      : GNU GENERAL PUBLIC LICENSE Version 3, 29 June 2007
  **   Developers   : Nicolas Riel, Boris Kaus
- **   Contributors : Dominguez, H., Assunção J., Green E., Berlie N., and Rummel L.
+ **   Contributors : Nickolas B. Moccetti, Dominguez, H., Assunção J., Green E., Berlie N., and Rummel L.
  **   Organization : Institute of Geosciences, Johannes-Gutenberg University, Mainz
  **   Contact      : nriel[at]uni-mainz.de, kaus[at]uni-mainz.de
  **
@@ -11695,6 +11695,29 @@ FS_db arr_fs_db_Miron2017[44] = {
 		{0}
 	}
 };
+
+EM_db* get_arr_em_db_tc( int EM_dataset) {
+	if (EM_dataset == 62){	
+	 	return arr_em_db_tc_ds62;
+	}
+	else if (EM_dataset == 633){		
+		return arr_em_db_tc_ds633; 
+	}
+	else if (EM_dataset == 634){		
+		return arr_em_db_tc_ds634;
+	}
+	else if (EM_dataset == 635){		
+		return arr_em_db_tc_ds635;
+	}
+	else if (EM_dataset == 636){		
+		return arr_em_db_tc_ds636;
+	}
+    else{
+        printf(" Wrong endmember dataset, values should be 62, 633, 634, 635 or 636\n");
+        printf(" -> using default ds-633 to avoid ugly crash\n"); 
+        return arr_em_db_tc_ds633;   
+    }
+}
 
 /* Select required thermodynamic database */
 EM_db Access_EM_DB(int id, int EM_dataset) {

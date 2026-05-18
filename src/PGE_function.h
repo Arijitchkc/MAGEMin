@@ -3,7 +3,7 @@
  **   Project      : MAGEMin
  **   License      : GNU GENERAL PUBLIC LICENSE Version 3, 29 June 2007
  **   Developers   : Nicolas Riel, Boris Kaus
- **   Contributors : Dominguez, H., Assunção J., Green E., Berlie N., and Rummel L.
+ **   Contributors : Nickolas B. Moccetti, Dominguez, H., Assunção J., Green E., Berlie N., and Rummel L.
  **   Organization : Institute of Geosciences, Johannes-Gutenberg University, Mainz
  **   Contact      : nriel[at]uni-mainz.de, kaus[at]uni-mainz.de
  **
@@ -59,6 +59,18 @@ global_variable LP(				bulk_info 			z_b,
 								PC_type 			*PC_read,
 								P2X_type			*P2X_read,
 								
+								obj_type 			*SS_objective,
+								NLopt_type			*NLopt_opt,
+								simplex_data	    *splx_data,
+								PP_ref 				*PP_ref_db,
+								SS_ref 				*SS_ref_db,
+								csd_phase_set  		*cp					);
+
+global_variable LP_metastable(	bulk_info 			z_b,
+								global_variable 	gv,
+								PC_type				*PC_read,
+								P2X_type			*P2X_read,
+
 								obj_type 			*SS_objective,
 								NLopt_type			*NLopt_opt,
 								simplex_data	    *splx_data,

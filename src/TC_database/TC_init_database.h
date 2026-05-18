@@ -3,7 +3,7 @@
  **   Project      : MAGEMin
  **   License      : GNU GENERAL PUBLIC LICENSE Version 3, 29 June 2007
  **   Developers   : Nicolas Riel, Boris Kaus
- **   Contributors : Dominguez, H., Assunção J., Green E., Berlie N., and Rummel L.
+ **   Contributors : Nickolas B. Moccetti, Dominguez, H., Assunção J., Green E., Berlie N., and Rummel L.
  **   Organization : Institute of Geosciences, Johannes-Gutenberg University, Mainz
  **   Contact      : nriel[at]uni-mainz.de, kaus[at]uni-mainz.de
  **
@@ -20,7 +20,7 @@
 	**/
 	#define n_ox_mpf 12 		// as of now this is n_oxides = 11 + electrochemical potential
 	#define n_ss_mpf 18			
-	#define n_pp_mpf 26
+	#define n_pp_mpf 27
 
 	typedef struct metapelite_aq_datasets {
 		int 	ds_version;
@@ -57,7 +57,7 @@
 		Metapelite database informations
 	**/
 	#define n_ss_mp 18
-	#define n_pp_mp 26
+	#define n_pp_mp 27
 	#define n_ox_mp 11
 	typedef struct metapelite_datasets {
 		int 	ds_version;
@@ -97,7 +97,7 @@
 		int 	n_pp;
 		int 	n_ss;
 		char    ox[10][20];
-		char    PP[26][20];
+		char    PP[28][20];
 
 		char    SS[17][20];
 		int 	verifyPC[17];
@@ -121,11 +121,43 @@
 	} metabasite_dataset;
 
 	/** 
+		Metabasite ext database informations
+	**/
+		typedef struct metabasite_ext_datasets {
+		int 	ds_version;
+		int 	n_ox;
+		int 	n_pp;
+		int 	n_ss;
+		char    ox[10][20];
+		char    PP[28][20];
+
+		char    SS[19][20];
+		int 	verifyPC[19];
+		int 	n_SS_PC[19];
+		double 	SS_PC_stp[19];
+
+		double 	PC_df_add;					/** min value of df under which the PC is added 									*/
+		double  solver_switch_T;
+		double  min_melt_T;
+
+		double  inner_PGE_ite;				/** number of inner PGE iterations, this has to be made mass or dG dependent 		*/
+		double  max_n_phase;				/** maximum mol% phase change during one PGE iteration in wt% 						*/
+		double  max_g_phase;				/** maximum delta_G of reference change during PGE 									*/
+		double 	max_fac;					/** maximum update factor during PGE under-relax < 0.0, over-relax > 0.0 	 		*/
+
+		double  merge_value;				/** max norm distance between two instances of a solution phase						*/	
+		double 	re_in_n;					/** fraction of phase when being reintroduce.  										*/
+
+		double  obj_tol;
+
+	} metabasite_ext_dataset;
+
+	/** 
 		Igneous database informations 
 	**/
 	#define n_ox_ig 11 		// as of now this is n_oxides = 11 + electrochemical potential
 	#define n_ss_ig 16			
-	#define n_pp_ig 26
+	#define n_pp_ig 27
 	typedef struct igneous_datasets {
 		int 	ds_version;
 		int 	n_ox;
@@ -165,7 +197,7 @@
 		int 	n_pp;
 		int 	n_ss;
 		char    ox[10][20];
-		char    PP[24][20];
+		char    PP[25][20];
 		char    SS[12][20];
 
 		int 	verifyPC[12];
@@ -198,7 +230,7 @@
 		int 	n_pp;
 		int 	n_ss;
 		char    ox[7][20];
-		char    PP[23][20];
+		char    PP[25][20];
 		char    SS[12][20];
 
 		int 	verifyPC[12];
@@ -226,13 +258,13 @@
 		int 	n_ox;
 		int 	n_pp;
 		int 	n_ss;
-		char    ox[9][20];
-		char    PP[23][20];
-		char    SS[15][20];
+		char    ox[11][20];
+		char    PP[27][20];
+		char    SS[18][20];
 
-		int 	verifyPC[15];
-		int 	n_SS_PC[15];
-		double 	SS_PC_stp[15];
+		int 	verifyPC[18];
+		int 	n_SS_PC[18];
+		double 	SS_PC_stp[18];
 
 		double 	PC_df_add;					/** min value of df under which the PC is added 									*/
 		double  solver_switch_T;
@@ -293,12 +325,12 @@
 		int 	n_pp;
 		int 	n_ss;
 		char    ox[13][20];
-		char    PP[31][20];
-		char    SS[23][20];
+		char    PP[32][20];
+		char    SS[24][20];
 
-		int 	verifyPC[23];
-		int 	n_SS_PC[23];
-		double 	SS_PC_stp[23];
+		int 	verifyPC[24];
+		int 	n_SS_PC[24];
+		double 	SS_PC_stp[24];
 
 		double 	PC_df_add;					/** min value of df under which the PC is added 									*/
 		double  solver_switch_T;

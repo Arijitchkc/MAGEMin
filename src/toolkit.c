@@ -3,7 +3,7 @@
  **   Project      : MAGEMin
  **   License      : GNU GENERAL PUBLIC LICENSE Version 3, 29 June 2007
  **   Developers   : Nicolas Riel, Boris Kaus
- **   Contributors : Dominguez, H., Assunção J., Green E., Berlie N., and Rummel L.
+ **   Contributors : Nickolas B. Moccetti, Dominguez, H., Assunção J., Green E., Berlie N., and Rummel L.
  **   Organization : Institute of Geosciences, Johannes-Gutenberg University, Mainz
  **   Contact      : nriel[at]uni-mainz.de, kaus[at]uni-mainz.de
  **
@@ -68,6 +68,7 @@ void print_help(	global_variable gv	){
 	printf("  --mbIlm=      [int]   : 0. Ilm, 1. Ilmm see (Green et al., 2016)\n");
 	printf("  --mpSp=       [int]   : 0. Ilm, 1. Ilmm see (White et al., 2014)\n");
 	printf("  --mpIlm=      [int]   : 0. Sp, 1. Mt1 see (White et al., 2014)\n");
+	printf("  --ig_ed=      [int]   : 0. default bi,amp for ig, 1. updated bi,amp for ig\n");
 	printf("\n");
 	printf(" *'mp': metapelite, 'mb': metabasite, 'ig': igneous H18->G23, 'igad': igneous alkaline dry, 'um': ultramafic, 'ume': ultramafic extended, 'mtl': mantle\n");
 	printf("\n");
@@ -250,30 +251,47 @@ bulk_info retrieve_bulk_PT(				global_variable      gv,
 
 	if (gv.verbose == 1){	
 
-		if (gv.EM_database 		== 0){
-			printf("  - Database                  : Metapelite (White et al., 2014)\n"	);
+		if (strcmp(gv.research_group, "tc") == 0) {
+			if (gv.EM_database 		== 0){
+				printf("  - Database                  : Metapelite (White et al., 2014)\n"	);
+			}
+			if (gv.EM_database 		== 1){
+				printf("  - Database                  : Metabasite (Green et al., 2016)\n"	);
+			}
+			if (gv.EM_database 		== 11){
+				printf("  - Database                  : Metabasite extended (Green et al., 2016; oamp from Diener et al., 2007)\n"	);
+			}
+			else if (gv.EM_database == 2){
+				printf("  - Database                  : Igneous (Holland et al., 2018 -> Green et al., 2024)\n"	);
+			}
+			else if (gv.EM_database == 3){
+				printf("  - Database                  : Igneous alkaline dry (Weller et al., 2024)\n"	);
+			}
+			else if (gv.EM_database == 4 ){
+				printf("  - Database                  : Ultramafic (Evans & Frost, 2021)\n"	);
+			}
+			else if (gv.EM_database == 5 ){
+				printf("  - Database                  : Ultramafic extended (Evans & Frost, 2021 + pl, amp and aug from Green et al., 2016)\n"	);
+			}
+			else if (gv.EM_database == 6 ){
+				printf("  - Database                  : Uppermost lower mantle to upper mantle database (Holland et al., 2013)\n"	);
+			}
+			else if (gv.EM_database == 7 ){
+				printf("  - Database                  : Metapelite extended (White et al., 2014; po from Evans & Frost, 2021;  amp, dio and aug from Green et al., 2016)\n"	);
+			}
 		}
-		if (gv.EM_database 		== 1){
-			printf("  - Database                  : Metabasite (Green et al., 2016)\n"	);
+		else {
+			if (gv.EM_database 		== 0){
+				printf("  - Database                  : Stixrude and Bertelloni-Lithgow (2011)\n"	);
+			}
+			if (gv.EM_database 		== 1){
+				printf("  - Database                  : Stixrude and Bertelloni-Lithgow (2021)\n"	);
+			}
+			if (gv.EM_database 		== 2){
+				printf("  - Database                  : Stixrude and Bertelloni-Lithgow (2024)\n"	);
+			}
 		}
-		else if (gv.EM_database == 2){
-			printf("  - Database                  : Igneous (Holland et al., 2018 -> Green et al., 2024)\n"	);
-		}
-		else if (gv.EM_database == 3){
-			printf("  - Database                  : Igneous alkaline dry (Weller et al., 2024)\n"	);
-		}
-		else if (gv.EM_database == 4 ){
-			printf("  - Database                  : Ultramafic (Evans & Frost, 2021)\n"	);
-		}
-		else if (gv.EM_database == 5 ){
-			printf("  - Database                  : Ultramafic extended (Evans & Frost, 2021 + pl, amp and aug from Green et al., 2016)\n"	);
-		}
-		else if (gv.EM_database == 6 ){
-			printf("  - Database                  : Uppermost lower mantle to upper mantle database (Holland et al., 2013)\n"	);
-		}
-		else if (gv.EM_database == 7 ){
-			printf("  - Database                  : Metapelite extended (White et al., 2014; po from Evans & Frost, 2021;  amp, dio and aug from Green et al., 2016)\n"	);
-		}
+
 
 		if (strcmp( gv.sys_in, "mol") == 0){	
 			printf("  - input system composition  : mol fraction\n"	);
@@ -316,6 +334,15 @@ bulk_info retrieve_bulk_PT(				global_variable      gv,
 					}	
 				}
 			}
+			else if (gv.EM_database == 11){ 			// metabasite database
+				if(strcmp( gv.ox[i], "TiO2") != 0  && strcmp( gv.ox[i], "O") != 0){
+					gv.bulk_rock[i] = 1.0e-4;
+					renorm = 1;
+					if (gv.verbose == 1){
+						printf("  - mol of %4s = %+.5f < 1e-4        : set back to 1e-4 to avoid minimization issues\n",gv.ox[i],gv.bulk_rock[i]);
+					}	
+				}
+			}
 			else if (gv.EM_database == 2){ 			// igneous database
 				if(strcmp( gv.ox[i], "H2O") != 0  && strcmp( gv.ox[i], "TiO2") != 0 && strcmp( gv.ox[i], "Cr2O3") != 0 && strcmp( gv.ox[i], "O")  != 0 && strcmp( gv.ox[i], "K2O") != 0){
 					gv.bulk_rock[i] = 1.0e-4;
@@ -344,7 +371,7 @@ bulk_info retrieve_bulk_PT(				global_variable      gv,
 				}
 			}
 			else if (gv.EM_database == 5){ 			// ultramafic database
-				if(strcmp( gv.ox[i], "H2O") != 0 && strcmp( gv.ox[i], "S") != 0  && strcmp( gv.ox[i], "O") != 0){
+				if(strcmp( gv.ox[i], "H2O") != 0 && strcmp( gv.ox[i], "S") != 0  && strcmp( gv.ox[i], "O") != 0 && strcmp( gv.ox[i], "Cr2O3") != 0 && strcmp( gv.ox[i], "CO2") != 0){
 					gv.bulk_rock[i] = 1.0e-4;
 					renorm = 1;
 					if (gv.verbose == 1){
@@ -826,6 +853,9 @@ global_variable get_tests_bulks(	global_variable  	 gv
 		else if (gv.EM_database == 1){
 			gv = get_bulk_metabasite( 		gv );
 		}
+		else if (gv.EM_database == 11){
+			gv = get_bulk_metabasite( 		gv );
+		}
 		else if (gv.EM_database == 2){
 			gv = get_bulk_igneous( 			gv );
 		}
@@ -854,6 +884,9 @@ global_variable get_tests_bulks(	global_variable  	 gv
 		}
 		else if (gv.EM_database == 1){
 			gv = get_bulk_stx21( 		gv );
+		}
+		else if (gv.EM_database == 2){
+			gv = get_bulk_stx24( 		gv );
 		}
 		else{
 			printf(" Wrong database...\n");
@@ -1297,7 +1330,7 @@ global_variable compute_phase_mol_fraction(			global_variable 	 gv,
 													PP_ref  			*PP_ref_db,
 													SS_ref  			*SS_ref_db,
 													csd_phase_set  		*cp					){
-
+														
 	int nox  = gv.len_ox;
 	double n_at_bulk = 0.0;
 	/* number of atom of bulk-rock composition */
@@ -1382,17 +1415,30 @@ global_variable compute_phase_mol_fraction(			global_variable 	 gv,
 		}
 	}
 
+
+	// for (int i = 0; i < gv.len_ox; i++){
+	// 	z_b.bulk_rock[i] = 0.0;
+	// }
+
 	/* normalize mol fractions */
 	for (int i = 0; i < gv.len_cp; i++){
 		if (cp[i].ss_flags[1] == 1){
 			cp[i].ss_n_mol   /= sum_mol_tot;
 			cp[i].ss_n_wt    /= sum_wt_tot;
+
+			// for (int j = 0; j < gv.len_ox; j++){
+			// 	z_b.bulk_rock[j] += cp[i].ss_comp_mol[j] * cp[i].ss_n_mol;
+			// }
 		}
 	}
 	for (int i = 0; i < gv.len_pp; i++){
 		if (gv.pp_flags[i][1] == 1){
 			gv.pp_n_mol[i]   /= sum_mol_tot;
 			gv.pp_n_wt[i]    /= sum_wt_tot;
+
+			// for (int j = 0; j < gv.len_ox; j++){
+			// 	z_b.bulk_rock[j] += PP_ref_db[i].Comp_mol[j] * gv.pp_n_mol[i];
+			// }
 		}
 	}
 
@@ -1415,6 +1461,7 @@ global_variable compute_density_volume_modulus(				int 				 EM_database,
 	double P 			  = z_b.P;					/** PC function uses the z_b structure this is why the Pressure is saved here */
 	double T 			  = z_b.T;					/** PC function uses the z_b structure this is why the Pressure is saved here */
 	double sum_volume     = 0.0;
+	double sum_volume_cm3 = 0.0;
 	double sum_volume_sol = 0.0;
 	double sum_solid_n_wt = 0.0;
 	double dGdTPP, dGdTMP, dG2dT2, dGdP, dG2dP2, dG2dP2_N, dGdP_N;// dGdP_P0,
@@ -1424,7 +1471,6 @@ global_variable compute_density_volume_modulus(				int 				 EM_database,
 	double density[gv.len_ox];
 	int not_only_liq = 0;
 	int ss;
-
 
 	/** calculate mass, volume and densities */
 	for (int i = 0; i < gv.len_cp; i++){
@@ -1486,7 +1532,7 @@ global_variable compute_density_volume_modulus(				int 				 EM_database,
 						cp[i].phase_cp    		+= SS_ref_db[ss].ElCp[j]*cp[i].p_em[j];
 					}
 					else{
-						cp[i].phase_expansivity += (1.0/(dGdP)*((dGdTPP-dGdTMP)/(gv.gb_P_eps)))*cp[i].p_em[j];
+						cp[i].phase_expansivity += (1.0/(dGdP*10.0)*((dGdTPP-dGdTMP)/(gv.gb_P_eps)))*cp[i].p_em[j];
 						cp[i].phase_bulkModulus += -dGdP/( dG2dP2 + pow(((dGdTPP-dGdTMP)/(gv.gb_P_eps)),2.0)/dG2dT2 ) * cp[i].p_em[j];
 						cp[i].phase_cp    		+= -T*(dG2dT2)*cp[i].p_em[j];
 					}
@@ -1526,7 +1572,8 @@ global_variable compute_density_volume_modulus(				int 				 EM_database,
 
 			/** get sum of volume*fraction*factor to calculate vol% from mol% */
 			// sum_volume += cp[i].volume*cp[i].ss_n_mol*cp[i].factor;
-			sum_volume += cp[i].ss_n_wt/cp[i].phase_density;
+			sum_volume 		+= cp[i].ss_n_wt/cp[i].phase_density;
+			sum_volume_cm3 += cp[i].ss_n_mol*cp[i].volume*10.0;
 
 			if (strcmp( cp[i].name, "liq") != 0 && strcmp( cp[i].name, "fl") != 0){
 				// sum_volume_sol 		+= cp[i].volume*cp[i].ss_n_mol*cp[i].factor;
@@ -1608,7 +1655,7 @@ global_variable compute_density_volume_modulus(				int 				 EM_database,
 			if ( strcmp(gv.research_group, "sb") 	!= 0 ){
 				PP_ref_db[i].phase_bulkModulus	= -dGdP/( dG2dP2 + pow(((dGdTPP-dGdTMP)/(gv.gb_P_eps)),2.0)/dG2dT2 );
 				PP_ref_db[i].phase_cp 			= -T*(dG2dT2);
-				PP_ref_db[i].phase_expansivity 	= 1.0/(dGdP)*((dGdTPP-dGdTMP)/(gv.gb_P_eps));
+				PP_ref_db[i].phase_expansivity 	= 1.0/(dGdP*10.0)*((dGdTPP-dGdTMP)/(gv.gb_P_eps));
 			}
 
 			/* shear modulus	*/
@@ -1622,9 +1669,10 @@ global_variable compute_density_volume_modulus(				int 				 EM_database,
 
 			/** get sum of volume*fraction*factor to calculate vol% from mol% */
 			// sum_volume 			+= PP_ref_db[i].volume*gv.pp_n_mol[i]*PP_ref_db[i].factor;
-			sum_volume 		+= gv.pp_n_wt[i]/PP_ref_db[i].phase_density;
+			sum_volume 			+= gv.pp_n_wt[i]/PP_ref_db[i].phase_density;
+			sum_volume_cm3  	+= gv.pp_n_mol[i]*PP_ref_db[i].volume*10.0;
 
-			if (strcmp( gv.PP_list[i], "H2O") != 0){
+			if (strcmp( gv.PP_list[i], "H2O") != 0 && strcmp( gv.PP_list[i], "O2") != 0){
 				// sum_volume_sol 		+= PP_ref_db[i].volume*gv.pp_n_mol[i]*PP_ref_db[i].factor;
 				sum_volume_sol 		+= gv.pp_n_wt[i]/PP_ref_db[i].phase_density;
 				gv.solid_fraction 	+= gv.pp_n_mol[i];
@@ -1663,7 +1711,7 @@ global_variable compute_density_volume_modulus(				int 				 EM_database,
 			s2 += (gv.pp_n_wt[i]/PP_ref_db[i].phase_density/sum_volume) / (PP_ref_db[i].phase_shearModulus/10.0);
 			b1 +=  gv.pp_n_wt[i]/PP_ref_db[i].phase_density/sum_volume *  (PP_ref_db[i].phase_bulkModulus /10.0);
 			b2 += (gv.pp_n_wt[i]/PP_ref_db[i].phase_density/sum_volume) / (PP_ref_db[i].phase_bulkModulus /10.0);
-			if (strcmp( gv.PP_list[i], "H2O") != 0){
+			if (strcmp( gv.PP_list[i], "H2O") != 0 && strcmp( gv.PP_list[i], "O2") != 0){
 				s1S +=  gv.pp_n_wt[i]/PP_ref_db[i].phase_density/sum_volume_sol *  (PP_ref_db[i].phase_shearModulus/10.0);
 				s2S += (gv.pp_n_wt[i]/PP_ref_db[i].phase_density/sum_volume_sol) / (PP_ref_db[i].phase_shearModulus/10.0);
 				b1S +=  gv.pp_n_wt[i]/PP_ref_db[i].phase_density/sum_volume_sol *  (PP_ref_db[i].phase_bulkModulus /10.0);
@@ -1679,34 +1727,27 @@ global_variable compute_density_volume_modulus(				int 				 EM_database,
 	gv.solid_shearModulus 	= 0.50 * s1S + 0.50 * (1.0/(s2S));
 	gv.solid_bulkModulus  	= 0.50 * b1S + 0.50 * (1.0/(b2S));
 
-	/* calculate density of the system */
-	sum_solid_n_wt = 0.0;
+	/* calculate thermodynamic properties of the system */
 	for (int i = 0; i < gv.len_cp; i++){
 		if (cp[i].ss_flags[1] == 1){
-			gv.system_density += cp[i].phase_density*cp[i].ss_n_wt;
 			gv.system_entropy += cp[i].phase_entropy*cp[i].ss_n_mol;//*cp[i].factor;
 			gv.system_cp 	  += cp[i].phase_cp*cp[i].ss_n_mol;
 			gv.system_expansivity 	  += cp[i].phase_expansivity*cp[i].ss_n_mol;
-			if (strcmp( cp[i].name, "liq") != 0 && strcmp( cp[i].name, "fl") != 0){
-				gv.solid_density += cp[i].phase_density*cp[i].ss_n_wt;
-				sum_solid_n_wt += cp[i].ss_n_wt;
-			}
 		}
 	}
 	for (int i = 0; i < gv.len_pp; i++){
 		if (gv.pp_flags[i][1] == 1 && gv.pp_flags[i][4] == 0){
-			gv.system_density += PP_ref_db[i].phase_density*gv.pp_n_wt[i];
 			gv.system_entropy += PP_ref_db[i].phase_entropy*gv.pp_n_mol[i];//*PP_ref_db[i].factor;		
 			gv.system_cp 	  += PP_ref_db[i].phase_cp*gv.pp_n_mol[i];	
 			gv.system_expansivity 	  += PP_ref_db[i].phase_expansivity*gv.pp_n_mol[i];	
-			if (strcmp( gv.PP_list[i], "H2O") != 0){		
-				gv.solid_density  += PP_ref_db[i].phase_density*gv.pp_n_wt[i];
-				sum_solid_n_wt += gv.pp_n_wt[i];
-			}
 		}
 	}
-	gv.solid_density /= sum_solid_n_wt;
-	gv.system_volume = sum_volume;
+	
+	/* calculate density from volume using harmonic mean: rho = 1 / sum(wt_frac/rho) */
+	gv.system_density 		= 1.0 / sum_volume;
+	gv.solid_density  		= 1.0 / sum_volume_sol;
+	gv.system_volume 		= sum_volume;
+	gv.system_volume_cm3mol 	= sum_volume_cm3;
 	G = 0.0;
 	for (int j = 0; j < gv.len_ox; j++){
 		G += z_b.bulk_rock[j]*gv.gam_tot[j];
@@ -1762,6 +1803,16 @@ global_variable compute_activities(			int					 EM_database,
 	}
 	if (O_ix != -1){
 		gv.system_fO2 = exp( (gv.gam_tot[O_ix]*2.0 - G0_O) / (z_b.R*z_b.T)) ;
+		char qstr[4];
+		char mtstr[4];
+		if (strcmp(gv.research_group, "sb")==0){
+			strcpy(qstr, "qtz");
+			strcpy(mtstr, "mag");
+		}
+		else {
+			strcpy(qstr, "q");
+			strcpy(mtstr, "mt");
+		}
 
 		PP_ref q 	= G_EM_function(	gv.research_group, gv.EM_dataset, 
 										gv.len_ox,
@@ -1770,8 +1821,9 @@ global_variable compute_activities(			int					 EM_database,
 										z_b.apo, 
 										z_b.P, 
 										z_b.T, 
-										"q", 
+										qstr, 
 										"equilibrium"				);
+
 		PP_ref fa 	= G_EM_function(	gv.research_group, gv.EM_dataset, 
 										gv.len_ox,
 										z_b.id,
@@ -1789,7 +1841,7 @@ global_variable compute_activities(			int					 EM_database,
 										z_b.apo, 
 										z_b.P, 
 										z_b.T, 
-										"mt", 
+										mtstr, 
 										"equilibrium"				);
 
 		double gO_qfm   	=  -3.0 * fa.gbase + 3.0*q.gbase + 2.0*mt.gbase;
