@@ -1,0 +1,4 @@
+@PACAKGE_INIT@
+
+set_and_check(MAGEMin_INCLUDE_DIR "@INCLUDE_INSTALL_DIR@")
+set_and_check(MAGEMin_LIBRARIES "@LIB_INSTALL_DIR@lib@.so")

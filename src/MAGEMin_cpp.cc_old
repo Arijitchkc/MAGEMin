@@ -53,7 +53,8 @@ void MAGEMin_wrapper::executeMAGEMin(int argc, char **argv, double Temperature,
     gv.arg_bulk[i] = bulkComposition[i];
   }
 
-  gv.sys_in = "wt";
+  // gv.sys_in = "wt";
+  strcpy(gv.sys_in, "wt");
 
   MAGEMin_wrapper::getValuesFromASPECT_runs(
       &gv, &z_b, Temperature, Pressure, len_oxides, database, bulkComposition);
@@ -90,21 +91,24 @@ void MAGEMin_wrapper::executeMAGEMin(int argc, char **argv, double Temperature,
 
     if (indexOfStblMin != -99) {
       for (int i = 0; i < data_in.len_oxides; i++) {
-        row1.push_back(data_in.major_oxide_propertions[indexOfStblMin][i]);
+        row1.push_back(
+            round(data_in.major_oxide_propertions[indexOfStblMin][i] * 10000) /
+            10000);
       }
-      row2 = std::vector<double>{data_in.all_properties[indexOfStblMin][0],
-                                 data_in.all_properties[indexOfStblMin][1],
-                                 data_in.all_properties[indexOfStblMin][2],
-                                 data_in.all_properties[indexOfStblMin][3],
-                                 data_in.all_properties[indexOfStblMin][4],
-                                 data_in.all_properties[indexOfStblMin][5],
-                                 data_in.all_properties[indexOfStblMin][6],
-                                 data_in.all_properties[indexOfStblMin][7],
-                                 data_in.all_properties[indexOfStblMin][8],
-                                 data_in.all_properties[indexOfStblMin][9],
-                                 data_in.all_properties[indexOfStblMin][10],
-                                 data_in.all_properties[indexOfStblMin][11],
-                                 data_in.all_properties[indexOfStblMin][12]};
+      row2 = std::vector<double>{
+          round(data_in.all_properties[indexOfStblMin][0] * 10000) / 10000,
+          round(data_in.all_properties[indexOfStblMin][1] * 10000) / 10000,
+          round(data_in.all_properties[indexOfStblMin][2] * 10000) / 10000,
+          round(data_in.all_properties[indexOfStblMin][3] * 10000) / 10000,
+          round(data_in.all_properties[indexOfStblMin][4] * 10000) / 10000,
+          round(data_in.all_properties[indexOfStblMin][5] * 10000) / 10000,
+          round(data_in.all_properties[indexOfStblMin][6] * 10000) / 10000,
+          round(data_in.all_properties[indexOfStblMin][7] * 10000) / 10000,
+          round(data_in.all_properties[indexOfStblMin][8] * 10000) / 10000,
+          round(data_in.all_properties[indexOfStblMin][9] * 10000) / 10000,
+          round(data_in.all_properties[indexOfStblMin][10] * 10000) / 10000,
+          round(data_in.all_properties[indexOfStblMin][11] * 10000) / 10000,
+          round(data_in.all_properties[indexOfStblMin][12] * 10000) / 10000};
       // sAssemblage->oxideCompositions.push_back(
       // std::vector<double>(&data_in.major_oxide_propertions[indexOfStblMin],
       // &data_in.major_oxide_propertions[indexOfStblMin] +

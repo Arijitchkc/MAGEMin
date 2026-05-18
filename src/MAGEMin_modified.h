@@ -17,16 +17,12 @@ extern "C" {
 #ifndef __MAGEMIN_H_
 #define __MAGEMIN_H_
 
-#include "MAGEMin_modified.h"
-#include "all_endmembers.h"
-
 #ifdef _WIN32
 #define mkdir(path, mode) _mkdir(path)
 #endif
-
+#include "all_endmembers.h"
 #include "gem_function.h"
 #include "nlopt.h"
-
 struct ss_pc {
   double xeos_pc[25];
 };
