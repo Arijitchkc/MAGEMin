@@ -13,9 +13,7 @@
 
 	#include <string.h>
 	#include "uthash.h"
-	// #include "MAGEMin.h"
-	#include "MAGEMin_modified.h"
-
+	#include "MAGEMin.h"
 	#include "all_endmembers.h"
 	#include "all_init_database.h"
 
@@ -53,7 +51,7 @@
 										char 		   *name, 
 										char 		   *state					);
 
-	global_variable global_variable_alloc( global_variable gv, bulk_info  	    *z_b 				);
+	global_variable global_variable_alloc( bulk_info  	    *z_b 				);
 
 	csd_phase_set CP_INIT_function(		csd_phase_set 		cp, 
 										global_variable 	gv					);

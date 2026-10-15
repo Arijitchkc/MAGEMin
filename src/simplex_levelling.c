@@ -39,8 +39,7 @@ Levelling occurs in two stages:
 	#include "mpi.h"
 #endif
 
-// #include "MAGEMin.h"
-#include "MAGEMin_modified.h"
+#include "MAGEMin.h"
 #include "simplex_levelling.h"
 #include "gem_function.h"
 #include "pp_min_function.h"

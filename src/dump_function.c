@@ -29,11 +29,10 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
-// #ifdef USE_MPI
-// 	#include "mpi.h"
-// #endif
-// #include "MAGEMin.h"
-#include "MAGEMin_modified.h"
+#ifdef USE_MPI
+	#include "mpi.h"
+#endif
+#include "MAGEMin.h"
 #include "gem_function.h"
 #include "all_solution_phases.h"
 #include "toolkit.h"
@@ -47,10 +46,10 @@ void dump_init(global_variable gv){
 	struct 	stat st = {0};
 	int 	rank, numprocs;
 	
-	// #ifdef USE_MPI
-	// 	MPI_Comm_size(MPI_COMM_WORLD, &numprocs);
-	// 	MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-	// #endif
+	#ifdef USE_MPI
+		MPI_Comm_size(MPI_COMM_WORLD, &numprocs);
+		MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+	#endif
 
 	if (stat(gv.outpath, &st) == -1) {
     	mkdir(gv.outpath, 0700);
@@ -65,12 +64,12 @@ void dump_init(global_variable gv){
 	}
 	/** OUTPUT FOR MATLAB, print out wt and mol fractions instead of TC atom basis **/
 	if (gv.output_matlab >= 1){
-		// #ifdef USE_MPI
-		// 	if (numprocs==1){	sprintf(out_lm,	"%s_matlab_output.txt"		,gv.outpath); 		}
-		// 	else 			{	sprintf(out_lm,	"%s_matlab_output.%i.txt"	,gv.outpath, rank); }
-		// #else
-		// 	sprintf(out_lm,	"%s_matlab_output.txt"		,gv.outpath);
-		// #endif
+		#ifdef USE_MPI
+			if (numprocs==1){	sprintf(out_lm,	"%s_matlab_output.txt"		,gv.outpath); 		}
+			else 			{	sprintf(out_lm,	"%s_matlab_output.%i.txt"	,gv.outpath, rank); }
+		#else
+			sprintf(out_lm,	"%s_matlab_output.txt"		,gv.outpath);
+		#endif
 
 		loc_min 	= fopen(out_lm, 	"w"); 
 		fprintf(loc_min, "\n");
@@ -79,12 +78,12 @@ void dump_init(global_variable gv){
 
 	if (gv.verbose == 0){
 		/**GUI OUTPUT **/
-		// #ifdef USE_MPI
-		// 	if (numprocs==1){	sprintf(out_lm,	"%s_gui_output.txt"		,gv.outpath); 		}
-		// 	else 			{	sprintf(out_lm,	"%s_gui_output.%i.txt"	,gv.outpath, rank); }
-		// #else
-		// 	sprintf(out_lm,	"%s_gui_output.txt"		,gv.outpath);
-		// #endif
+		#ifdef USE_MPI
+			if (numprocs==1){	sprintf(out_lm,	"%s_gui_output.txt"		,gv.outpath); 		}
+			else 			{	sprintf(out_lm,	"%s_gui_output.%i.txt"	,gv.outpath, rank); }
+		#else
+			sprintf(out_lm,	"%s_gui_output.txt"		,gv.outpath);
+		#endif
 
 		loc_min 	= fopen(out_lm, 	"w"); 
 		fprintf(loc_min, "// {number status[] P[kbar] T[C] G_sys[G] BR_norm[wt] Gamma[G] Vp[km/s] Vs[km/s] entropy[J/K]} nextline {Phase[name] mode[wt] density[kg.m-3] x-eos}\n");
@@ -905,20 +904,20 @@ void output_thermocalc(			global_variable 	 gv,
 	char out_lm[255];
 	
 	int rank, numprocs;
-	// #ifdef USE_MPI
-	// 	MPI_Comm_size(MPI_COMM_WORLD, &numprocs);
-	// 	MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-	// #endif
+	#ifdef USE_MPI
+		MPI_Comm_size(MPI_COMM_WORLD, &numprocs);
+		MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+	#endif
 
 	int i,j,m,n,k,n_ss;
 
 	/* output active phase fraction*/
-	// #ifdef USE_MPI
-	// 	if (numprocs==1){	sprintf(out_lm,	"%s_thermocalc_style_output.txt"		,gv.outpath); 	}
-	// 	else 			{	sprintf(out_lm,	"%s_thermocalc_style_output.%i.txt"		,gv.outpath, rank); 	}
-	// #else
-	// 	sprintf(out_lm,	"%s_thermocalc_style_output.txt"		,gv.outpath);
-	// #endif
+	#ifdef USE_MPI
+		if (numprocs==1){	sprintf(out_lm,	"%s_thermocalc_style_output.txt"		,gv.outpath); 	}
+		else 			{	sprintf(out_lm,	"%s_thermocalc_style_output.%i.txt"		,gv.outpath, rank); 	}
+	#else
+		sprintf(out_lm,	"%s_thermocalc_style_output.txt"		,gv.outpath);
+	#endif
 
 	loc_min 	= fopen(out_lm, 	"a"); 
 	fprintf(loc_min, "============================================================\n");
@@ -1217,19 +1216,19 @@ void output_gui(				global_variable 	 gv,
 	
 	int rank, numprocs;
 	
-	// #ifdef USE_MPI
-	// 	MPI_Comm_size(MPI_COMM_WORLD, &numprocs);
-	// 	MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-	// #endif
+	#ifdef USE_MPI
+		MPI_Comm_size(MPI_COMM_WORLD, &numprocs);
+		MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+	#endif
 
 	int i,j,m,n,k;
 
-	// #ifdef USE_MPI
-	// 	if (numprocs==1){	sprintf(out_lm,	"%s_pseudosection_output.txt"		,gv.outpath); 		}
-	// 	else 			{	sprintf(out_lm,	"%s_pseudosection_output.%i.txt"	,gv.outpath, rank); }
-	// #else
-	// 	sprintf(out_lm,	"%s_pseudosection_output.txt"		,gv.outpath);
-	// #endif
+	#ifdef USE_MPI
+		if (numprocs==1){	sprintf(out_lm,	"%s_pseudosection_output.txt"		,gv.outpath); 		}
+		else 			{	sprintf(out_lm,	"%s_pseudosection_output.%i.txt"	,gv.outpath, rank); }
+	#else
+		sprintf(out_lm,	"%s_pseudosection_output.txt"		,gv.outpath);
+	#endif
 
 	/* get number of repeated phases for the solvi */
 	int n_solvi[gv.len_ss];
@@ -1324,20 +1323,20 @@ void output_matlab(				global_variable 	 gv,
 	
 	int rank, numprocs;
 	
-	// #ifdef USE_MPI
-	// 	MPI_Comm_size(MPI_COMM_WORLD, &numprocs);
-	// 	MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-	// #endif
+	#ifdef USE_MPI
+		MPI_Comm_size(MPI_COMM_WORLD, &numprocs);
+		MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+	#endif
 
 	int i,j,m,n,k;
 
 	/* output active phase fraction*/
-	// #ifdef USE_MPI
-	// 	if (numprocs==1){	sprintf(out_lm,	"%s_matlab_output.txt"		,gv.outpath); 	}
-	// 	else 			{	sprintf(out_lm,	"%s_matlab_output.%i.txt"		,gv.outpath, rank); 	}
-	// #else
-	// 	sprintf(out_lm,	"%s_matlab_output.txt"		,gv.outpath);
-	// #endif
+	#ifdef USE_MPI
+		if (numprocs==1){	sprintf(out_lm,	"%s_matlab_output.txt"		,gv.outpath); 	}
+		else 			{	sprintf(out_lm,	"%s_matlab_output.%i.txt"		,gv.outpath, rank); 	}
+	#else
+		sprintf(out_lm,	"%s_matlab_output.txt"		,gv.outpath);
+	#endif
 
 	loc_min 	= fopen(out_lm, 	"a"); 
 	fprintf(loc_min, "============================================================\n");
@@ -1632,10 +1631,10 @@ void save_results_function(		global_variable 	 gv,
 	
 	int i,j, rank, numprocs;
 	
-	// #ifdef USE_MPI
-	// 	MPI_Comm_size(MPI_COMM_WORLD, &numprocs);
-	// 	MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-	// #endif
+	#ifdef USE_MPI
+		MPI_Comm_size(MPI_COMM_WORLD, &numprocs);
+		MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+	#endif
 
 	if (gv.output_matlab >= 1){
 		output_matlab(					gv,											/** global variables (e.g. Gamma) 	*/
@@ -1678,16 +1677,16 @@ void mergeParallelFiles(global_variable gv){
 	char c; 
 	char buf[MAX_LINE_LENGTH];
 	
-	// #ifdef USE_MPI
-	// 	MPI_Comm_size(MPI_COMM_WORLD, &numprocs);
-	// 	MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-	// #endif
+	#ifdef USE_MPI
+		MPI_Comm_size(MPI_COMM_WORLD, &numprocs);
+		MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+	#endif
 
-	// #ifdef USE_MPI
-	// 	if (numprocs == 1){ return; }
-	// #else
-	// 	return;
-	// #endif
+	#ifdef USE_MPI
+		if (numprocs == 1){ return; }
+	#else
+		return;
+	#endif
 
 	sprintf(out_lm,	"%s_pseudosection_output.txt"		,gv.outpath);
    	FILE *fp2 = fopen(out_lm, "w"); 
@@ -1723,16 +1722,16 @@ void mergeParallel_matlab(global_variable gv){
 	char c; 
 	char buf[MAX_LINE_LENGTH];
 	
-	// #ifdef USE_MPI
-	// 	MPI_Comm_size(MPI_COMM_WORLD, &numprocs);
-	// 	MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-	// #endif
+	#ifdef USE_MPI
+		MPI_Comm_size(MPI_COMM_WORLD, &numprocs);
+		MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+	#endif
 
-	// #ifdef USE_MPI
-	// 	if (numprocs == 1){ return; }
-	// #else
-	// 	return;
-	// #endif
+	#ifdef USE_MPI
+		if (numprocs == 1){ return; }
+	#else
+		return;
+	#endif
 
 	sprintf(out_lm,	"%s_matlab_output.txt"		,gv.outpath);
    	FILE *fp2 = fopen(out_lm, "w"); 
@@ -1766,16 +1765,16 @@ void mergeParallel_residual_Files(global_variable gv){
 	char c; 
 	char buf[MAX_LINE_LENGTH];
 	
-	// #ifdef USE_MPI
-	// 	MPI_Comm_size(MPI_COMM_WORLD, &numprocs);
-	// 	MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-	// #endif
+	#ifdef USE_MPI
+		MPI_Comm_size(MPI_COMM_WORLD, &numprocs);
+		MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+	#endif
 
-	// #ifdef USE_MPI
-	// 	if (numprocs == 1){ return; }
-	// #else
-	// 	return;
-	// #endif
+	#ifdef USE_MPI
+		if (numprocs == 1){ return; }
+	#else
+		return;
+	#endif
 	sprintf(out_lm,	"%s_residual_norm.txt"		,gv.outpath);
    	FILE *fp2 = fopen(out_lm, "w"); 
 
@@ -1808,16 +1807,16 @@ void mergeParallel_LocalMinima_Files(global_variable gv){
 	char c; 
 	char buf[MAX_LINE_LENGTH];
 	
-	// #ifdef USE_MPI
-	// 	MPI_Comm_size(MPI_COMM_WORLD, &numprocs);
-	// 	MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-	// #endif
-	//
-	// #ifdef USE_MPI
-	// 	if (numprocs == 1){ return; }
-	// #else
-	// 	return;
-	// #endif
+	#ifdef USE_MPI
+		MPI_Comm_size(MPI_COMM_WORLD, &numprocs);
+		MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+	#endif
+
+	#ifdef USE_MPI
+		if (numprocs == 1){ return; }
+	#else
+		return;
+	#endif
 
 	sprintf(out_lm,	"%s__LOCAL_MINIMA.txt"		,gv.outpath);
    	FILE *fp2 = fopen(out_lm, "w"); 
@@ -1858,16 +1857,16 @@ void mergeParallel_LevellingGamma_Files(global_variable gv){
 	char c; 
 	char buf[MAX_LINE_LENGTH];
 	
-	// #ifdef USE_MPI
-	// 	MPI_Comm_size(MPI_COMM_WORLD, &numprocs);
-	// 	MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-	// #endif
-	//
-	// #ifdef USE_MPI
-	// 	if (numprocs == 1){ return; }
-	// #else
-	// 	return;
-	// #endif
+	#ifdef USE_MPI
+		MPI_Comm_size(MPI_COMM_WORLD, &numprocs);
+		MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+	#endif
+
+	#ifdef USE_MPI
+		if (numprocs == 1){ return; }
+	#else
+		return;
+	#endif
 	sprintf(out_lm,	"%s__LEVELLING_GAMMA.txt"		,gv.outpath);
    	FILE *fp2 = fopen(out_lm, "w"); 
 

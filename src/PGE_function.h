@@ -11,9 +11,7 @@
 #ifndef __PGE_FUNCTION_H_
 #define __PGE_FUNCTION_H_
 
-// #include "MAGEMin.h"
-#include "MAGEMin_modified.h"
-
+#include "MAGEMin.h"
 #include "all_solution_phases.h"
 
 global_variable PGE(			bulk_info 			z_b,

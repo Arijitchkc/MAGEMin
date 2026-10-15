@@ -11,8 +11,7 @@
 #ifndef __PP_MIN_FUNCTION_H_
 #define __PP_MIN_FUNCTION_H_
 
-// #include "MAGEMin.h"
-#include "MAGEMin_modified.h"
+#include "MAGEMin.h"
 
 void pp_min_function(		global_variable  gv,
 							bulk_info 		 z_b,

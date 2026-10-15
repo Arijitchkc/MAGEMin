@@ -19,8 +19,7 @@
 #include <string.h>
 #include <complex.h> 
 
-// #include "../MAGEMin.h"
-#include "../MAGEMin_modified.h"
+#include "../MAGEMin.h"
 #include "../all_solution_phases.h"
 #include "tc_gss_init_function.h"
 

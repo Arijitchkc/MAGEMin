@@ -20,8 +20,7 @@
 #include <string.h>
 #include <complex.h> 
 
-// #include "../MAGEMin.h"
-#include "../MAGEMin_modified.h"
+#include "../MAGEMin.h"
 #include "../toolkit.h"
 #include "SB_gem_function.h"
 

@@ -11,8 +11,7 @@
 #ifndef __DUMP_FUNCTION_H_
 #define __DUMP_FUNCTION_H_
 
-// #include "MAGEMin.h"
-#include "MAGEMin_modified.h"
+#include "MAGEMin.h"
 void dump_init(global_variable gv);
 
 void fill_output_struct(		global_variable 	 gv,

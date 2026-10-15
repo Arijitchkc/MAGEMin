@@ -19,13 +19,12 @@ Function to call solution phase Minimization
 #include <string.h>
 #include <complex.h> 
 
-// #ifdef USE_MPI
-// 	#include "mpi.h"
-// #endif
+#ifdef USE_MPI
+	#include "mpi.h"
+#endif
 
 #include "nlopt.h"
-// #include "MAGEMin.h"
-#include "MAGEMin_modified.h"
+#include "MAGEMin.h"
 #include "gem_function.h"
 #include "dump_function.h"
 #include "toolkit.h"

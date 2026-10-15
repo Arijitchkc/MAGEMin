@@ -22,8 +22,7 @@
 	#include <lapacke.h> 
 #endif 
 
-// #include "MAGEMin.h"
-#include "MAGEMin_modified.h"
+#include "MAGEMin.h"
 
 #include "gem_function.h"
 #include "simplex_levelling.h"

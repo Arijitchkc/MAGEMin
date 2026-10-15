@@ -11,9 +11,7 @@
 #ifndef __SS_MIN_FUNCTION_H_
 #define __SS_MIN_FUNCTION_H_
 
-// #include "MAGEMin.h"
-#include "MAGEMin_modified.h"
-
+#include "MAGEMin.h"
 #include "all_solution_phases.h"
 
 SS_ref SS_UPDATE_function(				global_variable 	 gv,

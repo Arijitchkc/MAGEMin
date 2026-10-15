@@ -18,8 +18,7 @@
 #include <string.h>
 #include <complex.h> 
 
-// #include "MAGEMin.h"
-#include "MAGEMin_modified.h"
+#include "MAGEMin.h"
 #include "all_endmembers.h"
 #include "gem_function.h"
 

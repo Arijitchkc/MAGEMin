@@ -22,8 +22,7 @@
 #include <complex.h> 
 
 #include "nlopt.h"                  // requires specifying this in the makefile
-// #include "../MAGEMin.h"
-#include "../MAGEMin_modified.h"
+#include "../MAGEMin.h"
 #include "SB_NLopt_opt_function.h"
 #include "../all_solution_phases.h"
 #include "../toolkit.h"

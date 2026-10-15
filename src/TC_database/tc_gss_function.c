@@ -23,8 +23,7 @@ Igneous dataset to use with tc-ds633.txt
 #include <string.h>
 #include <complex.h> 
 
-// #include "../MAGEMin.h"
-#include "../MAGEMin_modified.h"
+#include "../MAGEMin.h"
 #include "../initialize.h"
 #include "../all_solution_phases.h"
 #include "../simplex_levelling.h"

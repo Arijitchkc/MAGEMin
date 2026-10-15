@@ -20,8 +20,7 @@
 #include <complex.h> 
 
 #include "nlopt.h"
-// #include "../MAGEMin.h"
-#include "../MAGEMin_modified.h"
+#include "../MAGEMin.h"
 #include "../toolkit.h"
 #include "sb_objective_functions.h"
 
