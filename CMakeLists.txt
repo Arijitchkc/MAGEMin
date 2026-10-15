@@ -1,47 +1,30 @@
 cmake_minimum_required(VERSION 3.10)
 
-# Set C standsards Step 1: COmpile the C part of the magemin as a shared library
+
+# Set C standsards
+# Step 1: COmpile the C part of the magemin as a shared library
 project(MAGEMin C CXX)
 
-set(VERSION 1.7.9)
+set(VERSION 1.9.3)
 set(CMAKE_C_STANDARD 17)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
-set(CMAKE_C_FLAGS
-    "${CMAKE_C_FLAGS} -Wall -g -O0 -Wno-unused-variable -Wno-unused-but-set-variable -march=native -funroll-loops -flto"
-)
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -O3 -fPIC -std=c++17 -flto")
-# g flag is removed
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -O3 -DNDEBUG -Wno-unused-variable -Wno-unused-but-set-variable -march=native -funroll-loops -flto")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -O3 -DNDEBUG -fPIC -std=c++17 -flto")
+# flags removed: -g -O0
 
-# macOS (Apple Silicon)
+# Platform specific settings
+# if
 if(APPLE)
-  message(STATUS "Configuring for macOS (Apple Silicon)")
-  # Homebrew default on Apple Silicon
   include_directories(/opt/homebrew/include)
-  link_directories(/opt/homebrew/lib)
-
-  # LAPACK/BLAS: use Apple's Accelerate by default via CMake LAPACK package,
-  # or brewed OpenBLAS if installed.
-  find_package(LAPACK REQUIRED)
-
-  # BLAS may be provided implicitly by LAPACK::LAPACK (Accelerate). Try to
-  # locate a separate blas if needed (OpenBLAS), but don't fail if not found.
-  find_library(BLAS_LIB blas HINTS /opt/homebrew/lib)
-  if(BLAS_LIB)
-    set(_MAC_BLAS ${BLAS_LIB})
-  else()
-    set(_MAC_BLAS "")
-  endif()
-
-  # NLOpt from Homebrew: brew install nlopt
+  set(LIBS m "-framework Accelerate")
+  # find_package(LAPACK REQUIRED)
   find_library(nlopt_lib nlopt HINTS /opt/homebrew/lib REQUIRED)
-
-  # Aggregate libs for macOS
-  set(LIBS LAPACK::LAPACK ${_MAC_BLAS} ${nlopt_lib})
+  # find_library(BLAS_LIb blas HINTS /opt/homebrew/opt/openblas/lib)
+  # list(APPEND LIBS LAPACK::LAPACK ${nlopt_lib} ${BLAS_LIB})
+  list(APPEND LIBS ${nlopt_lib})
 endif()
-
-
 
 if(UNIX AND NOT APPLE)
   set(LIBS m)
@@ -51,109 +34,69 @@ if(UNIX AND NOT APPLE)
   find_library(LAPACKE_LIB lapacke HINTS ${LAPACKE_LIB} REQUIRED)
   find_library(BLAS_LIB blas REQUIRED)
 
-  find_library(
-    nlopt_lib nlopt PATHS "/nobackup/scxn98/installations/nloptInstall/lib64"
-                          REQUIRED)
+  find_library(nlopt_lib nlopt PATHS "/nobackup/scxn98/installations/nloptInstall/lib64" REQUIRED)
   list(APPEND LIBS LAPACK::LAPACK ${LAPACKE_LIB} ${BLAS_LIB} ${nlopt_lib})
-
-  # include_directories(/usr/lib/x86_64-linux-gnu/openmpi/include/
-  # /usr/include/)
+  # include_directories(/usr/lib/x86_64-linux-gnu/openmpi/include/ /usr/include/)
 endif()
 
-# Add MPI packages
-find_package(MPI REQUIRED)
-message(
-  STATUS
-    "Run: ${MPIEXEC} ${MPIEXEC_NUMPROC_FLAG} ${MPIEXEC_MAX_NUMPROCS} ${MPIEXEC_PREFLAGS} EXECUTABLE ${MPIEXEC_POSTFLAGS} ARGS"
-)
-list(APPEND LIBS MPI::MPI_CXX)
+
+# # Add MPI packages
+# find_package(MPI REQUIRED)
+# message(STATUS "Run: ${MPIEXEC} ${MPIEXEC_NUMPROC_FLAG} ${MPIEXEC_MAX_NUMPROCS} ${MPIEXEC_PREFLAGS} EXECUTABLE ${MPIEXEC_POSTFLAGS} ARGS")
+# list(APPEND LIBS MPI::MPI_CXX)
+#
+#
+# # OPENMP block
+# find_package(OpenMP)
+# if(OpenMP_CXX_FOUND)
+#   list(APPEND LIBS OpenMP::OpenMP_CXX)
+# endif()
+
+# lapacke block
+# find_package(LAPACK REQUIRED)
+# list(APPEND LIBS LAPACK::LAPACK)
 
 
-# OPENMP block
-find_package(OpenMP)
-if(OpenMP_CXX_FOUND)
-  list(APPEND LIBS OpenMP::OpenMP_CXX)
-  # target_link_libraries(MAGEMin_cpp PUBLIC OpenMP::OpenMP_CXX)
-endif()
-
-# lapacke block find_package(LAPACK REQUIRED) list(APPEND LIBS LAPACK::LAPACK)
 
 # Find all c file sources
 file(GLOB_RECURSE C_SRC_FILES src/*.c)
 set(CPP_wrapper src/MAGEMin_cpp_mpi.cc)
 
-add_library(MAGEMin_cpp SHARED ${CPP_wrapper} ${C_SRC_FILES})
-find_package(NLopt QUIET CONFIG)
+add_library(MAGEMin_cpp STATIC ${CPP_wrapper} ${C_SRC_FILES})
 
-if(NLopt_FOUND)
-  # Link the imported target; includes propagate
-  target_link_libraries(MAGEMin_cpp PUBLIC NLopt::nlopt)
-else()
-  # Fallback for Homebrew or manual installs
-  find_path(NLOPT_INCLUDE_DIR nlopt.h
-            HINTS /opt/homebrew/include /usr/local/include)
-  find_library(NLOPT_LIBRARY nlopt
-               HINTS /opt/homebrew/lib /usr/local/lib)
-  if(NOT NLOPT_INCLUDE_DIR OR NOT NLOPT_LIBRARY)
-    message(FATAL_ERROR "NLopt not found. Install with: brew install nlopt")
-  endif()
 
-  # Make includes visible to dependents (PUBLIC), since headers include <nlopt.h>
-  target_include_directories(MAGEMin_cpp PUBLIC ${NLOPT_INCLUDE_DIR})
-  target_link_libraries(MAGEMin_cpp     PUBLIC ${NLOPT_LIBRARY})
-endif()
-# Link LAPACK/BLAS to MAGEMin_cpp so symbols like dgesv/dgetrf/dgetri resolve.
-if(APPLE)
-  find_library(ACCELERATE_FRAMEWORK Accelerate REQUIRED)
-  target_link_libraries(MAGEMin_cpp PRIVATE ${ACCELERATE_FRAMEWORK})
-  target_compile_definitions(MAGEMin_cpp PUBLIC USE_MPI)
-else()
-  find_package(BLAS REQUIRED)
-  find_package(LAPACK REQUIRED)
-  target_link_libraries(MAGEMin_cpp PRIVATE LAPACK::LAPACK BLAS::BLAS)
-endif()
-# Keep Linux include path exactly as before; macOS uses Homebrew includes above.
-target_include_directories(
-  MAGEMin_cpp PUBLIC /nobackup/scxn98/installations/nloptInstall/include/)
-target_include_directories(MAGEMin_cpp PUBLIC src/ src/SB_database/
-                                              src/TC_database/)
-target_link_libraries(MAGEMin_cpp PUBLIC ${LIBS})
+target_include_directories(MAGEMin_cpp PUBLIC /nobackup/scxn98/installations/nloptInstall/include/)
+target_include_directories(MAGEMin_cpp PUBLIC src/ src/SB_database/ src/TC_database/)
+target_link_libraries(MAGEMin_cpp PRIVATE ${LIBS})
 
-set_target_properties(
-  MAGEMin_cpp
-  PROPERTIES OUTPUT_NAME "MAGEMin_cpp"
-             BUILD_WITH_INSTALL_RPATH TRUE
-             INSTALL_RPATH "$ORIGIN"
-             INTERPROCEDURAL_OPTIMIZATION TRUE)
+set_target_properties(MAGEMin_cpp PROPERTIES
+  OUTPUT_NAME "MAGEMin_cpp"
+  # BUILD_WITH_INSTALL_RPATH TRUE
+  # INSTALL_RPATH "$ORIGIN"
+  INTERPROCEDURAL_OPTIMIZATION TRUE
+)
 
 set(INCLUDE_INSTALL_DIR ${CMAKE_INSTALL_PREFIX}/include)
 set(LIB_INSTALL_DIR ${CMAKE_INSTALL_PREFIX}/lib/)
 
-message(
-  STATUS
-    "MAGEMin_cpp library version ${VERSION} configured from ${CMAKE_CURRENT_SOURCE_DIR}"
-)
+message(STATUS "MAGEMin_cpp library version ${VERSION} configured from ${CMAKE_CURRENT_SOURCE_DIR}")
 
 include(CMakePackageConfigHelpers)
-configure_package_config_file(
-  MAGEMinConfig.cmake.in ${CMAKE_CURRENT_BINARY_DIR}/MAGEMinConfig.cmake
+configure_package_config_file(MAGEMinConfig.cmake.in ${CMAKE_CURRENT_BINARY_DIR}/MAGEMinConfig.cmake
   INSTALL_DESTINATION ${LIB_INSTALL_DIR}/MAGEMin/cmake
-  PATH_VARS INCLUDE_INSTALL_DIR)
+  PATH_VARS INCLUDE_INSTALL_DIR )
 
-write_basic_package_version_file(
-  ${CMAKE_CURRENT_BINARY_DIR}/MAGEMinConfigVersion.cmake
+write_basic_package_version_file(${CMAKE_CURRENT_BINARY_DIR}/MAGEMinConfigVersion.cmake
   VERSION ${VERSION}
-  COMPATIBILITY ExactVersion)
-install(FILES ${CMAKE_CURRENT_BINARY_DIR}/MAGEMinConfig.cmake
-              ${CMAKE_CURRENT_BINARY_DIR}/MAGEMinConfigVersion.cmake
-        DESTINATION ${LIB_INSTALL_DIR}/MAGEMin/cmake)
+  COMPATIBILITY ExactVersion )
+install(FILES ${CMAKE_CURRENT_BINARY_DIR}/MAGEMinConfig.cmake ${CMAKE_CURRENT_BINARY_DIR}/MAGEMinConfigVersion.cmake
+  DESTINATION ${LIB_INSTALL_DIR}/MAGEMin/cmake )
 
-#
-install(TARGETS ${TARGET_SRC} RUNTIME DESTINATION bin COMPONENT RUNTIME)
-install(TARGETS MAGEMin_cpp LIBRARY DESTINATION lib COMPONENT RUNTIME)
+
+# install(TARGETS ${TARGET_SRC} RUNTIME DESTINATION bin COMPONENT RUNTIME)
+install(TARGETS MAGEMin_cpp ARCHIVE DESTINATION lib COMPONENT RUNTIME)
 
 # headers:
-install(
-  DIRECTORY include/
+install(DIRECTORY include/
   DESTINATION include
   COMPONENT includes)
