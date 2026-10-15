@@ -11,7 +11,7 @@
 extern "C" {
 #endif
 
-#include "MAGEMin_modified.h"
+#include "MAGEMin.h"
 #include "PGE_function.h"
 #include "dump_function.h"
 #include "initialize.h"
@@ -66,7 +66,7 @@ public:
   bool initialized=false;
   ~MAGEMin_wrapper() {
     if(initialized) {
-      FreeDatabases(z_b, DB, gv);
+      FreeDatabases(gv, DB, z_b);
       destroy_simplex_A(&simplex);
       destroy_simplex_B(&simplex);
       initialized=false;
@@ -76,7 +76,6 @@ public:
   Databases DB;
   global_variable gv;
   simplex_data simplex;
-  outdataCPP data_in;
   int len_oxides;
   bool useNativeMageminNames = true;
 

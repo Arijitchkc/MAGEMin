@@ -118,7 +118,7 @@ void MAGEMin_wrapper::initializeMAGEMin(char *db_name,
                                         stableAssemblage *sAssemblage)
 {
   initialized=true;
-  gv = global_variable_alloc(gv, &z_b);
+  gv = global_variable_alloc(&z_b);
   strcpy(gv.db, db_name);
   strcpy(gv.File, "none");
   strcpy(gv.sys_in, "wt");
@@ -139,7 +139,7 @@ void MAGEMin_wrapper::initializeMAGEMin(char *db_name,
   gv.buffer_n = 0;
   gv.solver=2;
 
-  DB = InitializeDatabases(gv, gv.EM_database, DB);
+  DB = InitializeDatabases(gv, gv.EM_database);
 
   init_simplex_A(&simplex, gv);
   init_simplex_B_em(&simplex, gv);

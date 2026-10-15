@@ -58,15 +58,26 @@ endif()
 
 
 
+# Upstream MAGEMin sources live one level up, in ../src
+set(MAGEMIN_UPSTREAM_DIR ${CMAKE_CURRENT_SOURCE_DIR}/..)
+
 # Find all c file sources
-file(GLOB_RECURSE C_SRC_FILES src/*.c)
-set(CPP_wrapper src/MAGEMin_cpp_mpi.cc)
+file(GLOB_RECURSE C_SRC_FILES ${MAGEMIN_UPSTREAM_DIR}/src/*.c)
+set(CPP_wrapper MAGEMin_cpp_mpi.cc)
+
+# MAGEMin.c holds the solver functions the wrapper needs, plus MAGEMin's own main().
+# Rename that main so it does not clash with ASPECT's main().
+set_source_files_properties(${MAGEMIN_UPSTREAM_DIR}/src/MAGEMin.c
+  PROPERTIES COMPILE_DEFINITIONS "main=magemin_standalone_main")
 
 add_library(MAGEMin_cpp STATIC ${CPP_wrapper} ${C_SRC_FILES})
 
 
 target_include_directories(MAGEMin_cpp PUBLIC /nobackup/scxn98/installations/nloptInstall/include/)
-target_include_directories(MAGEMin_cpp PUBLIC src/ src/SB_database/ src/TC_database/)
+target_include_directories(MAGEMin_cpp PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}
+                                              ${MAGEMIN_UPSTREAM_DIR}/src/
+                                              ${MAGEMIN_UPSTREAM_DIR}/src/SB_database/
+                                              ${MAGEMIN_UPSTREAM_DIR}/src/TC_database/)
 target_link_libraries(MAGEMin_cpp PRIVATE ${LIBS})
 
 set_target_properties(MAGEMin_cpp PROPERTIES
@@ -82,7 +93,7 @@ set(LIB_INSTALL_DIR ${CMAKE_INSTALL_PREFIX}/lib/)
 message(STATUS "MAGEMin_cpp library version ${VERSION} configured from ${CMAKE_CURRENT_SOURCE_DIR}")
 
 include(CMakePackageConfigHelpers)
-configure_package_config_file(MAGEMinConfig.cmake.in ${CMAKE_CURRENT_BINARY_DIR}/MAGEMinConfig.cmake
+configure_package_config_file(${MAGEMIN_UPSTREAM_DIR}/MAGEMinConfig.cmake.in ${CMAKE_CURRENT_BINARY_DIR}/MAGEMinConfig.cmake
   INSTALL_DESTINATION ${LIB_INSTALL_DIR}/MAGEMin/cmake
   PATH_VARS INCLUDE_INSTALL_DIR )
 
