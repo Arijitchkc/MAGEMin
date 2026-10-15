@@ -3,7 +3,7 @@
  **   Project      : MAGEMin
  **   License      : GNU GENERAL PUBLIC LICENSE Version 3, 29 June 2007
  **   Developers   : Nicolas Riel, Boris Kaus
- **   Contributors : Nickolas B. Moccetti, Dominguez, H., Assunção J., Green E., Berlie N., and Rummel L.
+ **   Contributors : Moccetti, N. B., Dominguez, H., Assunção J., Green E., Dolejš, D., Berlie N., and Rummel L.
  **   Organization : Institute of Geosciences, Johannes-Gutenberg University, Mainz
  **   Contact      : nriel[at]uni-mainz.de, kaus[at]uni-mainz.de
  **
@@ -22,12 +22,18 @@
 #include "nlopt.h"
 #include "gem_function.h"
 
+/* 25 sufficed for every phase up to aq17; DEW (DEW2019 aqueous model, up to
+   DEW_N_SPECIES_DB=120 species + water) can need far more x-eos slots for its single
+   (n_SS_PC=1) starting pseudocompound - bumped to 130 for headroom. Existing static
+   tables with fewer literals than this (e.g. mp_bi_pc_xeos[981]'s 6-element rows) are
+   unaffected: C zero-fills the remaining array elements. */
 struct ss_pc{
-    double xeos_pc[25];
+    double xeos_pc[130];
 };
 
 typedef struct PC_refs {
 	struct ss_pc *ss_pc_xeos;
+	struct ss_pc *pc_own;
 
 } PC_ref;
 
@@ -39,6 +45,14 @@ typedef double (*PC_type) (			unsigned         n,
 /** 
 	Store oxide informations 
 **/
+#define len_gv_outpath          512
+#define len_gv_version          50
+#define len_gv_file             512
+#define len_gv_db               20
+#define len_gv_research_group   20
+#define len_gv_sys_in           20
+#define len_gv_buffer           20
+
 #define n_ox_all 16
 typedef struct oxide_datas {
 	int 	n_ox;
@@ -52,6 +66,40 @@ typedef struct oxide_datas {
 
 } oxide_data;
 
+
+typedef struct fn_kkts {
+	int 	 stored;
+	int 	 nz;
+	int 	 m;
+	int 	 n_y;
+	int 	 n_cc;
+	int 	 n_ph;
+	int 	 n_pp;
+	int 	 n_s;
+	int 	 n_Nb;
+	int 	 cap_nz;
+	int 	 cap_s;
+	int 	 cap_Nb;
+	int 	*ox_id;
+	int 	*ss_id;
+	int 	*cp_id;
+	int 	*pp_id;
+	int 	*off_y;
+	int 	*off_s;
+	int 	*off_N;
+	int 	*off_c;
+	int 	*c_x;
+	int 	*drop;
+	double 	*c_b;
+	double 	*Nb;
+	double 	*s;
+	double 	*gam;
+	double 	*n;
+	double 	*mu;
+	double 	*R;
+	double 	*J;
+	double 	 G;
+} fn_kkt;
 
 /* structure to store global variables */
 typedef struct global_variables {
@@ -70,25 +118,68 @@ typedef struct global_variables {
 	int 	 leveling_mode;
 	int      status;			/** status of the minimization 		*/
 	int      solver;
+	int      ss_solver;
+	double   ns_alpha;
+	double   ns_beta_ini;
+	double   ns_beta;
+	double   ns_tol;
+	double   ns_tol_pg;
+	double   ns_eps;
+	double   ns_eps_bnd;
+	double   ns_frac_bnd;
+	int      ns_omax;
+	int      ns_imax;
+	int      ns_max_ite;
+	int      ns_gn_max;
+	int      final_Newton_step;
+	int      fn_status;
+	int      fn_ite;
+	int      fn_nz_max;
+	double  *fn_A;
+	double  *fn_b;
+	int     *fn_ipiv;
+	int      fn_store_kkt;
+	int      fn_from_state;
+	fn_kkt  *fn_sys;
 	double   solver_switch_T;
+	int 	 seismicScheme; 	/** 0: Voigt-Reuss-Hill, 1: Hashin-Shtrikman */
+	double   seismicWeightFactor; 	/** value between 0 and 1 to blend VRH and HS bounds for seismic properties calculation. 0 = pure VRH, 1 = pure HS, values in between = linear blend. When a fluid phase is present, G_min = 0, so HS- shear bound = 0 (handled by IEEE 754). */
 	// int 	 calc_seismic_cor;
 	int 	 output_matlab;
 	double 	 tot_min_time;
 	double 	 tot_time;
 	char*    buffer;
 	double   buffer_n;
+	int      n_mu_fix;			/** number of oxides with a fixed chemical potential (0..maxlen_ox), native mu-mu mechanism */
+	int     *mu_fix_idx;		/** oxide index (into gv.ox / len_ox) for each fixed-mu oxide, malloc'd to maxlen_ox entries */
+	double  *mu_fix_val;		/** target chemical potential, J/mol, same convention as gv.gam_tot; used directly (no RT*ln(a) conversion), malloc'd to maxlen_ox entries */
 	int      limitCaOpx;
 	double   CaOpxLim;
 	int      mbCpx;
 	int      mbIlm;
 	int      mpSp;
 	int      mpIlm;
-	int      ig_ed;			/** igneous endmember database? */
+	int      ig_ed;				/** igneous endmember database? */
+	int      precond;			/** 1: equilibrate (Ruiz-scale) the stoichiometric matrix before inverseMatrix's LU inversion, 0: off (unmodified legacy behavior) */
+	int      BR_rel_norm;		/** 1: PGE mass-residual convergence norm (BR_norm) is computed per-oxide-relative (normalized by each oxide's own bulk abundance), 0: off (unmodified legacy absolute norm) */
+	int      gh_multistart_order;	/** gh phases with an embedded order-parameter solve (e.g. spinel): 0 (default) = single physically-motivated starting guess, exactly matching real xMELTS' own order() function; 1 (legacy/opt-in) = multi-start over several starting points, keeping the lowest-G result - finds a lower true minimum at extreme near-single-endmember compositions but can disagree with what real MELTS itself would compute there */
 	int      fixed_bulk;
-	
+	int      calibration;		/** 0 (default): off, unmodified behavior. 1: after the normal point solve, additionally
+									locally minimize every structurally-feasible-but-not-stable solution phase
+									(SS_ref_db[i].ss_flags[0]==1) from ~n_em starting pseudocompounds sampled evenly
+									(stride) across its tot_Ppc list, and append any converged minimum that is not a
+									near-duplicate of an already-stable phase to stb_system.mSS (tagged info="calib"),
+									via calibration_output_struct() in dump_function.c. See
+									~/.claude/working_tree/Lila_inversion/plans/magemin-calibration-mode.md (Lila_inversion
+									project) for the full design/rationale. */
+	int      DEW_solve_algorithm;	/** DEW inner speciation solver (DEW_aq_min_iterative family): 0 = original plain (unmixed) Picard fixed-point iteration, bisection mu_Hp solve; 1 = damped/mixed variant that under-relaxes the composition<->activity-coefficient feedback loop, aimed at the high-ionic-strength (deep/hot P-T) regime where plain Picard oscillates/overshoots, bisection mu_Hp solve; 2 = same outer loop as 0 but with the mu_Hp charge-balance root-find replaced by a Newton step safeguarded by bisection (DEW_solve_mu_Hp_safeguarded) - same bracketing guarantee as algorithm 0's bisection (can never leave a verified sign-changing bracket) but converges quadratically, cutting residual evaluations per solve by 40-1000x; benchmarked with 0 regressions over an 84-point mpe/ume/mbe P-T sweep - see DEW_aq_solver.c. All three are exact fixed points of the same equilibrium condition when converged. 4 (default) = Newton on ln(molality) of every species plus mu_Hp with the activity coefficients inside the residual (DEW_aq_min_newton), two Newton starts, falling back to algorithm 2's 8-start multistart if neither converges. */
+	int      warm_start;		/** DEW outer-PGE-loop warm start (NLopt_opt_DEW_function/SS_ref.dew_warm_ok): 1 (default) = after a point's first DEW solve (always the full 8-start DEW_aq_min_multistart grid), later outer iterations of the SAME point first try a single solve warm-started from the previous converged composition, falling back to the full grid only if that fails to converge; 0 = disable the shortcut entirely and always re-run the full 8-start grid, every outer iteration, every point - a debugging/comparison knob to isolate whether the warm-start path itself is implicated in a given issue. */
+	int      SB_eos;			/** 0: legacy (Perple_X-style) SLB EOS solver, 1: burnman-style (Brent volume solve + 3rd order shear), 2: same as 1 but with HeFESTo's analytic vibrational/spinodal volume bounds */
+	int      SB_eos_cor;		/** 0: compute_G0() legacy Newton solver behaves exactly as before (default), 1: destabilize (NAN) on non-convergence instead of silently using the unconverged volume, and tighten its v/v0 sanity bound to match Perple_X/HeFESTo */
+
 	/* FLUID SPECIATION OPTIONS */
 	int      fluidSpec;			/** activate fluid speciation along with phase equilibrium modelling? */
-	int      n_fs_db;			/** number of fluid species for the database */
+	int      n_dew_db;			/** number of aqueous species in the DEW2019 database */
 
 	/* GET STARTING CONDITIONS (args) */
 	int 	 test;
@@ -108,6 +199,7 @@ typedef struct global_variables {
 
 	/* GENERAL PARAMETERS */
 	int		*n_min;
+	int      n_max_val;
 	int 	 LP;				/** linear programming stage flag	*/
 	int 	 PGE;				/** PGE stage flag				 	*/
 	double   mean_sum_xi;
@@ -176,7 +268,7 @@ typedef struct global_variables {
 	/* LEVELLING */
 	double   LVL_time;			/** time taken for levelling (ms) */
 	double   em2ss_shift;		/** small value to retrieve x-eos from pure endmember after levelling */
-	
+
 	/* PSEUDOCOMPOUNDS */
 	double   bnd_filter_pc;     /** value of driving force the pseudocompound is considered to reduce the compositional space */
 	double   bnd_filter_pge;     /** value of driving force the pseudocompound is considered to reduce the compositional space */
@@ -207,6 +299,15 @@ typedef struct global_variables {
 	int   	 maxeval;			/** maximum number of objective function evaluations during local minimization */
 	double   bnd_val;			/** boundary value for x-eos when the fraction of an endmember = 0. */
 	double   obj_refine_fac;    /** how much the residual of the objective function is refined during iterations */
+
+	/* "liq" redundant-occurrence pseudocompound synthesis (ss_min_LP, gh and tc) */
+	int 	 act_rMELTS_liq_pc_synth;	/** number of redundant per-occurrence liq NLopt solves to perform before switching to the analytic hyperplane synthesis */
+	int 	 liq_pc_synth_active;		/** 2 (default): as 1, plus one NLopt solve per cluster of same-phase instances whose converged
+											    minimum stays within merge_value, linear synthesis for the others (not br);
+											    1: replace redundant per-occurrence liq NLopt solves with the
+											    analytic hyperplane synthesis; 0: fully disabled, legacy per-occurrence path */
+	int 	 gh_liq_pc_synth_threshold;	/** n_ss_ph[liq] above which real per-occurrence NLopt solves are replaced
+											    by one real solve + synthetic pseudocompounds on the refined Gamma hyperplane */
 
 	/* PARTITIONING GIBBS ENERGY */ 
 	double 	*A_PGE;				/** LHS  */
@@ -282,6 +383,7 @@ typedef struct global_variables {
 	double   system_enthalpy;
 	double   system_cp;
 	double   system_expansivity;
+	double   system_compressibility;
 	double   system_bulkModulus;
 	double   system_shearModulus;
 	double   system_Vp;
@@ -319,18 +421,23 @@ int runMAGEMin(								int argc,
 											char ** argv			);
 
 /* Function declaration from Initialize.h file */
-int find_EM_id(								char* em_tag			);
+int find_EM_id(								char* research_group, int EM_dataset, char* em_tag			);
 
 /* Function declaration from Initialize.h file */
-int find_FS_id(								char* em_tag			);
+int find_DEW_id(								char* em_tag			);
 
-/** 
+void check_lookup_id(							int id, const char *kind, const char *name			);
+
+/**
 	definition of the objective function type in order to associate them with the right solution phase number
 */
 typedef double (*obj_type) (		unsigned  		 n,
 									const double 	*x,
 									double 			*grad,
 									void 			*SS_ref_db			);
+
+typedef void (*ns_p2x_type) (		void 			*SS_ref_db,
+									double 			 eps				);
 
 typedef struct simplex_datas
 {
@@ -452,8 +559,28 @@ typedef struct SS_refs {
 	int      sf_id;				/** id of the violated site fraction 										*/
     double **Comp;    			/** 2d array of endmember composition 										*/
     double  *gbase;        		/** 1d array of gbase 														*/
+    double **mu_comp;			/** 2d array [n_em][len_ox+1], formation-reaction stoichiometry vs oxide
+    								components + H+ - only used by DEW (DEW2019 aqueous model), which
+    								needs each species' reaction against the current Gamma hyperplane, not
+    								just its raw mass-balance composition (see TC_database/DEW_aq_solver.h).
+    								NULL/unused for every other solution phase. 								*/
+    int      dew_warm_ok;		/** DEW only: 1 once this point has completed at least one full
+    								DEW_aq_min_multistart() grid solve, so xeos already holds a
+    								verified-global-min mole-fraction vector safe to warm-start
+    								subsequent outer PGE iterations from (see
+    								NLopt_opt_DEW_function). Reset to 0 at the start of every
+    								point in ComputeEquilibrium_Point. Unused by every other
+    								solution phase. 															*/
+    double   dew_warm_G;		/** DEW only: the self-consistent G (DEW_aq_evaluate) of the
+    								verified-global-min branch dew_warm_ok refers to. A warm-started
+    								solve is only accepted if it reaches this G (within tolerance);
+    								otherwise NLopt_opt_DEW_function falls back to the full
+    								multistart grid instead of keeping a worse branch. Meaningless
+    								while dew_warm_ok==0. 														*/
 
     double **mu_array;        	/** 2d array of gbase, including values for numerical differentiation 		*/
+    double **W_array;
+    double **v_array;
     double  *gb_lvl;
     double   factor;			/** normalizing factor 														*/
     double **bounds;			/** x-eos bounds 															*/
@@ -461,6 +588,9 @@ typedef struct SS_refs {
 
 	double  *d_em;
     double  *z_em; 				/** 1d array to deactivate endmembers when bulk-rock = 0; this part is needed to calculat xi in PGE method */
+    double  *ox_penalty;        /** per-endmember soft-penalty coefficient (kJ per unit mole fraction of a
+                                    disallowed oxide), added to df in obj_*() - used when the disallowed endmember
+                                    is not cleanly pinnable via bounds_ref (baseline endmember, or entangled pair) */
     int      n_guess;			/** number of initial guesses used to solve for solvi (or local minimum) 	*/
     double  *iguess;    		/** 2d array of initial guess 												*/
 	double  *dguess;    		/** 2d array of default guess 												*/
@@ -506,6 +636,62 @@ typedef struct SS_refs {
 	double   phase_density;		/** density of the phase 								*/
 	double   volume;			/** volume of the phase 								*/
 	double   mass;				/** mass of the phase 									*/
+
+	int      EM_database;		/** gv.EM_database of the owning instance (gh: 0=xMELTS, 1=rMELTS, 2=pMELTS) */
+	int      gh_multistart_order;	/** gv.gh_multistart_order of the owning instance 		*/
+
+	int          ns_ok;
+	int          ns_ok_init;
+	int          ns_mode;
+	int          ns_nc;
+	int          ns_fd;
+	int          ns_absent;
+	int          ns_n_dir0;
+	int          ns_n_dir;
+	int          ns_n_C;
+	int          ns_n_em_act;
+	int          ns_lwork;
+	int          ns_ite;
+	int          ns_status;
+	obj_type     ns_obj;
+	ns_p2x_type  ns_p2x;
+	double     **ns_V;
+	double     **ns_M;
+	double     **ns_N0;
+	double     **ns_N;
+	double     **ns_BkI;
+	double      *ns_sf0;
+	double      *ns_sfc;
+	double      *ns_sf;
+	double      *ns_sf_prev;
+	double      *ns_trial;
+	double      *ns_g;
+	double      *ns_pg0;
+	double      *ns_pg1;
+	double      *ns_pk;
+	double      *ns_sk;
+	double      *ns_yk;
+	double      *ns_vt;
+	double      *ns_r;
+	double      *ns_x;
+	double      *ns_x0;
+	double      *ns_w;
+	double      *ns_pt;
+	double      *ns_sft;
+	double      *ns_gb;
+	double      *ns_bsave;
+	double      *ns_ub;
+	double      *ns_S;
+	double      *ns_P;
+	double      *ns_z;
+	double      *ns_svdA;
+	double      *ns_svdS;
+	double      *ns_svdU;
+	double      *ns_svdVt;
+	double      *ns_work;
+	int         *ns_sf_state;
+	int         *ns_C;
+	int         *ns_em_act;
 
 } SS_ref;
 
@@ -563,6 +749,26 @@ typedef struct bulk_infos {
     int     *nzEl_array;   		/** position of non zero entries in the bulk 			*/
     int     *zEl_array;    	 	/** position of zero entries in the bulk 				*/
 	int 	*id;				/** id of the oxides used from the total list of oxides */
+
+	/** per-run indices of named oxides within bulk_rock[]/oxName[] (-1 if that oxide
+	    is not part of the active database's oxide list); mirrors the gv.*_id fields
+	    so G_SS_*_function() (which only receives z_b, not gv) can test a specific
+	    oxide's abundance without hardcoding its positional index 						*/
+	int      SiO2_id;
+	int      Al2O3_id;
+	int      CaO_id;
+	int      MgO_id;
+	int      FeO_id;
+	int      K2O_id;
+	int      Na2O_id;
+	int      TiO2_id;
+	int      O_id;
+	int      MnO_id;
+	int      Cr2O3_id;
+	int      H2O_id;
+	int      CO2_id;
+	int      S_id;
+
     double  *apo;				/** atom per oxide 										*/
     double   fbc;				/** number of atom for the bulk	rock composition		*/
     double  *masspo;			/** Molar mass per oxide 								*/
@@ -620,6 +826,7 @@ typedef struct csd_phase_sets {
 	double  phase_density;
 	double  phase_cp;
 	double  phase_expansivity;
+	double  phase_compressibility;
 	double  phase_bulkModulus;
 	double  phase_isoTbulkModulus;
 	// double  volume_P0;
@@ -639,6 +846,7 @@ typedef struct stb_SS_phases {
 	double   deltaG;
 	double   V;
 	double   alpha;
+	double   beta;
 	double   cp;
 	double   entropy;
 	double   enthalpy;	
@@ -647,17 +855,23 @@ typedef struct stb_SS_phases {
 	double   shearMod;
 	double   Vp;
 	double   Vs;
-	
+	double   pH;				/** -log10(activity of H+); only meaningful for DEW, NaN otherwise */
+	double   chargeResidual;	/** |sum(z_i*m_i)| at the converged aqueous speciation; only meaningful for DEW, NaN otherwise */
+	double   sumMolality;		/** sum of solute molalities [mol/kg H2O]; only meaningful for DEW, NaN otherwise */
+	double   G_water;			/** standard-state Gibbs energy of the solvent (H2O) [kJ/mol]; only meaningful for DEW, NaN otherwise */
+
 	int      n_xeos;
 	int      n_em;
 	int      n_sf;
-	
+
 	double  *Comp;
 	double  *compVariables;
-	char   **compVariablesNames;	
+	char   **compVariablesNames;
 	double  *siteFractions;
-	char   **siteFractionsNames;	
+	char   **siteFractionsNames;
 	char   **emNames;
+	double  *molality;			/** [n_em] mol/kg H2O; only meaningful for DEW (water's own slot is NaN), NaN-filled otherwise */
+	double  *activity;			/** [n_em] species activity (solvent slot = water activity coefficient); only meaningful for DEW, NaN-filled otherwise */
 	double  *emFrac;
 	double  *emFrac_wt;
 	double  *emChemPot;
@@ -668,9 +882,9 @@ typedef struct stb_SS_phases {
 
 	double  *Comp_apfu;
 	double **emComp_apfu;
-		
+
 	//double  *siteFrac;
-	
+
 } stb_SS_phase;
 
 
@@ -706,6 +920,7 @@ typedef struct stb_PP_phases {
 	double   deltaG;
 	double   V;
 	double   alpha;
+	double   beta;
 	double   cp;
 	double   entropy;
 	double   enthalpy;	
@@ -759,6 +974,7 @@ typedef struct stb_systems {
 	double  aFeO;
 
 	double  alpha;
+	double  beta;
 	double  cp;
 	double  s_cp;
 	double  cp_wt;
@@ -767,6 +983,8 @@ typedef struct stb_systems {
 	
 	double  entropy;
 	double  enthalpy;
+	double  system_oxygen;
+	double  Fe3_Fe2_ratio;
 
 	double  bulkMod;
 	double  shearMod;
@@ -826,15 +1044,16 @@ typedef struct Database {	PP_ref     		 *PP_ref_db;		/** Pure phases 											
 							csd_phase_set    *cp;				/** considered solution phases (solvus setup) 				*/
 							stb_system       *sp;				/** structure holding the informations of the stable phases */
 							char 	  		**EM_names;			/** Names of endmembers 									*/
-							char 	  		**FS_names;			/** Names of fluid species 									*/
+											char 	  		**DEW_names;		/** Names of DEW2019 aqueous species 						*/
 } Databases;
 
 Databases InitializeDatabases(				global_variable 	 gv, 
 											int 				 EM_database		);
 
-void FreeDatabases(							global_variable 	 gv, 
+void FreeDatabases(							global_variable 	 gv,
 											Databases			 DB,
-											bulk_info 	 		 z_b				);
+											bulk_info 	 		 z_b,
+											simplex_data		*splx_data			);
 											
 global_variable ComputeG0_point( 			int 				 EM_database,
 											bulk_info 	 		 z_b,
@@ -851,6 +1070,20 @@ global_variable ComputeEquilibrium_Point(	int 				 EM_database,
 											SS_ref  			*SS_ref_db,
 											csd_phase_set  		*cp					);
 										
+global_variable ComputeEquilibrium_FromState(	bulk_info 	 		 z_b,
+												global_variable 	 gv,
+												PP_ref  			*PP_ref_db,
+												SS_ref  			*SS_ref_db,
+												csd_phase_set  		*cp,
+												int 				 n_ss,
+												int 				*ss_ids,
+												double 				*ss_x,
+												double 				*ss_n,
+												int 				 n_pp,
+												int 				*pp_ids,
+												double 				*pp_n,
+												double 				*gam				);
+
 global_variable ComputeLevellingOnly( 		int 				 EM_database,
 											io_data 			 input_data,
 											bulk_info 	 		 z_b,

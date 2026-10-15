@@ -3,7 +3,7 @@
  **   Project      : MAGEMin
  **   License      : GNU GENERAL PUBLIC LICENSE Version 3, 29 June 2007
  **   Developers   : Nicolas Riel, Boris Kaus
- **   Contributors : Nickolas B. Moccetti, Dominguez, H., Assunção J., Green E., Berlie N., and Rummel L.
+ **   Contributors : Moccetti, N. B., Dominguez, H., Assunção J., Green E., Dolejš, D., Berlie N., and Rummel L.
  **   Organization : Institute of Geosciences, Johannes-Gutenberg University, Mainz
  **   Contact      : nriel[at]uni-mainz.de, kaus[at]uni-mainz.de
  **
@@ -134,7 +134,7 @@ global_variable check_PC(					bulk_info 	 		 z_b,
 		if (cp[i].ss_flags[0] == 1){
 			ph_id = cp[i].id;
 
-			if (SS_ref_db[ph_id].orderVar == 1 && add_max < 2){
+			if (SS_ref_db[ph_id].orderVar == 1 && add_max < 2 && gv.len_cp < gv.max_n_cp){
 
 				for (int k = 0; k < cp[i].n_xeos; k++) {
 					SS_ref_db[ph_id].iguess[k]   = cp[i].xeos[k]*SS_ref_db[ph_id].idOrderVar[k];
@@ -151,7 +151,7 @@ global_variable check_PC(					bulk_info 	 		 z_b,
 															z_b, 
 															gv.SS_list[ph_id]		);
 
-				if (SS_ref_db[ph_id].sf_ok == 1){
+				if (SS_ref_db[ph_id].sf_ok == 1 && gv.len_cp < gv.max_n_cp){
 				
 					gv.len_cp				   += 1;
 					id_cp 		 				= gv.len_cp-1;
@@ -243,7 +243,7 @@ global_variable check_PC(					bulk_info 	 		 z_b,
 
 				if (id_c == n_candidate){ id_c = 0;}
 
-				if (df_candidate[id_c] < gv.PC_df_add && pc_candidate[id_c] != -1){
+				if (df_candidate[id_c] < gv.PC_df_add && pc_candidate[id_c] != -1 && gv.len_cp < gv.max_n_cp){
 
 					if(phase_add == 0){
 											
@@ -304,7 +304,7 @@ global_variable check_PC(					bulk_info 	 		 z_b,
 																		z_b, 
 																		gv.SS_list[i]		);
 
-							if (SS_ref_db[i].sf_ok == 1){
+							if (SS_ref_db[i].sf_ok == 1 && gv.len_cp < gv.max_n_cp){
 
 								gv.len_cp				   += 1;
 								id_cp 		 				= gv.len_cp-1;
@@ -413,7 +413,7 @@ global_variable check_PC(					bulk_info 	 		 z_b,
 																			z_b, 
 																			gv.SS_list[i]		);
 
-								if (SS_ref_db[i].sf_ok == 1){
+								if (SS_ref_db[i].sf_ok == 1 && gv.len_cp < gv.max_n_cp){
 									gv.len_cp				   += 1;
 									id_cp 		 				= gv.len_cp-1;
 									strcpy(cp[id_cp].name,gv.SS_list[i]);				/* get phase name */				
@@ -570,12 +570,12 @@ global_variable phase_merge_function(		bulk_info 			z_b,
 		}
 	}
 
-	/* check and merge phases in the active assemblage */	
+	/* check and merge phases in the active assemblage */
 	for (iss = 0; iss < gv.len_ss; iss++){
-		
+
 		/* if there is a possible solvus */
 		if (gv.n_solvi[iss] > 1){
-			
+
 			/* go through the upper triange of the matrix (avoiding diagonal)*/
 			for (k = 0; k < gv.n_solvi[iss]; k++){ 
 				for (l = k+1; l < gv.n_solvi[iss]; l++){
@@ -598,10 +598,10 @@ global_variable phase_merge_function(		bulk_info 			z_b,
 								}
 								/* in case both phases are active, add phase B fraction on phase A */
 								if(cp[phA].ss_flags[1] == 1 && cp[phB].ss_flags[1] == 1){
+									double nA_w = cp[phA].ss_n, nB_w = cp[phB].ss_n;
 									cp[phA].ss_n 		  	+=  cp[phB].ss_n;
-									/* merge compositional variables at mid point */
 									for (i = 0; i < cp[phA].n_xeos; i++){
-										cp[phA].xeos[i] = (cp[phA].xeos[i] + cp[phB].xeos[i])/2.0;
+										cp[phA].xeos[i] = (nA_w*cp[phA].xeos[i] + nB_w*cp[phB].xeos[i])/(nA_w + nB_w);
 									}
 
 									gv.n_cp_phase 		  	-=  1;
@@ -803,8 +803,8 @@ global_variable phase_hold2act(		bulk_info 				z_b,
 
 	/** -----------------------------------SORTING PURE AND SOLUTION PHASES BY DRIVING FORCES------------------------------------------------------------------------- **/		
 	/* create the structures that will hold the phase array sorted by driving force */
-	struct str hld_cp_sort[n_cp_hld];
-	struct str hld_pp_sort[n_pp_hld];
+	struct str hld_cp_sort[n_cp_hld > 0 ? n_cp_hld : 1];
+	struct str hld_pp_sort[n_pp_hld > 0 ? n_pp_hld : 1];
 	
 	inc = 0;
 	for (int i = 0; i < gv.len_cp; i++){

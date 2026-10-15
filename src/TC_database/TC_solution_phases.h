@@ -3,7 +3,7 @@
  **   Project      : MAGEMin
  **   License      : GNU GENERAL PUBLIC LICENSE Version 3, 29 June 2007
  **   Developers   : Nicolas Riel, Boris Kaus
- **   Contributors : Nickolas B. Moccetti, Dominguez, H., Assunção J., Green E., Berlie N., and Rummel L.
+ **   Contributors : Moccetti, N. B., Dominguez, H., Assunção J., Green E., Dolejš, D., Berlie N., and Rummel L.
  **   Organization : Institute of Geosciences, Johannes-Gutenberg University, Mainz
  **   Contact      : nriel[at]uni-mainz.de, kaus[at]uni-mainz.de
  **
@@ -15,11 +15,13 @@
     #include "tc_gss_function.h"
     #include "objective_functions.h"
     #include "NLopt_opt_function.h"
+    #include "NS_opt_function.h"
 
     /* include pseudocompounds */
     #include "SS_xeos_PC_mp.h" 				//mp is first, it contains the structure definition
     #include "SS_xeos_PC_mb.h" 
     #include "SS_xeos_PC_ig.h"
+    #include "SS_xeos_PC_igd.h"
     #include "SS_xeos_PC_igad.h"
     #include "SS_xeos_PC_um.h"
     #include "SS_xeos_PC_mtl.h"

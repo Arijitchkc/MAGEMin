@@ -1,6 +1,5 @@
 # CC=gcc
-CC=gcc 
-CXX=g++
+CC=clang 
 
 UNAME_S := $(shell uname -s)
 
@@ -10,7 +9,6 @@ EXE_NAME:= MAGEMin
 USE_MPI ?= 1
 
 CCFLAGS = -Wall -O3 -g -fPIC -Wno-unused-variable -Wno-unused-but-set-variable -march=native -funroll-loops
-CXXFLAGS= -Wall -O3 -g -fPIC -std=c++17 -flto
 ifeq ($(UNAME_S),Darwin)
 	INC      = -I/opt/homebrew/include 
 	LIBS     = -lm -framework Accelerate /opt/homebrew/lib/libnlopt.dylib
@@ -28,14 +26,23 @@ ifeq ($(UNAME_S),Linux)
 	endif
 endif
 
-SOURCES=src/MAGEMin_modified.c \
+SOURCES=src/MAGEMin.c 							\
 		src/initialize.c 						\
 		src/TC_database/TC_init_database.c		\
 		src/TC_database/TC_endmembers.c			\
 		src/TC_database/TC_gem_function.c		\
+		src/TC_database/DEW_aq_solver.c		\
 		src/SB_database/SB_init_database.c		\
 		src/SB_database/SB_endmembers.c			\
 		src/SB_database/SB_gem_function.c		\
+		src/GH_database/GH_init_database.c		\
+		src/GH_database/GH_endmembers.c			\
+		src/GH_database/GH_PP_endmembers.c		\
+		src/GH_database/GH_fluid_eos.c			\
+		src/GH_database/GH_gem_function.c		\
+		src/BR_database/BR_init_database.c		\
+		src/BR_database/BR_PP_endmembers.c		\
+		src/BR_database/BR_gem_function.c		\
 		src/toolkit.c							\
 		src/io_function.c						\
 		src/gem_function.c 						\
@@ -43,13 +50,23 @@ SOURCES=src/MAGEMin_modified.c \
 		src/TC_database/tc_gss_function.c		\
 		src/SB_database/sb_gss_init_function.c	\
 		src/SB_database/sb_gss_function.c		\
+		src/GH_database/gh_gss_init_function.c	\
+		src/GH_database/gh_gss_function.c		\
+		src/BR_database/br_gss_init_function.c	\
+		src/BR_database/br_gss_function.c		\
 		src/TC_database/NLopt_opt_function.c 	\
+		src/TC_database/NS_opt_function.c 		\
 		src/SB_database/SB_NLopt_opt_function.c \
+		src/GH_database/GH_NLopt_opt_function.c \
+		src/BR_database/BR_NLopt_opt_function.c \
 		src/TC_database/objective_functions.c	\
 		src/SB_database/sb_objective_functions.c\
+		src/GH_database/gh_objective_functions.c\
+		src/BR_database/br_objective_functions.c\
 		src/TC_database/SS_xeos_PC_mp.c			\
 		src/TC_database/SS_xeos_PC_mb.c			\
 		src/TC_database/SS_xeos_PC_ig.c			\
+		src/TC_database/SS_xeos_PC_igd.c		\
 		src/TC_database/SS_xeos_PC_igad.c		\
 		src/TC_database/SS_xeos_PC_um.c			\
 		src/TC_database/SS_xeos_PC_mtl.c		\
@@ -57,17 +74,17 @@ SOURCES=src/MAGEMin_modified.c \
 		src/SB_database/SS_xeos_PC_sb11.c		\
 		src/SB_database/SS_xeos_PC_sb21.c		\
 		src/SB_database/SS_xeos_PC_sb24.c		\
+		src/GH_database/SS_xeos_PC_gh.c			\
+		src/BR_database/SS_xeos_PC_br.c			\
 		src/pp_min_function.c 					\
 		src/ss_min_function.c 					\
 		src/simplex_levelling.c 				\
 		src/PGE_function.c 						\
 		src/phase_update_function.c				\
-		src/dump_function.c
+		src/dump_function.c						\
+		src/MAGEMin_api.c
 
 OBJECTS=$(SOURCES:.c=.o)
-CPP_SRC = src/MAGEMin_cpp.cc
-CPP_OBJ = src/MAGEMin_cpp.o
-
 
 
 
@@ -75,17 +92,11 @@ CPP_OBJ = src/MAGEMin_cpp.o
 	$(CC) $(CCFLAGS) -c $< -o $@ $(INC)
  
 all: $(OBJECTS)
-	# $(CC)  -o $(EXE_NAME) $(OBJECTS) $(INC) $(LIBS)  -flto
-	# rm src/*.o src/TC_database/*.o
-	# g++ -fPIC -c src/MAGEMin_cpp.cc -o MAGEMin_cpp.o
-	# g++ -shared ${LIBS} ${INC} -DUSE_MPI -flto -o libMAGEMin_cpp.so src/MAGEMin_cpp.o $(SOURCES) 
-	
-	$(CXX) $(CXXFLAGS) -c $(CPP_SRC) -o $(CPP_OBJ) $(INC)
-	$(CXX) -shared -o libMAGEMin_cpp.so $(CPP_OBJ) $(OBJECTS) $(LIBS) -Wl,-rpath,'$ORIGIN'
-	rm src/*.o src/TC_database/*.o
+	$(CC)  -o $(EXE_NAME) $(OBJECTS) $(INC) $(LIBS)  -flto
+	rm src/*.o src/TC_database/*.o src/SB_database/*.o src/GH_database/*.o src/BR_database/*.o
 
 lib: $(OBJECTS)
 	$(CC) -shared -fPIC -o libMAGEMin.dylib $(OBJECTS) $(INC) $(LIBS) -flto
  
 clean:
-	rm -f src/*.o  src/TC_database/*.o src/SB_database/*.o *.dylib MAGEMin
+	rm -f src/*.o  src/TC_database/*.o src/SB_database/*.o src/GH_database/*.o src/BR_database/*.o *.dylib MAGEMin

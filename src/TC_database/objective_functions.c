@@ -3,7 +3,7 @@
  **   Project      : MAGEMin
  **   License      : GNU GENERAL PUBLIC LICENSE Version 3, 29 June 2007
  **   Developers   : Nicolas Riel, Boris Kaus
- **   Contributors : Nickolas B. Moccetti, Dominguez, H., Assunção J., Green E., Berlie N., and Rummel L.
+ **   Contributors : Moccetti, N. B., Dominguez, H., Assunção J., Green E., Dolejš, D., Berlie N., and Rummel L.
  **   Organization : Institute of Geosciences, Johannes-Gutenberg University, Mainz
  **   Contact      : nriel[at]uni-mainz.de, kaus[at]uni-mainz.de
  **
@@ -23,6 +23,1164 @@
 #include "../MAGEMin.h"
 #include "../toolkit.h"
 #include "objective_functions.h"
+#include "DEW_aq_solver.h"
+
+/**************************************************************************************/
+/**************************************************************************************/
+/************IGNEOUST DATABASE (Tomlinson & Holland 2021, Su et al., 2026)************/
+/**************************************************************************************/
+/**************************************************************************************/
+/**
+    Endmember to xeos for ilm
+*/
+
+static inline double rlog(double complex z)
+{
+#if defined(__APPLE__)
+    return (cimag(z) == 0.0) ? log(fabs(creal(z))) : creal(clog(z));
+#else
+    return creal(clog(z));
+#endif
+}
+
+void p2x_igd_ilm(void *SS_ref_db, double eps){
+    SS_ref *d  = (SS_ref *) SS_ref_db;
+    
+    d->iguess[2]    = d->p[0];
+    d->iguess[0]    = 1.0 -d->p[2];
+    d->iguess[3]   = d->p[0] + d->p[3];
+    d->iguess[1]    = (-d->p[0] -d->p[1] -d->p[2] + 1.0)/(1.0 -d->p[2]);
+    
+    for (int i = 0; i < d->n_xeos; i++){
+        if (d->iguess[i] < d->bounds[i][0]){
+            d->iguess[i] = d->bounds[i][0];
+        }
+        if (d->iguess[i] > d->bounds[i][1]){
+            d->iguess[i] = d->bounds[i][1];
+        }
+    }
+}
+
+/**
+    Endmember to xeos for cpx
+*/
+void p2x_igd_cpx(void *SS_ref_db, double eps){
+    SS_ref *d  = (SS_ref *) SS_ref_db;
+    
+    d->iguess[6]   = d->p[3];
+    d->iguess[5]    = d->p[4];
+    d->iguess[7]    = 0.5*d->p[5];
+    d->iguess[3]    = d->p[6];
+    d->iguess[8]    = d->p[9];
+    d->iguess[1]    = d->p[2] + d->p[3] + d->p[4] + d->p[5];
+    d->iguess[2]    = -d->p[0] -d->p[2] -d->p[3] -d->p[4] -d->p[5] -d->p[6] -d->p[9] + 1.0;
+    d->iguess[0]    = 0.5*(2.0*d->p[1] + d->p[8])/(-0.5*d->p[0] -d->p[2] -d->p[3] -d->p[4] - 0.75*d->p[5] -d->p[6] -d->p[9] + 1.0);
+    d->iguess[4]    = d->p[1]/(-d->p[2] -d->p[3] -d->p[4] - 0.5*d->p[5] -d->p[6] -d->p[9] + 1.0) -d->iguess[0];
+    
+    for (int i = 0; i < d->n_xeos; i++){
+        if (d->iguess[i] < d->bounds[i][0]){
+            d->iguess[i] = d->bounds[i][0];
+        }
+        if (d->iguess[i] > d->bounds[i][1]){
+            d->iguess[i] = d->bounds[i][1];
+        }
+    }
+}
+
+/**
+    Endmember to xeos for liq
+*/
+void p2x_igd_liq(void *SS_ref_db, double eps){
+    SS_ref *d  = (SS_ref *) SS_ref_db;
+    
+    d->iguess[9]  = d->p[10];
+    d->iguess[10]  = d->p[11];
+    d->iguess[11]  = d->p[12];
+    d->iguess[12]  = d->p[13];
+    d->iguess[8]   = 1.0/6.0*(6.0*d->p[13] + 6.0*d->p[9])/(d->p[10] + 2.0/3.0*d->p[11] - 1.0/6.0*d->p[12] + 1.0/3.0*d->p[13] + 1.0);
+    d->iguess[7]   =d->p[8]/(d->p[10] + 2.0/3.0*d->p[11] - 1.0/6.0*d->p[12] + 1.0/3.0*d->p[13] + 1.0);
+    d->iguess[6]   =d->p[7]/(d->p[10] + 2.0/3.0*d->p[11] - 1.0/6.0*d->p[12] + 1.0/3.0*d->p[13] + 1.0);
+    d->iguess[5]   =d->p[6]/(d->p[10] + 2.0/3.0*d->p[11] - 1.0/6.0*d->p[12] + 1.0/3.0*d->p[13] + 1.0);
+    d->iguess[4]   = 1.0/6.0*(6.0*d->p[11] + 6.0*d->p[5])/(d->p[10] + 2.0/3.0*d->p[11] - 1.0/6.0*d->p[12] + 1.0/3.0*d->p[13] + 1.0);
+    d->iguess[3]   =d->p[4]/(d->p[10] + 2.0/3.0*d->p[11] - 1.0/6.0*d->p[12] + 1.0/3.0*d->p[13] + 1.0);
+    d->iguess[2]   = 1.0/6.0*(3.0*d->p[12] + 6.0*d->p[3])/(d->p[10] + 2.0/3.0*d->p[11] - 1.0/6.0*d->p[12] + 1.0/3.0*d->p[13] + 1.0);
+    d->iguess[0]   = 1.0/6.0*(6.0*d->p[10] + 6.0*d->p[2])/(d->p[10] + 2.0/3.0*d->p[11] - 1.0/6.0*d->p[12] + 1.0/3.0*d->p[13] + 1.0);
+    d->iguess[1]   = 1.0/6.0*(6.0*d->p[1] + 6.0*d->p[10])/(d->p[10] + 2.0/3.0*d->p[11] - 1.0/6.0*d->p[12] + 1.0/3.0*d->p[13] + 1.0);
+    
+    for (int i = 0; i < d->n_xeos; i++){
+        if (d->iguess[i] < d->bounds[i][0]){
+            d->iguess[i] = d->bounds[i][0];
+        }
+        if (d->iguess[i] > d->bounds[i][1]){
+            d->iguess[i] = d->bounds[i][1];
+        }
+    }
+}
+
+/**
+    Endmember to xeos for opx
+*/
+void p2x_igd_opx(void *SS_ref_db, double eps){
+    SS_ref *d  = (SS_ref *) SS_ref_db;
+    
+    d->iguess[2]    = d->p[3];
+    d->iguess[6]   = d->p[5];
+    d->iguess[5]    = 0.5*d->p[6];
+    d->iguess[4]    = d->p[7];
+    d->iguess[7]    = d->p[8];
+    d->iguess[1]    = d->p[4] + d->p[5] + d->p[6] + d->p[7];
+    d->iguess[0]    = 0.5*(2.0*d->p[1] + d->p[2])/(-0.5*d->p[3] - 0.5*d->p[4] - 0.5*d->p[5] - 0.25*d->p[6] - 0.5*d->p[7] -d->p[8] + 1.0);
+    d->iguess[3]    = d->p[1]/(-d->p[4] -d->p[5] - 0.5*d->p[6] -d->p[7] -d->p[8] + 1.0) -d->iguess[0];
+    
+    for (int i = 0; i < d->n_xeos; i++){
+        if (d->iguess[i] < d->bounds[i][0]){
+            d->iguess[i] = d->bounds[i][0];
+        }
+        if (d->iguess[i] > d->bounds[i][1]){
+            d->iguess[i] = d->bounds[i][1];
+        }
+    }
+}
+
+
+/**
+    Endmember to xeos for ol
+*/
+void p2x_igd_ol(void *SS_ref_db, double eps){
+    SS_ref *d  = (SS_ref *) SS_ref_db;
+    
+    d->iguess[1]    = d->p[0];
+    d->iguess[2]    = 0.5*(d->p[0]*d->p[1] + d->p[3])/(1.0 - 0.5*d->p[0]);
+    d->iguess[0]    = 0.5*(2.0*d->p[1] + d->p[3])/(1.0 - 0.5*d->p[0]);
+    
+    for (int i = 0; i < d->n_xeos; i++){
+        if (d->iguess[i] < d->bounds[i][0]){
+            d->iguess[i] = d->bounds[i][0];
+        }
+        if (d->iguess[i] > d->bounds[i][1]){
+            d->iguess[i] = d->bounds[i][1];
+        }
+    }
+}
+
+/**
+    Endmember to xeos for spl
+*/
+void p2x_igd_spl(void *SS_ref_db, double eps){
+    SS_ref *d  = (SS_ref *) SS_ref_db;
+    
+    d->iguess[3]    = d->p[7];
+    d->iguess[2]    = d->p[6];
+    d->iguess[0]    = (d->p[2] + d->p[3] + d->p[4] + d->p[5] + 2.0*d->p[7])/(d->p[7] + 1.0);
+    d->iguess[1]    = (d->p[4] + d->p[5])/(-d->p[6] -d->p[7] + 1.0);
+    d->iguess[6]   = -d->p[4] + 0.5*d->p[5];
+    d->iguess[5]   = d->p[2] - 0.5*d->p[3] + d->p[4] - 0.5*d->p[5] + 0.5*d->p[7];
+    d->iguess[4]   = -1.5*d->p[1] -d->p[2] -d->p[3] -d->p[4] -d->p[5] -d->p[7] + 1.0;
+    
+    for (int i = 0; i < d->n_xeos; i++){
+        if (d->iguess[i] < d->bounds[i][0]){
+            d->iguess[i] = d->bounds[i][0];
+        }
+        if (d->iguess[i] > d->bounds[i][1]){
+            d->iguess[i] = d->bounds[i][1];
+        }
+    }
+}
+
+/**
+    Endmember to xeos for fsp
+*/
+void p2x_igd_fsp(void *SS_ref_db, double eps){
+    SS_ref *d  = (SS_ref *) SS_ref_db;
+    
+    d->iguess[2]    = d->p[3];
+    d->iguess[1]    = d->p[2];
+    d->iguess[0]   = d->p[1] + 0.5*d->p[3];
+    
+    for (int i = 0; i < d->n_xeos; i++){
+        if (d->iguess[i] < d->bounds[i][0]){
+            d->iguess[i] = d->bounds[i][0];
+        }
+        if (d->iguess[i] > d->bounds[i][1]){
+            d->iguess[i] = d->bounds[i][1];
+        }
+    }
+}
+
+/**
+    Endmember to xeos for g
+*/
+void p2x_igd_g(void *SS_ref_db, double eps){
+    SS_ref *d  = (SS_ref *) SS_ref_db;
+    
+    d->iguess[3]   = d->p[4];
+    d->iguess[4]    = 0.25*d->p[5];
+    d->iguess[2]    = d->p[3];
+    d->iguess[1]    = d->p[2] + d->p[3];
+    d->iguess[0]    = d->p[1]/(-d->p[2] -d->p[3] + 1.0);
+    
+    for (int i = 0; i < d->n_xeos; i++){
+        if (d->iguess[i] < d->bounds[i][0]){
+            d->iguess[i] = d->bounds[i][0];
+        }
+        if (d->iguess[i] > d->bounds[i][1]){
+            d->iguess[i] = d->bounds[i][1];
+        }
+    }
+}
+
+    
+/**
+    Endmember fraction of liq
+*/
+
+static inline void mu_Gex_sym_n2(SS_ref *d, double *mu_Gex)
+{
+    int n = d->n_em, jmax = d->n_xeos, it = 0;
+    double *p = d->p, *Wv = d->W, Q = 0.0, Wp[n];
+    for (int i = 0; i < n; i++) Wp[i] = 0.0;
+    for (int j = 0; j < jmax; j++) {
+        for (int k = j + 1; k < n; k++) {
+            double w = Wv[it++];
+            Wp[j] += w * p[k];
+            Wp[k] += w * p[j];
+            Q += w * p[j] * p[k];
+        }
+    }
+    for (int i = 0; i < n; i++) mu_Gex[i] = Wp[i] - Q;
+}
+
+static inline void mu_Gex_asym_n2(SS_ref *d, double *mu_Gex)
+{
+    int n = d->n_em, jmax = d->n_xeos, it = 0;
+    double *phi = d->mat_phi, *v = d->v, *Wv = d->W, Q = 0.0, Bf[n];
+    for (int i = 0; i < n; i++) Bf[i] = 0.0;
+    for (int j = 0; j < jmax; j++) {
+        for (int k = j + 1; k < n; k++) {
+            double b = Wv[it++] * 2.0 / (v[j] + v[k]);
+            Bf[j] += b * phi[k];
+            Bf[k] += b * phi[j];
+            Q += b * phi[j] * phi[k];
+        }
+    }
+    for (int i = 0; i < n; i++) mu_Gex[i] = v[i] * (Bf[i] - Q);
+}
+
+void px_igd_liq(void *SS_ref_db, const double *x){
+    SS_ref *d  = (SS_ref *) SS_ref_db;
+    double *p = d->p;
+        p[0]           = -x[0] + 2.0/3.0*x[10]*(-x[0] -x[1] -x[2] -x[3] -x[4] -x[5] -x[6] -x[7] -x[8]) + 1.0/6.0*x[11]*(x[0] + x[1] + x[2] + x[3] + x[4] + x[5] + x[6] + x[7] + x[8] - 3.0) + 1.0/3.0*x[12]*(-x[0] -x[1] -x[2] -x[3] -x[4] -x[5] -x[6] -x[7] -x[8]) -x[1] -x[2] -x[3] -x[4] -x[5] -x[6] -x[7] -x[8] + x[9]*(-x[0] -x[1] -x[2] -x[3] -x[4] -x[5] -x[6] -x[7] -x[8] + 1.0) + 1.0;
+        p[1]           = 2.0/3.0*x[10]*x[1] - 1.0/6.0*x[11]*x[1] + 1.0/3.0*x[12]*x[1] + x[1]*x[9] + x[1] -x[9];
+        p[2]           = 2.0/3.0*x[0]*x[10] - 1.0/6.0*x[0]*x[11] + 1.0/3.0*x[0]*x[12] + x[0]*x[9] + x[0] -x[9];
+        p[3]           = 2.0/3.0*x[10]*x[2] - 1.0/6.0*x[11]*x[2] - 0.5*x[11] + 1.0/3.0*x[12]*x[2] + x[2]*x[9] + x[2];
+        p[4]           = 2.0/3.0*x[10]*x[3] - 1.0/6.0*x[11]*x[3] + 1.0/3.0*x[12]*x[3] + x[3]*x[9] + x[3];
+        p[5]           = 2.0/3.0*x[10]*x[4] -x[10] - 1.0/6.0*x[11]*x[4] + 1.0/3.0*x[12]*x[4] + x[4]*x[9] + x[4];
+        p[6]           = 2.0/3.0*x[10]*x[5] - 1.0/6.0*x[11]*x[5] + 1.0/3.0*x[12]*x[5] + x[5]*x[9] + x[5];
+        p[7]           = 2.0/3.0*x[10]*x[6] - 1.0/6.0*x[11]*x[6] + 1.0/3.0*x[12]*x[6] + x[6]*x[9] + x[6];
+        p[8]           = 2.0/3.0*x[10]*x[7] - 1.0/6.0*x[11]*x[7] + 1.0/3.0*x[12]*x[7] + x[7]*x[9] + x[7];
+        p[9]           = 2.0/3.0*x[10]*x[8] - 1.0/6.0*x[11]*x[8] + 1.0/3.0*x[12]*x[8] -x[12] + x[8]*x[9] + x[8];
+        p[10]           = x[9];
+        p[11]           = x[10];
+        p[12]           = x[11];
+        p[13]           = x[12];
+}
+
+    
+/**
+    Endmember fraction of fsp
+*/
+void px_igd_fsp(void *SS_ref_db, const double *x){
+    SS_ref *d  = (SS_ref *) SS_ref_db;
+    double *p = d->p;
+        p[0]           = -x[0] -x[1] - 0.5*x[2] + 1.0;
+        p[1]           = x[0] - 0.5*x[2];
+        p[2]           = x[1];
+        p[3]           = x[2];
+}
+
+    
+/**
+    Endmember fraction of spl
+*/
+void px_igd_spl(void *SS_ref_db, const double *x){
+    SS_ref *d  = (SS_ref *) SS_ref_db;
+    double *p = d->p;
+        p[0]           = -1.0/3.0*x[0]*x[3] - 1.0/3.0*x[0] -x[2] + 1.0/3.0*x[3] + 2.0/3.0*x[4] + 1.0/3.0;
+        p[1]           = -2.0/3.0*x[0]*x[3] - 2.0/3.0*x[0] + 2.0/3.0*x[3] - 2.0/3.0*x[4] + 2.0/3.0;
+        p[2]           = 1.0/3.0*x[0]*x[3] + 1.0/3.0*x[0] + 1.0/3.0*x[1]*x[2] + 1.0/3.0*x[1]*x[3] - 1.0/3.0*x[1] -x[3] + 2.0/3.0*x[5] + 2.0/3.0*x[6];
+        p[3]           = 2.0/3.0*x[0]*x[3] + 2.0/3.0*x[0] + 2.0/3.0*x[1]*x[2] + 2.0/3.0*x[1]*x[3] - 2.0/3.0*x[1] -x[3] - 2.0/3.0*x[5] - 2.0/3.0*x[6];
+        p[4]           = -1.0/3.0*x[1]*x[2] - 1.0/3.0*x[1]*x[3] + 1.0/3.0*x[1] - 2.0/3.0*x[6];
+        p[5]           = -2.0/3.0*x[1]*x[2] - 2.0/3.0*x[1]*x[3] + 2.0/3.0*x[1] + 2.0/3.0*x[6];
+        p[6]           = x[2];
+        p[7]           = x[3];
+}
+
+    
+/**
+    Endmember fraction of g
+*/
+void px_igd_g(void *SS_ref_db, const double *x){
+    SS_ref *d  = (SS_ref *) SS_ref_db;
+    double *p = d->p;
+        p[0]           = x[0]*x[1] -x[0] -x[1] -x[3] - 4.0*x[4] + 1.0;
+        p[1]           = -x[0]*x[1] + x[0];
+        p[2]           = x[1] -x[2];
+        p[3]           = x[2];
+        p[4]           = x[3];
+        p[5]           = 4.0*x[4];
+}
+
+    
+/**
+    Endmember fraction of ol
+*/
+void px_igd_ol(void *SS_ref_db, const double *x){
+    SS_ref *d  = (SS_ref *) SS_ref_db;
+    double *p = d->p;
+        p[0]           = x[1];
+        p[1]           = x[0] -x[2];
+        p[2]           = x[0]*x[1] -x[0] -x[1] -x[2] + 1.0;
+        p[3]           = -x[0]*x[1] + 2.0*x[2];
+}
+
+    
+/**
+    Endmember fraction of opx
+*/
+void px_igd_opx(void *SS_ref_db, const double *x){
+    SS_ref *d  = (SS_ref *) SS_ref_db;
+    double *p = d->p;
+        p[0]           = x[0]*x[2] + x[0]*x[7] -x[0] -x[1]*x[3] -x[1] -x[2] + x[3]*x[5] -x[3]*x[7] + x[3] -x[7] + 1.0;
+        p[1]           = -x[0]*x[1] + x[0]*x[5] -x[0]*x[7] + x[0] -x[1]*x[3] + x[3]*x[5] -x[3]*x[7] + x[3];
+        p[2]           = x[0]*x[1] -x[0]*x[2] -x[0]*x[5] + 2.0*x[1]*x[3] - 2.0*x[3]*x[5] + 2.0*x[3]*x[7] - 2.0*x[3];
+        p[3]           = x[2];
+        p[4]           = x[1] -x[4] - 2.0*x[5] -x[6];
+        p[5]           = x[6];
+        p[6]           = 2.0*x[5];
+        p[7]           = x[4];
+        p[8]           = x[7];
+}
+
+    
+/**
+    Endmember fraction of cpx
+*/
+void px_igd_cpx(void *SS_ref_db, const double *x){
+    SS_ref *d  = (SS_ref *) SS_ref_db;
+    double *p = d->p;
+        p[0]           = -x[1] -x[2] -x[3] -x[8] + 1.0;
+        p[1]           = -x[0]*x[1] -x[0]*x[3] + x[0]*x[7] -x[0]*x[8] + x[0] -x[1]*x[4] -x[3]*x[4] + x[4]*x[7] -x[4]*x[8] + x[4];
+        p[2]           = x[1] -x[5] -x[6] - 2.0*x[7];
+        p[3]           = x[6];
+        p[4]           = x[5];
+        p[5]           = 2.0*x[7];
+        p[6]           = x[3];
+        p[7]           = -x[0]*x[2] -x[1]*x[4] + x[2] -x[3]*x[4] + x[4]*x[7] -x[4]*x[8] + x[4];
+        p[8]           = x[0]*x[1] + x[0]*x[2] + x[0]*x[3] -x[0]*x[7] + x[0]*x[8] -x[0] + 2.0*x[1]*x[4] + 2.0*x[3]*x[4] - 2.0*x[4]*x[7] + 2.0*x[4]*x[8] - 2.0*x[4];
+        p[9]           = x[8];
+}
+
+    
+/**
+    Endmember fraction of ilm
+*/
+void px_igd_ilm(void *SS_ref_db, const double *x){
+    SS_ref *d  = (SS_ref *) SS_ref_db;
+    double *p = d->p;
+        p[0]           = x[2];
+        p[1]           = -x[0]*x[1] + x[0] -x[2];
+        p[2]           = 1.0 -x[0];
+        p[3]           = -x[2] + x[3];
+        p[4]           = x[0]*x[1] + x[2] -x[3];
+}
+
+
+
+/**
+    Update dpdx matrix of liq
+*/
+void dpdx_igd_liq(void *SS_ref_db, const double *x){
+    SS_ref *d  = (SS_ref *) SS_ref_db;
+    double **dp_dx = d->dp_dx;
+
+    dp_dx[0][0] = -2.0/3.0*x[10] + 1.0/6.0*x[11] - 1.0/3.0*x[12] -x[9] - 1.0;      dp_dx[0][1] = -2.0/3.0*x[10] + 1.0/6.0*x[11] - 1.0/3.0*x[12] -x[9] - 1.0;      dp_dx[0][2] = -2.0/3.0*x[10] + 1.0/6.0*x[11] - 1.0/3.0*x[12] -x[9] - 1.0;      dp_dx[0][3] = -2.0/3.0*x[10] + 1.0/6.0*x[11] - 1.0/3.0*x[12] -x[9] - 1.0;      dp_dx[0][4] = -2.0/3.0*x[10] + 1.0/6.0*x[11] - 1.0/3.0*x[12] -x[9] - 1.0;      dp_dx[0][5] = -2.0/3.0*x[10] + 1.0/6.0*x[11] - 1.0/3.0*x[12] -x[9] - 1.0;      dp_dx[0][6] = -2.0/3.0*x[10] + 1.0/6.0*x[11] - 1.0/3.0*x[12] -x[9] - 1.0;      dp_dx[0][7] = -2.0/3.0*x[10] + 1.0/6.0*x[11] - 1.0/3.0*x[12] -x[9] - 1.0;      dp_dx[0][8] = -2.0/3.0*x[10] + 1.0/6.0*x[11] - 1.0/3.0*x[12] -x[9] - 1.0;      dp_dx[0][9] = -x[0] -x[1] -x[2] -x[3] -x[4] -x[5] -x[6] -x[7] -x[8] + 1.0;      dp_dx[0][10] = -2.0/3.0*x[0] - 2.0/3.0*x[1] - 2.0/3.0*x[2] - 2.0/3.0*x[3] - 2.0/3.0*x[4] - 2.0/3.0*x[5] - 2.0/3.0*x[6] - 2.0/3.0*x[7] - 2.0/3.0*x[8];      dp_dx[0][11] = 1.0/6.0*x[0] + 1.0/6.0*x[1] + 1.0/6.0*x[2] + 1.0/6.0*x[3] + 1.0/6.0*x[4] + 1.0/6.0*x[5] + 1.0/6.0*x[6] + 1.0/6.0*x[7] + 1.0/6.0*x[8] - 0.5;      dp_dx[0][12] = -1.0/3.0*x[0] - 1.0/3.0*x[1] - 1.0/3.0*x[2] - 1.0/3.0*x[3] - 1.0/3.0*x[4] - 1.0/3.0*x[5] - 1.0/3.0*x[6] - 1.0/3.0*x[7] - 1.0/3.0*x[8];      
+    dp_dx[1][0] = 0.0;      dp_dx[1][1] = 2.0/3.0*x[10] - 1.0/6.0*x[11] + 1.0/3.0*x[12] + x[9] + 1.0;      dp_dx[1][2] = 0.0;      dp_dx[1][3] = 0.0;      dp_dx[1][4] = 0.0;      dp_dx[1][5] = 0.0;      dp_dx[1][6] = 0.0;      dp_dx[1][7] = 0.0;      dp_dx[1][8] = 0.0;      dp_dx[1][9] = x[1] - 1.0;      dp_dx[1][10] = 2.0/3.0*x[1];      dp_dx[1][11] = -1.0/6.0*x[1];      dp_dx[1][12] = 1.0/3.0*x[1];      
+    dp_dx[2][0] = 2.0/3.0*x[10] - 1.0/6.0*x[11] + 1.0/3.0*x[12] + x[9] + 1.0;      dp_dx[2][1] = 0.0;      dp_dx[2][2] = 0.0;      dp_dx[2][3] = 0.0;      dp_dx[2][4] = 0.0;      dp_dx[2][5] = 0.0;      dp_dx[2][6] = 0.0;      dp_dx[2][7] = 0.0;      dp_dx[2][8] = 0.0;      dp_dx[2][9] = x[0] - 1.0;      dp_dx[2][10] = 2.0/3.0*x[0];      dp_dx[2][11] = -1.0/6.0*x[0];      dp_dx[2][12] = 1.0/3.0*x[0];      
+    dp_dx[3][0] = 0.0;      dp_dx[3][1] = 0.0;      dp_dx[3][2] = 2.0/3.0*x[10] - 1.0/6.0*x[11] + 1.0/3.0*x[12] + x[9] + 1.0;      dp_dx[3][3] = 0.0;      dp_dx[3][4] = 0.0;      dp_dx[3][5] = 0.0;      dp_dx[3][6] = 0.0;      dp_dx[3][7] = 0.0;      dp_dx[3][8] = 0.0;      dp_dx[3][9] = x[2];      dp_dx[3][10] = 2.0/3.0*x[2];      dp_dx[3][11] = -1.0/6.0*x[2] - 0.5;      dp_dx[3][12] = 1.0/3.0*x[2];      
+    dp_dx[4][0] = 0.0;      dp_dx[4][1] = 0.0;      dp_dx[4][2] = 0.0;      dp_dx[4][3] = 2.0/3.0*x[10] - 1.0/6.0*x[11] + 1.0/3.0*x[12] + x[9] + 1.0;      dp_dx[4][4] = 0.0;      dp_dx[4][5] = 0.0;      dp_dx[4][6] = 0.0;      dp_dx[4][7] = 0.0;      dp_dx[4][8] = 0.0;      dp_dx[4][9] = x[3];      dp_dx[4][10] = 2.0/3.0*x[3];      dp_dx[4][11] = -1.0/6.0*x[3];      dp_dx[4][12] = 1.0/3.0*x[3];      
+    dp_dx[5][0] = 0.0;      dp_dx[5][1] = 0.0;      dp_dx[5][2] = 0.0;      dp_dx[5][3] = 0.0;      dp_dx[5][4] = 2.0/3.0*x[10] - 1.0/6.0*x[11] + 1.0/3.0*x[12] + x[9] + 1.0;      dp_dx[5][5] = 0.0;      dp_dx[5][6] = 0.0;      dp_dx[5][7] = 0.0;      dp_dx[5][8] = 0.0;      dp_dx[5][9] = x[4];      dp_dx[5][10] = 2.0/3.0*x[4] - 1.0;      dp_dx[5][11] = -1.0/6.0*x[4];      dp_dx[5][12] = 1.0/3.0*x[4];      
+    dp_dx[6][0] = 0.0;      dp_dx[6][1] = 0.0;      dp_dx[6][2] = 0.0;      dp_dx[6][3] = 0.0;      dp_dx[6][4] = 0.0;      dp_dx[6][5] = 2.0/3.0*x[10] - 1.0/6.0*x[11] + 1.0/3.0*x[12] + x[9] + 1.0;      dp_dx[6][6] = 0.0;      dp_dx[6][7] = 0.0;      dp_dx[6][8] = 0.0;      dp_dx[6][9] = x[5];      dp_dx[6][10] = 2.0/3.0*x[5];      dp_dx[6][11] = -1.0/6.0*x[5];      dp_dx[6][12] = 1.0/3.0*x[5];      
+    dp_dx[7][0] = 0.0;      dp_dx[7][1] = 0.0;      dp_dx[7][2] = 0.0;      dp_dx[7][3] = 0.0;      dp_dx[7][4] = 0.0;      dp_dx[7][5] = 0.0;      dp_dx[7][6] = 2.0/3.0*x[10] - 1.0/6.0*x[11] + 1.0/3.0*x[12] + x[9] + 1.0;      dp_dx[7][7] = 0.0;      dp_dx[7][8] = 0.0;      dp_dx[7][9] = x[6];      dp_dx[7][10] = 2.0/3.0*x[6];      dp_dx[7][11] = -1.0/6.0*x[6];      dp_dx[7][12] = 1.0/3.0*x[6];      
+    dp_dx[8][0] = 0.0;      dp_dx[8][1] = 0.0;      dp_dx[8][2] = 0.0;      dp_dx[8][3] = 0.0;      dp_dx[8][4] = 0.0;      dp_dx[8][5] = 0.0;      dp_dx[8][6] = 0.0;      dp_dx[8][7] = 2.0/3.0*x[10] - 1.0/6.0*x[11] + 1.0/3.0*x[12] + x[9] + 1.0;      dp_dx[8][8] = 0.0;      dp_dx[8][9] = x[7];      dp_dx[8][10] = 2.0/3.0*x[7];      dp_dx[8][11] = -1.0/6.0*x[7];      dp_dx[8][12] = 1.0/3.0*x[7];      
+    dp_dx[9][0] = 0.0;      dp_dx[9][1] = 0.0;      dp_dx[9][2] = 0.0;      dp_dx[9][3] = 0.0;      dp_dx[9][4] = 0.0;      dp_dx[9][5] = 0.0;      dp_dx[9][6] = 0.0;      dp_dx[9][7] = 0.0;      dp_dx[9][8] = 2.0/3.0*x[10] - 1.0/6.0*x[11] + 1.0/3.0*x[12] + x[9] + 1.0;      dp_dx[9][9] = x[8];      dp_dx[9][10] = 2.0/3.0*x[8];      dp_dx[9][11] = -1.0/6.0*x[8];      dp_dx[9][12] = 1.0/3.0*x[8] - 1.0;      
+    dp_dx[10][0] = 0.0;      dp_dx[10][1] = 0.0;      dp_dx[10][2] = 0.0;      dp_dx[10][3] = 0.0;      dp_dx[10][4] = 0.0;      dp_dx[10][5] = 0.0;      dp_dx[10][6] = 0.0;      dp_dx[10][7] = 0.0;      dp_dx[10][8] = 0.0;      dp_dx[10][9] = 1.00000000000000;      dp_dx[10][10] = 0.0;      dp_dx[10][11] = 0.0;      dp_dx[10][12] = 0.0;      
+    dp_dx[11][0] = 0.0;      dp_dx[11][1] = 0.0;      dp_dx[11][2] = 0.0;      dp_dx[11][3] = 0.0;      dp_dx[11][4] = 0.0;      dp_dx[11][5] = 0.0;      dp_dx[11][6] = 0.0;      dp_dx[11][7] = 0.0;      dp_dx[11][8] = 0.0;      dp_dx[11][9] = 0.0;      dp_dx[11][10] = 1.00000000000000;      dp_dx[11][11] = 0.0;      dp_dx[11][12] = 0.0;      
+    dp_dx[12][0] = 0.0;      dp_dx[12][1] = 0.0;      dp_dx[12][2] = 0.0;      dp_dx[12][3] = 0.0;      dp_dx[12][4] = 0.0;      dp_dx[12][5] = 0.0;      dp_dx[12][6] = 0.0;      dp_dx[12][7] = 0.0;      dp_dx[12][8] = 0.0;      dp_dx[12][9] = 0.0;      dp_dx[12][10] = 0.0;      dp_dx[12][11] = 1.00000000000000;      dp_dx[12][12] = 0.0;      
+    dp_dx[13][0] = 0.0;      dp_dx[13][1] = 0.0;      dp_dx[13][2] = 0.0;      dp_dx[13][3] = 0.0;      dp_dx[13][4] = 0.0;      dp_dx[13][5] = 0.0;      dp_dx[13][6] = 0.0;      dp_dx[13][7] = 0.0;      dp_dx[13][8] = 0.0;      dp_dx[13][9] = 0.0;      dp_dx[13][10] = 0.0;      dp_dx[13][11] = 0.0;      dp_dx[13][12] = 1.00000000000000;      
+}
+
+/**
+    Update dpdx matrix of fsp
+*/
+void dpdx_igd_fsp(void *SS_ref_db, const double *x){
+    SS_ref *d  = (SS_ref *) SS_ref_db;
+    double **dp_dx = d->dp_dx;
+
+    dp_dx[0][0] = -1.00000000000000;      dp_dx[0][1] = -1.00000000000000;      dp_dx[0][2] = -0.500000000000000;      
+    dp_dx[1][0] = 1.00000000000000;      dp_dx[1][1] = 0.0;      dp_dx[1][2] = -0.500000000000000;      
+    dp_dx[2][0] = 0.0;      dp_dx[2][1] = 1.00000000000000;      dp_dx[2][2] = 0.0;      
+    dp_dx[3][0] = 0.0;      dp_dx[3][1] = 0.0;      dp_dx[3][2] = 1.00000000000000;      
+}
+
+
+/**
+    Update dpdx matrix of spl
+*/
+void dpdx_igd_spl(void *SS_ref_db, const double *x){
+    SS_ref *d  = (SS_ref *) SS_ref_db;
+    double **dp_dx = d->dp_dx;
+
+    dp_dx[0][0] = -1.0/3.0*x[3] - 1.0/3.0;      dp_dx[0][1] = 0.0;      dp_dx[0][2] = -1.00000000000000;      dp_dx[0][3] = 1.0/3.0 - 1.0/3.0*x[0];      dp_dx[0][4] = 2.0/3.0;      dp_dx[0][5] = 0.0;      dp_dx[0][6] = 0.0;      
+    dp_dx[1][0] = -2.0/3.0*x[3] - 2.0/3.0;      dp_dx[1][1] = 0.0;      dp_dx[1][2] = 0.0;      dp_dx[1][3] = 2.0/3.0 - 2.0/3.0*x[0];      dp_dx[1][4] = -2.0/3.0;      dp_dx[1][5] = 0.0;      dp_dx[1][6] = 0.0;      
+    dp_dx[2][0] = 1.0/3.0*x[3] + 1.0/3.0;      dp_dx[2][1] = 1.0/3.0*x[2] + 1.0/3.0*x[3] - 1.0/3.0;      dp_dx[2][2] = 1.0/3.0*x[1];      dp_dx[2][3] = 1.0/3.0*x[0] + 1.0/3.0*x[1] - 1.0;      dp_dx[2][4] = 0.0;      dp_dx[2][5] = 2.0/3.0;      dp_dx[2][6] = 2.0/3.0;      
+    dp_dx[3][0] = 2.0/3.0*x[3] + 2.0/3.0;      dp_dx[3][1] = 2.0/3.0*x[2] + 2.0/3.0*x[3] - 2.0/3.0;      dp_dx[3][2] = 2.0/3.0*x[1];      dp_dx[3][3] = 2.0/3.0*x[0] + 2.0/3.0*x[1] - 1.0;      dp_dx[3][4] = 0.0;      dp_dx[3][5] = -2.0/3.0;      dp_dx[3][6] = -2.0/3.0;      
+    dp_dx[4][0] = 0.0;      dp_dx[4][1] = -1.0/3.0*x[2] - 1.0/3.0*x[3] + 1.0/3.0;      dp_dx[4][2] = -1.0/3.0*x[1];      dp_dx[4][3] = -1.0/3.0*x[1];      dp_dx[4][4] = 0.0;      dp_dx[4][5] = 0.0;      dp_dx[4][6] = -2.0/3.0;      
+    dp_dx[5][0] = 0.0;      dp_dx[5][1] = -2.0/3.0*x[2] - 2.0/3.0*x[3] + 2.0/3.0;      dp_dx[5][2] = -2.0/3.0*x[1];      dp_dx[5][3] = -2.0/3.0*x[1];      dp_dx[5][4] = 0.0;      dp_dx[5][5] = 0.0;      dp_dx[5][6] = 2.0/3.0;      
+    dp_dx[6][0] = 0.0;      dp_dx[6][1] = 0.0;      dp_dx[6][2] = 1.00000000000000;      dp_dx[6][3] = 0.0;      dp_dx[6][4] = 0.0;      dp_dx[6][5] = 0.0;      dp_dx[6][6] = 0.0;      
+    dp_dx[7][0] = 0.0;      dp_dx[7][1] = 0.0;      dp_dx[7][2] = 0.0;      dp_dx[7][3] = 1.00000000000000;      dp_dx[7][4] = 0.0;      dp_dx[7][5] = 0.0;      dp_dx[7][6] = 0.0;      
+}
+
+
+/**
+    Update dpdx matrix of g
+*/
+void dpdx_igd_g(void *SS_ref_db, const double *x){
+    SS_ref *d  = (SS_ref *) SS_ref_db;
+    double **dp_dx = d->dp_dx;
+
+    dp_dx[0][0] = x[1] - 1.0;      dp_dx[0][1] = x[0] - 1.0;      dp_dx[0][2] = 0.0;      dp_dx[0][3] = -1.00000000000000;      dp_dx[0][4] = -4.00000000000000;      
+    dp_dx[1][0] = 1.0 -x[1];      dp_dx[1][1] = -x[0];      dp_dx[1][2] = 0.0;      dp_dx[1][3] = 0.0;      dp_dx[1][4] = 0.0;      
+    dp_dx[2][0] = 0.0;      dp_dx[2][1] = 1.00000000000000;      dp_dx[2][2] = -1.00000000000000;      dp_dx[2][3] = 0.0;      dp_dx[2][4] = 0.0;      
+    dp_dx[3][0] = 0.0;      dp_dx[3][1] = 0.0;      dp_dx[3][2] = 1.00000000000000;      dp_dx[3][3] = 0.0;      dp_dx[3][4] = 0.0;      
+    dp_dx[4][0] = 0.0;      dp_dx[4][1] = 0.0;      dp_dx[4][2] = 0.0;      dp_dx[4][3] = 1.00000000000000;      dp_dx[4][4] = 0.0;      
+    dp_dx[5][0] = 0.0;      dp_dx[5][1] = 0.0;      dp_dx[5][2] = 0.0;      dp_dx[5][3] = 0.0;      dp_dx[5][4] = 4.00000000000000;      
+}
+
+
+/**
+    Update dpdx matrix of ol
+*/
+void dpdx_igd_ol(void *SS_ref_db, const double *x){
+    SS_ref *d  = (SS_ref *) SS_ref_db;
+    double **dp_dx = d->dp_dx;
+
+    dp_dx[0][0] = 0.0;      dp_dx[0][1] = 1.00000000000000;      dp_dx[0][2] = 0.0;      
+    dp_dx[1][0] = 1.00000000000000;      dp_dx[1][1] = 0.0;      dp_dx[1][2] = -1.00000000000000;      
+    dp_dx[2][0] = x[1] - 1.0;      dp_dx[2][1] = x[0] - 1.0;      dp_dx[2][2] = -1.00000000000000;      
+    dp_dx[3][0] = -x[1];      dp_dx[3][1] = -x[0];      dp_dx[3][2] = 2.00000000000000;      
+}
+
+
+/**
+    Update dpdx matrix of opx
+*/
+void dpdx_igd_opx(void *SS_ref_db, const double *x){
+    SS_ref *d  = (SS_ref *) SS_ref_db;
+    double **dp_dx = d->dp_dx;
+
+    dp_dx[0][0] = x[2] + x[7] - 1.0;      dp_dx[0][1] = -x[3] - 1.0;      dp_dx[0][2] = x[0] - 1.0;      dp_dx[0][3] = -x[1] + x[5] -x[7] + 1.0;      dp_dx[0][4] = 0.0;      dp_dx[0][5] = x[3];      dp_dx[0][6] = 0.0;      dp_dx[0][7] = x[0] -x[3] - 1.0;      
+    dp_dx[1][0] = -x[1] + x[5] -x[7] + 1.0;      dp_dx[1][1] = -x[0] -x[3];      dp_dx[1][2] = 0.0;      dp_dx[1][3] = -x[1] + x[5] -x[7] + 1.0;      dp_dx[1][4] = 0.0;      dp_dx[1][5] = x[0] + x[3];      dp_dx[1][6] = 0.0;      dp_dx[1][7] = -x[0] -x[3];      
+    dp_dx[2][0] = x[1] -x[2] -x[5];      dp_dx[2][1] = x[0] + 2.0*x[3];      dp_dx[2][2] = -x[0];      dp_dx[2][3] = 2.0*x[1] - 2.0*x[5] + 2.0*x[7] - 2.0;      dp_dx[2][4] = 0.0;      dp_dx[2][5] = -x[0] - 2.0*x[3];      dp_dx[2][6] = 0.0;      dp_dx[2][7] = 2.0*x[3];      
+    dp_dx[3][0] = 0.0;      dp_dx[3][1] = 0.0;      dp_dx[3][2] = 1.00000000000000;      dp_dx[3][3] = 0.0;      dp_dx[3][4] = 0.0;      dp_dx[3][5] = 0.0;      dp_dx[3][6] = 0.0;      dp_dx[3][7] = 0.0;      
+    dp_dx[4][0] = 0.0;      dp_dx[4][1] = 1.00000000000000;      dp_dx[4][2] = 0.0;      dp_dx[4][3] = 0.0;      dp_dx[4][4] = -1.00000000000000;      dp_dx[4][5] = -2.00000000000000;      dp_dx[4][6] = -1.00000000000000;      dp_dx[4][7] = 0.0;      
+    dp_dx[5][0] = 0.0;      dp_dx[5][1] = 0.0;      dp_dx[5][2] = 0.0;      dp_dx[5][3] = 0.0;      dp_dx[5][4] = 0.0;      dp_dx[5][5] = 0.0;      dp_dx[5][6] = 1.00000000000000;      dp_dx[5][7] = 0.0;      
+    dp_dx[6][0] = 0.0;      dp_dx[6][1] = 0.0;      dp_dx[6][2] = 0.0;      dp_dx[6][3] = 0.0;      dp_dx[6][4] = 0.0;      dp_dx[6][5] = 2.00000000000000;      dp_dx[6][6] = 0.0;      dp_dx[6][7] = 0.0;      
+    dp_dx[7][0] = 0.0;      dp_dx[7][1] = 0.0;      dp_dx[7][2] = 0.0;      dp_dx[7][3] = 0.0;      dp_dx[7][4] = 1.00000000000000;      dp_dx[7][5] = 0.0;      dp_dx[7][6] = 0.0;      dp_dx[7][7] = 0.0;      
+    dp_dx[8][0] = 0.0;      dp_dx[8][1] = 0.0;      dp_dx[8][2] = 0.0;      dp_dx[8][3] = 0.0;      dp_dx[8][4] = 0.0;      dp_dx[8][5] = 0.0;      dp_dx[8][6] = 0.0;      dp_dx[8][7] = 1.00000000000000;      
+}
+
+
+/**
+    Update dpdx matrix of cpx
+*/
+void dpdx_igd_cpx(void *SS_ref_db, const double *x){
+    SS_ref *d  = (SS_ref *) SS_ref_db;
+    double **dp_dx = d->dp_dx;
+
+    dp_dx[0][0] = 0.0;      dp_dx[0][1] = -1.00000000000000;      dp_dx[0][2] = -1.00000000000000;      dp_dx[0][3] = -1.00000000000000;      dp_dx[0][4] = 0.0;      dp_dx[0][5] = 0.0;      dp_dx[0][6] = 0.0;      dp_dx[0][7] = 0.0;      dp_dx[0][8] = -1.00000000000000;      
+    dp_dx[1][0] = -x[1] -x[3] + x[7] -x[8] + 1.0;      dp_dx[1][1] = -x[0] -x[4];      dp_dx[1][2] = 0.0;      dp_dx[1][3] = -x[0] -x[4];      dp_dx[1][4] = -x[1] -x[3] + x[7] -x[8] + 1.0;      dp_dx[1][5] = 0.0;      dp_dx[1][6] = 0.0;      dp_dx[1][7] = x[0] + x[4];      dp_dx[1][8] = -x[0] -x[4];      
+    dp_dx[2][0] = 0.0;      dp_dx[2][1] = 1.00000000000000;      dp_dx[2][2] = 0.0;      dp_dx[2][3] = 0.0;      dp_dx[2][4] = 0.0;      dp_dx[2][5] = -1.00000000000000;      dp_dx[2][6] = -1.00000000000000;      dp_dx[2][7] = -2.00000000000000;      dp_dx[2][8] = 0.0;      
+    dp_dx[3][0] = 0.0;      dp_dx[3][1] = 0.0;      dp_dx[3][2] = 0.0;      dp_dx[3][3] = 0.0;      dp_dx[3][4] = 0.0;      dp_dx[3][5] = 0.0;      dp_dx[3][6] = 1.00000000000000;      dp_dx[3][7] = 0.0;      dp_dx[3][8] = 0.0;      
+    dp_dx[4][0] = 0.0;      dp_dx[4][1] = 0.0;      dp_dx[4][2] = 0.0;      dp_dx[4][3] = 0.0;      dp_dx[4][4] = 0.0;      dp_dx[4][5] = 1.00000000000000;      dp_dx[4][6] = 0.0;      dp_dx[4][7] = 0.0;      dp_dx[4][8] = 0.0;      
+    dp_dx[5][0] = 0.0;      dp_dx[5][1] = 0.0;      dp_dx[5][2] = 0.0;      dp_dx[5][3] = 0.0;      dp_dx[5][4] = 0.0;      dp_dx[5][5] = 0.0;      dp_dx[5][6] = 0.0;      dp_dx[5][7] = 2.00000000000000;      dp_dx[5][8] = 0.0;      
+    dp_dx[6][0] = 0.0;      dp_dx[6][1] = 0.0;      dp_dx[6][2] = 0.0;      dp_dx[6][3] = 1.00000000000000;      dp_dx[6][4] = 0.0;      dp_dx[6][5] = 0.0;      dp_dx[6][6] = 0.0;      dp_dx[6][7] = 0.0;      dp_dx[6][8] = 0.0;      
+    dp_dx[7][0] = -x[2];      dp_dx[7][1] = -x[4];      dp_dx[7][2] = 1.0 -x[0];      dp_dx[7][3] = -x[4];      dp_dx[7][4] = -x[1] -x[3] + x[7] -x[8] + 1.0;      dp_dx[7][5] = 0.0;      dp_dx[7][6] = 0.0;      dp_dx[7][7] = x[4];      dp_dx[7][8] = -x[4];      
+    dp_dx[8][0] = x[1] + x[2] + x[3] -x[7] + x[8] - 1.0;      dp_dx[8][1] = x[0] + 2.0*x[4];      dp_dx[8][2] = x[0];      dp_dx[8][3] = x[0] + 2.0*x[4];      dp_dx[8][4] = 2.0*x[1] + 2.0*x[3] - 2.0*x[7] + 2.0*x[8] - 2.0;      dp_dx[8][5] = 0.0;      dp_dx[8][6] = 0.0;      dp_dx[8][7] = -x[0] - 2.0*x[4];      dp_dx[8][8] = x[0] + 2.0*x[4];      
+    dp_dx[9][0] = 0.0;      dp_dx[9][1] = 0.0;      dp_dx[9][2] = 0.0;      dp_dx[9][3] = 0.0;      dp_dx[9][4] = 0.0;      dp_dx[9][5] = 0.0;      dp_dx[9][6] = 0.0;      dp_dx[9][7] = 0.0;      dp_dx[9][8] = 1.00000000000000;      
+}
+
+
+/**
+    Update dpdx matrix of ilm
+*/
+void dpdx_igd_ilm(void *SS_ref_db, const double *x){
+    SS_ref *d  = (SS_ref *) SS_ref_db;
+    double **dp_dx = d->dp_dx;
+
+    dp_dx[0][0] = 0.0;      dp_dx[0][1] = 0.0;      dp_dx[0][2] = 1.00000000000000;      dp_dx[0][3] = 0.0;      
+    dp_dx[1][0] = 1.0 -x[1];      dp_dx[1][1] = -x[0];      dp_dx[1][2] = -1.00000000000000;      dp_dx[1][3] = 0.0;      
+    dp_dx[2][0] = -1.00000000000000;      dp_dx[2][1] = 0.0;      dp_dx[2][2] = 0.0;      dp_dx[2][3] = 0.0;      
+    dp_dx[3][0] = 0.0;      dp_dx[3][1] = 0.0;      dp_dx[3][2] = -1.00000000000000;      dp_dx[3][3] = 1.00000000000000;      
+    dp_dx[4][0] = x[1];      dp_dx[4][1] = x[0];      dp_dx[4][2] = 1.00000000000000;      dp_dx[4][3] = -1.00000000000000;      
+}
+
+
+    
+/**
+    Objective function of liq
+*/
+double obj_igd_liq(unsigned n, const double *x, double *grad, void *SS_ref_db){
+    SS_ref *d         = (SS_ref *) SS_ref_db;
+
+    int n_em          = d->n_em;
+    double P          = d->P;
+    double T          = d->T;
+    double R          = d->R;
+
+    double *gb        = d->gb_lvl;
+    double *mat_phi   = d->mat_phi;
+    double *mu_Gex    = d->mu_Gex;
+    double *sf        = d->sf;
+    double *mu        = d->mu;
+    double *d_em      = d->d_em;
+    px_igd_liq(SS_ref_db,x);
+
+    d->sum_v = 0.0;
+    for (int i = 0; i < n_em; i++){
+        d->sum_v += d->p[i]*d->v[i];
+    }
+    for (int i = 0; i < n_em; i++){
+        d->mat_phi[i] = (d->p[i]*d->v[i])/d->sum_v;
+    }
+    
+    mu_Gex_asym_n2(d, mu_Gex);
+    
+    sf[0]          = -x[0] + 2.0/3.0*x[10]*(-x[0] -x[1] -x[2] -x[3] -x[4] -x[5] -x[6] -x[7] -x[8]) + 1.0/6.0*x[11]*(x[0] + x[1] + x[2] + x[3] + x[4] + x[5] + x[6] + x[7] + x[8] - 3.0) + 1.0/3.0*x[12]*(-x[0] -x[1] -x[2] -x[3] -x[4] -x[5] -x[6] -x[7] -x[8]) - x[1] - x[2] - x[3] - x[4] - x[5] - x[6] - x[7] - x[8] +x[9]*(-x[0] -x[1] -x[2] -x[3] -x[4] -x[5] -x[6] -x[7] -x[8] + 1.0) + 1.0;
+    sf[1]          = 2.0/3.0*x[10]*x[1] - 1.0/6.0*x[11]*x[1] + 1.0/3.0*x[12]*x[1] +x[1]*x[9] +x[1] - x[9];
+    sf[2]          = 2.0/3.0*x[0]*x[10] - 1.0/6.0*x[0]*x[11] + 1.0/3.0*x[0]*x[12] +x[0]*x[9] +x[0] - x[9];
+    sf[3]          = 2.0/3.0*x[10]*x[4] - x[10] - 1.0/6.0*x[11]*x[4] + 1.0/3.0*x[12]*x[4] +x[4]*x[9] +x[4];
+    sf[4]          = 2.0/3.0*x[10]*x[5] - 1.0/6.0*x[11]*x[5] + 1.0/3.0*x[12]*x[5] +x[5]*x[9] +x[5];
+    sf[5]          = 2.0/3.0*x[10]*x[6] - 1.0/6.0*x[11]*x[6] + 1.0/3.0*x[12]*x[6] +x[6]*x[9] +x[6];
+    sf[6]          = 2.0/3.0*x[10]*x[7] - 1.0/6.0*x[11]*x[7] + 1.0/3.0*x[12]*x[7] +x[7]*x[9] +x[7];
+    sf[7]          = 2.0/3.0*x[10]*x[8] - 1.0/6.0*x[11]*x[8] + 1.0/3.0*x[12]*x[8] - x[12] +x[8]*x[9] +x[8];
+    sf[8]          =x[10];
+    sf[9]          =x[9];
+    sf[10]          =x[11];
+    sf[11]          =x[12];
+    sf[12]          = 2.0/3.0*x[10]*(x[2] + x[3]) - 1.0/6.0*x[11]*(x[2] + x[3]) - 0.5*x[11] + 1.0/3.0*x[12]*(x[2] + x[3]) +x[2] +x[3] +x[9]*(x[2] + x[3]);
+    sf[13]          = -2.0*x[11] + 4.0*x[2]*(2.0/3.0*x[10] - 1.0/6.0*x[11] + 1.0/3.0*x[12] + x[9] + 1.0);
+    sf[14]          = 4.0*x[3]*(2.0/3.0*x[10] - 1.0/6.0*x[11] + 1.0/3.0*x[12] + x[9] + 1.0);
+    sf[15]          =x[0]*(2.0/3.0*x[10] - 1.0/6.0*x[11] + 1.0/3.0*x[12] + x[9] + 1.0) - x[9];
+    sf[16]          =x[1]*(2.0/3.0*x[10] - 1.0/6.0*x[11] + 1.0/3.0*x[12] + x[9] + 1.0) - x[9];
+    sf[17]          = -2.0*x[11] - 2.0*x[9] +(x[0] + x[1] + 4.0*x[2] + 4.0*x[3])*(2.0/3.0*x[10] - 1.0/6.0*x[11] + 1.0/3.0*x[12] + x[9] + 1.0);
+    
+    
+    mu[0]          = gb[0] + R*T*rlog((sf[0])) + mu_Gex[0];
+    mu[1]          = gb[1] + R*T*rlog((sf[16]*1.0/sf[17]*sf[1])) + mu_Gex[1];
+    mu[2]          = gb[2] + R*T*rlog((sf[15]*1.0/sf[17]*sf[2] + d_em[2])) + mu_Gex[2];
+    double complex cp_13_4p0 = cpow(sf[13], 4.0);
+    double complex cp_17_m4p0 = cpow(sf[17], -4.0);
+    double complex cp_14_4p0 = cpow(sf[14], 4.0);
+    mu[3]          = gb[3] + R*T*rlog((sf[12]*cp_13_4p0*cp_17_m4p0)) + mu_Gex[3];
+    mu[4]          = gb[4] + R*T*rlog((sf[12]*cp_14_4p0*cp_17_m4p0)) + mu_Gex[4];
+    mu[5]          = gb[5] + R*T*rlog((sf[3] + d_em[5])) + mu_Gex[5];
+    mu[6]          = gb[6] + R*T*rlog((sf[4] + d_em[6])) + mu_Gex[6];
+    mu[7]          = gb[7] + R*T*rlog((sf[5] + d_em[7])) + mu_Gex[7];
+    mu[8]          = gb[8] + R*T*rlog((sf[6] + d_em[8])) + mu_Gex[8];
+    mu[9]          = gb[9] + R*T*rlog((sf[7] + d_em[9])) + mu_Gex[9];
+    mu[10]          = gb[10] + R*T*rlog((sf[9] + d_em[10])) + mu_Gex[10];
+    mu[11]          = gb[11] + R*T*rlog((sf[8] + d_em[11])) + mu_Gex[11];
+    mu[12]          = gb[12] + R*T*rlog((sf[10])) + mu_Gex[12];
+    mu[13]          = gb[13] + R*T*rlog((sf[11] + d_em[13])) + mu_Gex[13];
+    
+    d->sum_apep = 0.0;
+    for (int i = 0; i < n_em; i++){
+        d->sum_apep += d->ape[i]*d->p[i];
+    }
+    d->factor = d->fbc/d->sum_apep;
+
+    d->df_raw = 0.0;
+    for (int i = 0; i < n_em; i++){
+        d->df_raw += mu[i]*d->p[i];
+    }
+    d->df = d->df_raw * d->factor;
+
+    if (grad){
+        double *dfx    = d->dfx;
+        double **dp_dx = d->dp_dx;
+        dpdx_igd_liq(SS_ref_db,x);
+        for (int i = 0; i < (d->n_xeos); i++){
+            dfx[i] = 0.0;
+            for (int j = 0; j < n_em; j++){
+                dfx[i] += (mu[j] - (d->ape[j]/d->sum_apep)*d->df_raw)*d->factor*dp_dx[j][i];
+            }
+            grad[i] = creal(dfx[i]);
+        }
+    }
+
+    return d->df;
+}
+    
+/**
+    Objective function of fsp
+*/
+double obj_igd_fsp(unsigned n, const double *x, double *grad, void *SS_ref_db){
+    SS_ref *d         = (SS_ref *) SS_ref_db;
+
+    int n_em          = d->n_em;
+    double P          = d->P;
+    double T          = d->T;
+    double R          = d->R;
+
+    double *gb        = d->gb_lvl;
+    double *mat_phi   = d->mat_phi;
+    double *mu_Gex    = d->mu_Gex;
+    double *sf        = d->sf;
+    double *mu        = d->mu;
+    double *d_em      = d->d_em;
+    px_igd_fsp(SS_ref_db,x);
+
+    d->sum_v = 0.0;
+    for (int i = 0; i < n_em; i++){
+        d->sum_v += d->p[i]*d->v[i];
+    }
+    for (int i = 0; i < n_em; i++){
+        d->mat_phi[i] = (d->p[i]*d->v[i])/d->sum_v;
+    }
+    
+    mu_Gex_asym_n2(d, mu_Gex);
+    
+    sf[0]          = -x[0] - x[1] - 0.5*x[2] + 1.0;
+    sf[1]          =x[0] - 0.5*x[2];
+    sf[2]          =x[1];
+    sf[3]          =x[2];
+    
+    
+    mu[0]          = gb[0] + R*T*rlog((sf[0] + d_em[0])) + mu_Gex[0];
+    mu[1]          = gb[1] + R*T*rlog((sf[1] + d_em[1])) + mu_Gex[1];
+    mu[2]          = gb[2] + R*T*rlog((sf[2] + d_em[2])) + mu_Gex[2];
+    mu[3]          = gb[3] + R*T*rlog((sf[3] + d_em[3])) + mu_Gex[3];
+
+    d->sum_apep = 0.0;
+    for (int i = 0; i < n_em; i++){
+        d->sum_apep += d->ape[i]*d->p[i];
+    }
+    d->factor = d->fbc/d->sum_apep;
+
+    d->df_raw = 0.0;
+    for (int i = 0; i < n_em; i++){
+        d->df_raw += mu[i]*d->p[i];
+    }
+    d->df = d->df_raw * d->factor;
+
+    for (int k = 0; k < n_em; k++){
+        d->df += d->ox_penalty[k] * d->p[k] * d->p[k];
+    }
+
+    if (grad){
+        double *dfx    = d->dfx;
+        double **dp_dx = d->dp_dx;
+        dpdx_igd_fsp(SS_ref_db,x);
+        for (int i = 0; i < (d->n_xeos); i++){
+            dfx[i] = 0.0;
+            for (int j = 0; j < n_em; j++){
+                dfx[i] += (mu[j] - (d->ape[j]/d->sum_apep)*d->df_raw)*d->factor*dp_dx[j][i];
+                dfx[i] += d->ox_penalty[j]*2.0*d->p[j]*dp_dx[j][i];
+            }
+            grad[i] = creal(dfx[i]);
+        }
+    }
+
+    return d->df;
+}
+
+/**
+    Objective function of spl
+*/
+double obj_igd_spl(unsigned n, const double *x, double *grad, void *SS_ref_db){
+    SS_ref *d         = (SS_ref *) SS_ref_db;
+
+    int n_em          = d->n_em;
+    double P          = d->P;
+    double T          = d->T;
+    double R          = d->R;
+
+    double *gb        = d->gb_lvl;
+    double *mat_phi   = d->mat_phi;
+    double *mu_Gex    = d->mu_Gex;
+    double *sf        = d->sf;
+    double *mu        = d->mu;
+    double *d_em      = d->d_em;
+    px_igd_spl(SS_ref_db,x);
+
+    d->sum_v = 0.0;
+    for (int i = 0; i < n_em; i++){
+        d->sum_v += d->p[i]*d->v[i];
+    }
+    for (int i = 0; i < n_em; i++){
+        d->mat_phi[i] = (d->p[i]*d->v[i])/d->sum_v;
+    }
+    
+    mu_Gex_asym_n2(d, mu_Gex);
+    
+    sf[0]          = -1.0/3.0*x[0]*x[3] - 1.0/3.0*x[0] + 1.0/3.0*x[3] + 2.0/3.0*x[4] + 1.0/3.0;
+    sf[1]          = 1.0/3.0*x[0]*x[3] + 1.0/3.0*x[0] + 2.0/3.0*x[5];
+    sf[2]          = 2.0/3.0*x[1]*x[2] + 2.0/3.0*x[1]*x[3] - 2.0/3.0*x[1] - 1.0/3.0*x[3] - 2.0/3.0*x[4] - 2.0/3.0*x[5] - 2.0/3.0*x[6] + 2.0/3.0;
+    sf[3]          = -2.0/3.0*x[1]*x[2] - 2.0/3.0*x[1]*x[3] + 2.0/3.0*x[1] + 2.0/3.0*x[6];
+    sf[4]          = -1.0/3.0*x[0]*x[3] - 1.0/3.0*x[0] + 1.0/3.0*x[3] - 1.0/3.0*x[4] + 1.0/3.0;
+    sf[5]          = 1.0/3.0*x[0]*x[3] + 1.0/3.0*x[0] - 1.0/3.0*x[5];
+    sf[6]          = 2.0/3.0*x[1]*x[2] + 2.0/3.0*x[1]*x[3] - 2.0/3.0*x[1] - x[2] - 0.833333333333333*x[3] + 1.0/3.0*x[4] + 1.0/3.0*x[5] + 1.0/3.0*x[6] + 2.0/3.0;
+    sf[7]          = -2.0/3.0*x[1]*x[2] - 2.0/3.0*x[1]*x[3] + 2.0/3.0*x[1] - 1.0/3.0*x[6];
+    sf[8]          =x[2];
+    sf[9]          = 0.5*x[3];
+    
+    
+    mu[0]          = gb[0] + R*T*rlog((sf[0]*sf[6])) + mu_Gex[0];
+    double complex cs_4 = csqrt(sf[4]);
+    double complex cs_6 = csqrt(sf[6]);
+    double complex cs_5 = csqrt(sf[5]);
+    double complex cs_7 = csqrt(sf[7]);
+    double complex cs_9 = csqrt(sf[9]);
+    mu[1]          = gb[1] + R*T*rlog((2.0*sf[2]*cs_4*cs_6)) + mu_Gex[1];
+    mu[2]          = gb[2] + R*T*rlog((sf[1]*sf[6])) + mu_Gex[2];
+    mu[3]          = gb[3] + R*T*rlog((2.0*sf[2]*cs_5*cs_6)) + mu_Gex[3];
+    mu[4]          = gb[4] + R*T*rlog((sf[1]*sf[7] + d_em[4])) + mu_Gex[4];
+    mu[5]          = gb[5] + R*T*rlog((2.0*sf[3]*cs_5*cs_7 + d_em[5])) + mu_Gex[5];
+    mu[6]          = gb[6] + R*T*rlog((sf[0]*sf[8] + d_em[6])) + mu_Gex[6];
+    mu[7]          = gb[7] + R*T*rlog((2.0*sf[1]*cs_5*cs_9 + d_em[7])) + mu_Gex[7];
+    
+    d->sum_apep = 0.0;
+    for (int i = 0; i < n_em; i++){
+        d->sum_apep += d->ape[i]*d->p[i];
+    }
+    d->factor = d->fbc/d->sum_apep;
+
+    d->df_raw = 0.0;
+    for (int i = 0; i < n_em; i++){
+        d->df_raw += mu[i]*d->p[i];
+    }
+    d->df = d->df_raw * d->factor;
+
+    if (grad){
+        double *dfx    = d->dfx;
+        double **dp_dx = d->dp_dx;
+        dpdx_igd_spl(SS_ref_db,x);
+        for (int i = 0; i < (d->n_xeos); i++){
+            dfx[i] = 0.0;
+            for (int j = 0; j < n_em; j++){
+                dfx[i] += (mu[j] - (d->ape[j]/d->sum_apep)*d->df_raw)*d->factor*dp_dx[j][i];
+            }
+            grad[i] = creal(dfx[i]);
+        }
+    }
+
+    return d->df;
+}
+    
+/**
+    Objective function of g
+*/
+double obj_igd_g(unsigned n, const double *x, double *grad, void *SS_ref_db){
+    SS_ref *d         = (SS_ref *) SS_ref_db;
+
+    int n_em          = d->n_em;
+    double P          = d->P;
+    double T          = d->T;
+    double R          = d->R;
+
+    double *gb        = d->gb_lvl;
+    double *mat_phi   = d->mat_phi;
+    double *mu_Gex    = d->mu_Gex;
+    double *sf        = d->sf;
+    double *mu        = d->mu;
+    double *d_em      = d->d_em;
+    px_igd_g(SS_ref_db,x);
+
+    d->sum_v = 0.0;
+    for (int i = 0; i < n_em; i++){
+        d->sum_v += d->p[i]*d->v[i];
+    }
+    for (int i = 0; i < n_em; i++){
+        d->mat_phi[i] = (d->p[i]*d->v[i])/d->sum_v;
+    }
+    
+    mu_Gex_asym_n2(d, mu_Gex);
+    
+    sf[0]          =x[0]*x[1] - x[0] - x[1] + 1.0;
+    sf[1]          = -x[0]*x[1] +x[0];
+    sf[2]          =x[1];
+    sf[3]          = -x[2] - x[3] - 2.0*x[4] + 1.0;
+    sf[4]          =x[3];
+    sf[5]          =x[2];
+    sf[6]          =x[4];
+    sf[7]          =x[4];
+    
+    
+    double complex cp_0_3p0 = cpow(sf[0], 3.0);
+    double complex cp_3_2p0 = cpow(sf[3], 2.0);
+    double complex cp_1_3p0 = cpow(sf[1], 3.0);
+    double complex cp_2_3p0 = cpow(sf[2], 3.0);
+    double complex cp_5_2p0 = cpow(sf[5], 2.0);
+    double complex cp_4_2p0 = cpow(sf[4], 2.0);
+    double complex cs_6 = csqrt(sf[6]);
+    double complex cs_7 = csqrt(sf[7]);
+    mu[0]          = gb[0] + R*T*rlog((cp_0_3p0*cp_3_2p0)) + mu_Gex[0];
+    mu[1]          = gb[1] + R*T*rlog((cp_1_3p0*cp_3_2p0)) + mu_Gex[1];
+    mu[2]          = gb[2] + R*T*rlog((cp_2_3p0*cp_3_2p0 + d_em[2])) + mu_Gex[2];
+    mu[3]          = gb[3] + R*T*rlog((cp_2_3p0*cp_5_2p0 + d_em[3])) + mu_Gex[3];
+    mu[4]          = gb[4] + R*T*rlog((cp_0_3p0*cp_4_2p0 + d_em[4])) + mu_Gex[4];
+    mu[5]          = gb[5] + R*T*rlog((8.0*cp_0_3p0*sf[3]*cs_6*cs_7 + d_em[5])) + mu_Gex[5];
+    
+    d->sum_apep = 0.0;
+    for (int i = 0; i < n_em; i++){
+        d->sum_apep += d->ape[i]*d->p[i];
+    }
+    d->factor = d->fbc/d->sum_apep;
+
+    d->df_raw = 0.0;
+    for (int i = 0; i < n_em; i++){
+        d->df_raw += mu[i]*d->p[i];
+    }
+    d->df = d->df_raw * d->factor;
+
+    if (grad){
+        double *dfx    = d->dfx;
+        double **dp_dx = d->dp_dx;
+        dpdx_igd_g(SS_ref_db,x);
+        for (int i = 0; i < (d->n_xeos); i++){
+            dfx[i] = 0.0;
+            for (int j = 0; j < n_em; j++){
+                dfx[i] += (mu[j] - (d->ape[j]/d->sum_apep)*d->df_raw)*d->factor*dp_dx[j][i];
+            }
+            grad[i] = creal(dfx[i]);
+        }
+    }
+
+    return d->df;
+}
+    
+/**
+    Objective function of ol
+*/
+double obj_igd_ol(unsigned n, const double *x, double *grad, void *SS_ref_db){
+    SS_ref *d         = (SS_ref *) SS_ref_db;
+
+    int n_em          = d->n_em;
+    double P          = d->P;
+    double T          = d->T;
+    double R          = d->R;
+
+    double *gb        = d->gb_lvl;
+    double *mu_Gex    = d->mu_Gex;
+    double *sf        = d->sf;
+    double *mu        = d->mu;
+    double *d_em      = d->d_em;
+    px_igd_ol(SS_ref_db,x);
+
+    mu_Gex_sym_n2(d, mu_Gex);
+    
+    sf[0]          = -x[0] +x[2] + 1.0;
+    sf[1]          =x[0] - x[2];
+    sf[2]          =x[0]*x[1] - x[0] - x[1] - x[2] + 1.0;
+    sf[3]          = -x[0]*x[1] +x[0] +x[2];
+    sf[4]          =x[1];
+    
+    
+    mu[0]          = gb[0] + R*T*rlog((sf[0]*sf[4] + d_em[0])) + mu_Gex[0];
+    mu[1]          = gb[1] + R*T*rlog((sf[1]*sf[3])) + mu_Gex[1];
+    mu[2]          = gb[2] + R*T*rlog((sf[0]*sf[2])) + mu_Gex[2];
+    mu[3]          = gb[3] + R*T*rlog((sf[0]*sf[3])) + mu_Gex[3];
+    
+    d->sum_apep = 0.0;
+    for (int i = 0; i < n_em; i++){
+        d->sum_apep += d->ape[i]*d->p[i];
+    }
+    d->factor = d->fbc/d->sum_apep;
+
+    d->df_raw = 0.0;
+    for (int i = 0; i < n_em; i++){
+        d->df_raw += mu[i]*d->p[i];
+    }
+    d->df = d->df_raw * d->factor;
+
+    if (grad){
+        double *dfx    = d->dfx;
+        double **dp_dx = d->dp_dx;
+        dpdx_igd_ol(SS_ref_db,x);
+        for (int i = 0; i < (d->n_xeos); i++){
+            dfx[i] = 0.0;
+            for (int j = 0; j < n_em; j++){
+                dfx[i] += (mu[j] - (d->ape[j]/d->sum_apep)*d->df_raw)*d->factor*dp_dx[j][i];
+            }
+            grad[i] = creal(dfx[i]);
+        }
+    }
+
+    return d->df;
+}
+    
+/**
+    Objective function of opx
+*/
+double obj_igd_opx(unsigned n, const double *x, double *grad, void *SS_ref_db){
+    SS_ref *d         = (SS_ref *) SS_ref_db;
+
+    int n_em          = d->n_em;
+    double P          = d->P;
+    double T          = d->T;
+    double R          = d->R;
+
+    double *gb        = d->gb_lvl;
+    double *mat_phi   = d->mat_phi;
+    double *mu_Gex    = d->mu_Gex;
+    double *sf        = d->sf;
+    double *mu        = d->mu;
+    double *d_em      = d->d_em;
+    px_igd_opx(SS_ref_db,x);
+
+    d->sum_v = 0.0;
+    for (int i = 0; i < n_em; i++){
+        d->sum_v += d->p[i]*d->v[i];
+    }
+    for (int i = 0; i < n_em; i++){
+        d->mat_phi[i] = (d->p[i]*d->v[i])/d->sum_v;
+    }
+    
+    mu_Gex_asym_n2(d, mu_Gex);
+    
+    sf[0]          = x[0]*x[1] - x[0]*x[5] + x[0]*x[7] - x[0] + x[1]*x[3] - x[1] - x[3]*x[5] + x[3]*x[7] - x[3] + x[5] - x[7] + 1.0;
+    sf[1]          = -x[0]*x[1] + x[0]*x[5] - x[0]*x[7] + x[0] - x[1]*x[3] + x[3]*x[5] - x[3]*x[7] + x[3];
+    sf[2]          = x[1] - x[4] - 2.0*x[5] - x[6] + x[7];
+    sf[3]          = x[4];
+    sf[4]          = x[6];
+    sf[5]          = x[5];
+    sf[6]          = x[0]*x[2] + x[0]*x[7] - x[0] - x[1]*x[3] - x[2] + x[3]*x[5] - x[3]*x[7] + x[3] - x[7] + 1.0;
+    sf[7]          = -x[0]*x[2] - x[0]*x[7] + x[0] + x[1]*x[3] - x[3]*x[5] + x[3]*x[7] - x[3];
+    sf[8]          = x[2];
+    sf[9]          = x[7];
+    sf[10]          = 1.0 - 0.5*x[1];
+    sf[11]          = 0.5*x[1];
+    
+    double complex cp_10_0p25 = cpow(sf[10], 0.25);
+    double complex cp_11_0p25 = cpow(sf[11], 0.25);
+    double complex cs_10 = csqrt(sf[10]);
+    double complex cs_0 = csqrt(sf[0]);
+    double complex cs_5 = csqrt(sf[5]);
+    mu[0]          = gb[0] + R*T*rlog((sf[0]*cs_10*sf[6])) + mu_Gex[0];
+    mu[1]          = gb[1] + R*T*rlog((cs_10*sf[1]*sf[7])) + mu_Gex[1];
+    mu[2]          = gb[2] + R*T*rlog((sf[0]*cs_10*sf[7])) + mu_Gex[2];
+    mu[3]          = gb[3] + R*T*rlog((sf[0]*cs_10*sf[8] + d_em[3])) + mu_Gex[3];
+    mu[4]          = gb[4] + R*T*rlog((1.4142*cp_10_0p25*cp_11_0p25*sf[2]*sf[6])) + mu_Gex[4];
+    mu[5]          = gb[5] + R*T*rlog((1.4142*cp_10_0p25*cp_11_0p25*sf[4]*sf[6] + d_em[5])) + mu_Gex[5];
+    mu[6]          = gb[6] + R*T*rlog((2.8284*cs_0*cp_10_0p25*cp_11_0p25*cs_5*sf[6] + d_em[6])) + mu_Gex[6];
+    mu[7]          = gb[7] + R*T*rlog((1.4142*cp_10_0p25*cp_11_0p25*sf[3]*sf[6] + d_em[7])) + mu_Gex[7];
+    mu[8]          = gb[8] + R*T*rlog((cs_10*sf[2]*sf[9] + d_em[8])) + mu_Gex[8];
+    
+    d->sum_apep = 0.0;
+    for (int i = 0; i < n_em; i++){
+        d->sum_apep += d->ape[i]*d->p[i];
+    }
+    d->factor = d->fbc/d->sum_apep;
+
+    d->df_raw = 0.0;
+    for (int i = 0; i < n_em; i++){
+        d->df_raw += mu[i]*d->p[i];
+    }
+    d->df = d->df_raw * d->factor;
+
+    if (grad){
+        double *dfx    = d->dfx;
+        double **dp_dx = d->dp_dx;
+        dpdx_igd_opx(SS_ref_db,x);
+        for (int i = 0; i < (d->n_xeos); i++){
+            dfx[i] = 0.0;
+            for (int j = 0; j < n_em; j++){
+                dfx[i] += (mu[j] - (d->ape[j]/d->sum_apep)*d->df_raw)*d->factor*dp_dx[j][i];
+            }
+            grad[i] = creal(dfx[i]);
+        }
+    }
+
+    return d->df;
+}
+    
+/**
+    Objective function of cpx
+*/
+double obj_igd_cpx(unsigned n, const double *x, double *grad, void *SS_ref_db){
+    SS_ref *d         = (SS_ref *) SS_ref_db;
+
+    int n_em          = d->n_em;
+    double P          = d->P;
+    double T          = d->T;
+    double R          = d->R;
+
+    double *gb        = d->gb_lvl;
+    double *mat_phi   = d->mat_phi;
+    double *mu_Gex    = d->mu_Gex;
+    double *sf        = d->sf;
+    double *mu        = d->mu;
+    double *d_em      = d->d_em;
+    px_igd_cpx(SS_ref_db,x);
+
+    d->sum_v = 0.0;
+    for (int i = 0; i < n_em; i++){
+        d->sum_v += d->p[i]*d->v[i];
+    }
+    for (int i = 0; i < n_em; i++){
+        d->mat_phi[i] = (d->p[i]*d->v[i])/d->sum_v;
+    }
+    
+    mu_Gex_asym_n2(d, mu_Gex);
+    
+    sf[0]          =x[0]*x[1] +x[0]*x[3] - x[0]*x[7] +x[0]*x[8] - x[0] +x[1]*x[4] - x[1] +x[3]*x[4] - x[3] - x[4]*x[7] +x[4]*x[8] - x[4] +x[7] - x[8] + 1.0;
+    sf[1]          = -x[0]*x[1] - x[0]*x[3] +x[0]*x[7] - x[0]*x[8] +x[0] - x[1]*x[4] - x[3]*x[4] +x[4]*x[7] - x[4]*x[8] +x[4];
+    sf[2]          =x[1] +x[3] - x[5] - x[6] - 2.0*x[7] +x[8];
+    sf[3]          =x[5];
+    sf[4]          =x[6];
+    sf[5]          =x[7];
+    sf[6]          = -x[0]*x[2] - x[1]*x[4] +x[2] - x[3]*x[4] +x[4]*x[7] - x[4]*x[8] +x[4];
+    sf[7]          =x[0]*x[2] +x[1]*x[4] +x[3]*x[4] - x[4]*x[7] +x[4]*x[8] - x[4];
+    sf[8]          = -x[2] - x[3] - x[8] + 1.0;
+    sf[9]          =x[3];
+    sf[10]          =x[8];
+    sf[11]          = 1.0 - 0.5*x[1];
+    sf[12]          = 0.5*x[1];
+    
+    
+    double complex cp_11_0p25 = cpow(sf[11], 0.25);
+    double complex cp_12_0p25 = cpow(sf[12], 0.25);
+    double complex cs_11 = csqrt(sf[11]);
+    double complex cs_0 = csqrt(sf[0]);
+    double complex cs_5 = csqrt(sf[5]);
+    mu[0]          = gb[0] + R*T*rlog((sf[0]*cs_11*sf[8])) + mu_Gex[0];
+    mu[1]          = gb[1] + R*T*rlog((cs_11*sf[1]*sf[7])) + mu_Gex[1];
+    mu[2]          = gb[2] + R*T*rlog((1.4142*cp_11_0p25*cp_12_0p25*sf[2]*sf[8])) + mu_Gex[2];
+    mu[3]          = gb[3] + R*T*rlog((1.4142*cp_11_0p25*cp_12_0p25*sf[4]*sf[8] + d_em[3])) + mu_Gex[3];
+    mu[4]          = gb[4] + R*T*rlog((1.4142*cp_11_0p25*cp_12_0p25*sf[3]*sf[8] + d_em[4])) + mu_Gex[4];
+    mu[5]          = gb[5] + R*T*rlog((2.8284*cs_0*cp_11_0p25*cp_12_0p25*cs_5*sf[8] + d_em[5])) + mu_Gex[5];
+    mu[6]          = gb[6] + R*T*rlog((cs_11*sf[2]*sf[9] + d_em[6])) + mu_Gex[6];
+    mu[7]          = gb[7] + R*T*rlog((sf[0]*cs_11*sf[6])) + mu_Gex[7];
+    mu[8]          = gb[8] + R*T*rlog((sf[0]*cs_11*sf[7])) + mu_Gex[8];
+    mu[9]          = gb[9] + R*T*rlog((sf[10]*cs_11*sf[2] + d_em[9])) + mu_Gex[9];
+    
+    d->sum_apep = 0.0;
+    for (int i = 0; i < n_em; i++){
+        d->sum_apep += d->ape[i]*d->p[i];
+    }
+    d->factor = d->fbc/d->sum_apep;
+
+    d->df_raw = 0.0;
+    for (int i = 0; i < n_em; i++){
+        d->df_raw += mu[i]*d->p[i];
+    }
+    d->df = d->df_raw * d->factor;
+    for (int k = 0; k < n_em; k++){
+        d->df += d->ox_penalty[k] * d->p[k] * d->p[k];
+    }
+
+    if (grad){
+        double *dfx    = d->dfx;
+        double **dp_dx = d->dp_dx;
+        dpdx_igd_cpx(SS_ref_db,x);
+        for (int i = 0; i < (d->n_xeos); i++){
+            dfx[i] = 0.0;
+            for (int j = 0; j < n_em; j++){
+                dfx[i] += (mu[j] - (d->ape[j]/d->sum_apep)*d->df_raw)*d->factor*dp_dx[j][i];
+                dfx[i] += d->ox_penalty[j]*2.0*d->p[j]*dp_dx[j][i];
+            }
+            grad[i] = creal(dfx[i]);
+        }
+    }
+
+    return d->df;
+}
+    
+/**
+    Objective function of ilm
+*/
+double obj_igd_ilm(unsigned n, const double *x, double *grad, void *SS_ref_db){
+    SS_ref *d         = (SS_ref *) SS_ref_db;
+
+    int n_em          = d->n_em;
+    double P          = d->P;
+    double T          = d->T;
+    double R          = d->R;
+
+    double *gb        = d->gb_lvl;
+    double *mu_Gex    = d->mu_Gex;
+    double *sf        = d->sf;
+    double *mu        = d->mu;
+    double *d_em      = d->d_em;
+    px_igd_ilm(SS_ref_db,x);
+
+    mu_Gex_sym_n2(d, mu_Gex);
+    
+    sf[0]          = -0.5*x[0]*x[1] + 0.5*x[0] + 0.5*x[2];
+    sf[1]          = 0.5*x[0] - 0.5*x[3];
+    sf[2]          = 1.0 - x[0];
+    sf[3]          = 0.5*x[0]*x[1] - 0.5*x[2] + 0.5*x[3];
+    sf[4]          = -0.5*x[0]*x[1] + 0.5*x[0] - 0.5*x[2];
+    sf[5]          = 0.5*x[0] + 0.5*x[3];
+    sf[6]          = 1.0 - x[0];
+    sf[7]          = 0.5*x[0]*x[1] + 0.5*x[2] - 0.5*x[3];
+    
+    
+    double complex cp_0_0p25 = cpow(sf[0], 0.25);
+    double complex cp_1_0p25 = cpow(sf[1], 0.25);
+    double complex cp_4_0p25 = cpow(sf[4], 0.25);
+    double complex cp_5_0p25 = cpow(sf[5], 0.25);
+    double complex cp_3_0p25 = cpow(sf[3], 0.25);
+    double complex cp_7_0p25 = cpow(sf[7], 0.25);
+    double complex cs_0 = csqrt(sf[0]);
+    double complex cs_5 = csqrt(sf[5]);
+    double complex cs_2 = csqrt(sf[2]);
+    double complex cs_6 = csqrt(sf[6]);
+    double complex cs_3 = csqrt(sf[3]);
+    mu[0]          = gb[0] + R*T*rlog((cs_0*cs_5 + d_em[0])) + mu_Gex[0];
+    mu[1]          = gb[1] + R*T*rlog((2.0*cp_0_0p25*cp_1_0p25*cp_4_0p25*cp_5_0p25 + d_em[1])) + mu_Gex[1];
+    mu[2]          = gb[2] + R*T*rlog((cs_2*cs_6 + d_em[2])) + mu_Gex[2];
+    mu[3]          = gb[3] + R*T*rlog((cs_3*cs_5 + d_em[3])) + mu_Gex[3];
+    mu[4]          = gb[4] + R*T*rlog((2.0*cp_1_0p25*cp_3_0p25*cp_5_0p25*cp_7_0p25 + d_em[4])) + mu_Gex[4];
+    
+    d->sum_apep = 0.0;
+    for (int i = 0; i < n_em; i++){
+        d->sum_apep += d->ape[i]*d->p[i];
+    }
+    d->factor = d->fbc/d->sum_apep;
+
+    d->df_raw = 0.0;
+    for (int i = 0; i < n_em; i++){
+        d->df_raw += mu[i]*d->p[i];
+    }
+    d->df = d->df_raw * d->factor;
+
+    if (grad){
+        double *dfx    = d->dfx;
+        double **dp_dx = d->dp_dx;
+        dpdx_igd_ilm(SS_ref_db,x);
+        for (int i = 0; i < (d->n_xeos); i++){
+            dfx[i] = 0.0;
+            for (int j = 0; j < n_em; j++){
+                dfx[i] += (mu[j] - (d->ape[j]/d->sum_apep)*d->df_raw)*d->factor*dp_dx[j][i];
+            }
+            grad[i] = creal(dfx[i]);
+        }
+    }
+
+    return d->df;
+}
+
 
 /**************************************************************************************/
 /**************************************************************************************/
@@ -86,97 +1244,74 @@ void p2x_mb_liq(void *SS_ref_db, double eps){
 /**
     Endmember to xeos for amp
 */
-void p2x_mb_amp(void *SS_ref_db, double eps) {
+void p2x_mb_amp(void *SS_ref_db, double eps){
+	SS_ref *d  = (SS_ref *) SS_ref_db;
+	double *p  = d->p;
+
+	double xNaA   = p[2];
+	double xKA    = p[9];
+	double xMgM13 = p[0] + p[1] + p[2] + p[3] + p[4] + p[6] + p[8] + p[9] + p[10];
+	double xFeM13 = p[5] + p[7];
+	double xMgM2  = p[0] + 0.5*p[2] + p[4] + p[7] + 0.5*p[9];
+	double xFeM2  = p[5] + p[6];
+	double xMgM4  = p[4];
+	double xFeM4  = p[5] + p[6] + p[7];
+	double num_x  = 3.0*xFeM13 + 2.0*xFeM2 + 2.0*xFeM4;
+	double den_x  = num_x + 3.0*xMgM13 + 2.0*xMgM2 + 2.0*xMgM4;
+	double x      = (den_x != 0.0) ? num_x/den_x : d->bounds[0][0];
+	double den_a  = xKA + xNaA;
+	double den_13 = xFeM13 + xMgM13;
+	double den_2  = xFeM2 + xMgM2;
+
+	d->iguess[0]  = x;
+	d->iguess[1]  = p[1] + 0.5*p[2] + p[3] + 0.5*p[9];
+	d->iguess[2]  = p[3] + p[8];
+	d->iguess[3]  = den_a;
+	d->iguess[4]  = (den_a != 0.0) ? xKA/den_a : d->bounds[4][0];
+	d->iguess[5]  = p[0] + p[1] + p[2] + p[9] + p[10];
+	d->iguess[6]  = p[8];
+	d->iguess[7]  = p[10];
+	d->iguess[8]  = (den_13 != 0.0) ? x - xFeM13/den_13 : 0.0;
+	d->iguess[9]  = (den_2  != 0.0) ? x - xFeM2/den_2   : 0.0;
+
+	for (int i = 0; i < d->n_xeos; i++){
+		if (d->iguess[i] < d->bounds[i][0]){
+			d->iguess[i] = d->bounds[i][0];
+		}
+		if (d->iguess[i] > d->bounds[i][1]){
+			d->iguess[i] = d->bounds[i][1];
+		}
+	}
+}
+
+/**
+    Endmember to xeos for oamp
+*/
+void p2x_mb_oamp(void *SS_ref_db, double eps) {
     SS_ref *d = (SS_ref *) SS_ref_db;
 
-    // Common denominator for x, Q1, Q2
-    double denom_x_Q1 =  4.0 * d->p[3] + 3.0 * d->p[9] + 4.0 * d->p[8] + 
-                        3.0 * d->p[2] + 2.0 * d->p[0] + 4.0 * d->p[1] + 4.0 * d->p[10] - 7.0;
-    double denom_Q2 = 8.0 * pow(d->p[3], 2.0) + 10.0 * d->p[3] * d->p[9] + 
-                      16.0 * d->p[3] * d->p[8] + 10.0 * d->p[3] * d->p[2] + 4.0 * d->p[3] * d->p[0] + 
-                      16.0 * d->p[3] * d->p[1] + 16.0 * d->p[3] * d->p[10] - 22.0 * d->p[3] + 
-                      3.0 * pow(d->p[9], 2.0) + 10.0 * d->p[9] * d->p[8] + 6.0 * d->p[9] * d->p[2] + 
-                      2.0 * d->p[9] * d->p[0] + 10.0 * d->p[9] * d->p[1] + 10.0 * d->p[9] * d->p[10] - 
-                      13.0 * d->p[9] + 8.0 * pow(d->p[8], 2.0) + 10.0 * d->p[8] * d->p[2] + 
-                      4.0 * d->p[8] * d->p[0] + 16.0 * d->p[8] * d->p[1] + 16.0 * d->p[8] * d->p[10] - 
-                      22.0 * d->p[8] + 3.0 * pow(d->p[2], 2.0) + 2.0 * d->p[2] * d->p[0] + 
-                      10.0 * d->p[2] * d->p[1] + 10.0 * d->p[2] * d->p[10] - 13.0 * d->p[2] + 
-                      4.0 * d->p[0] * d->p[1] + 4.0 * d->p[0] * d->p[10] - 4.0 * d->p[0] + 
-                      8.0 * pow(d->p[1], 2.0) + 16.0 * d->p[1] * d->p[10] - 22.0 * d->p[1] + 
-                      8.0 * pow(d->p[10], 2.0) - 22.0 * d->p[10] + 14.0;
-    double denom_k = d->p[2] + d->p[9];
+    double a = d->p[2];
+    double c = d->p[4];
+    double f = d->p[6];
+    double z = d->p[3] + f;
+    double y = d->p[1] + d->p[3] + 0.5*a;
+    double S = z + c;
+    double K = 1.0 - y - f;
+    double denom_x = K - S + 2.5;
 
-    // Assignments
-    d->iguess[3]  = d->p[2] + d->p[9]; // a
-    d->iguess[5]  = d->p[0] + d->p[1] + d->p[10] + d->p[11] + d->p[2] + d->p[9]; // c
-    d->iguess[6]  = d->p[8]; // f
-    d->iguess[4]  = (denom_k != 0.0) ? d->p[9] / denom_k : d->bounds[4][0]; // k
-    d->iguess[7]  = d->p[10]; // t
-    d->iguess[1]  = d->p[1] + 0.5 * d->p[2] + d->p[3] + 0.5 * d->p[9]; // y
-    d->iguess[2]  = d->p[3] + d->p[8]; // z
-    d->iguess[0]  = (denom_x_Q1 != 0.0) ? 
-                    0.142857142857143 * (5.0 * d->p[0] + 5.0 * d->p[1] + 5.0 * d->p[10] + 
-                                        5.0 * d->p[2] + 5.0 * d->p[3] + 
-                                         5.0 * d->p[4] - 2.0 * d->p[5] + d->p[6] + 
-                                         5.0 * d->p[8] + 5.0 * d->p[9] - 5.0) / denom_x_Q1 : 
-                    d->bounds[0][0]; // x
-    d->iguess[8]  = (denom_x_Q1 != 0.0) ? 
-                    0.142857142857143 * (2.0 * d->p[0] * d->p[1] + 2.0 * d->p[0] * d->p[10] + 
-                                         5.0 * d->p[0] * d->p[2] + 
-                                         6.0 * d->p[0] * d->p[3] + 2.0 * d->p[0] * d->p[4] + 
-                                         2.0 * d->p[0] * d->p[6] + 6.0 * d->p[0] * d->p[8] + 
-                                         5.0 * d->p[0] * d->p[9] - 4.0 * d->p[0] + 2.0 * pow(d->p[0], 2.0) + 
-                                         8.0 * d->p[1] * d->p[10]  + 
-                                         7.0 * d->p[1] * d->p[2] + 8.0 * d->p[1] * d->p[3] + 
-                                         4.0 * d->p[1] * d->p[4] + 4.0 * d->p[1] * d->p[6] + 
-                                         8.0 * d->p[1] * d->p[8] + 7.0 * d->p[1] * d->p[9] - 
-                                         6.0 * d->p[1] + 4.0 * pow(d->p[1], 2.0) + 
-                                         7.0 * d->p[10] * d->p[2] + 8.0 * d->p[10] * d->p[3] + 
-                                         4.0 * d->p[10] * d->p[4] + 4.0 * d->p[10] * d->p[6] + 
-                                         8.0 * d->p[10] * d->p[8] + 7.0 * d->p[10] * d->p[9] - 
-                                         6.0 * d->p[10] + 4.0 * pow(d->p[10], 2.0) + 
-                                         7.0 * d->p[2] * d->p[3] + 3.0 * d->p[2] * d->p[4] + 
-                                         3.0 * d->p[2] * d->p[6] + 7.0 * d->p[2] * d->p[8] + 
-                                         6.0 * d->p[2] * d->p[9] - 5.0 * d->p[2] + 3.0 * pow(d->p[2], 2.0) + 
-                                         4.0 * d->p[3] * d->p[4] + 4.0 * d->p[3] * d->p[6] + 
-                                         8.0 * d->p[3] * d->p[8] + 7.0 * d->p[3] * d->p[9] - 
-                                         6.0 * d->p[3] + 4.0 * pow(d->p[3], 2.0) + 4.0 * d->p[4] * d->p[8] + 
-                                         3.0 * d->p[4] * d->p[9] - 2.0 * d->p[4] - 2.0 * d->p[5] + 
-                                         4.0 * d->p[6] * d->p[8] + 3.0 * d->p[6] * d->p[9] - 6.0 * d->p[6] + 
-                                         7.0 * d->p[8] * d->p[9] - 6.0 * d->p[8] + 4.0 * pow(d->p[8], 2.0) - 
-                                         5.0 * d->p[9] + 3.0 * pow(d->p[9], 2.0) + 2.0) / denom_x_Q1 : 
-                    d->bounds[8][0]; // Q1
-    d->iguess[9]  = (denom_Q2 != 0.0) ? 
-                    0.0454545454545455 * (10.0 * d->p[0] * d->p[1] + 10.0 * d->p[0] * d->p[10] + 
-                                          5.0 * d->p[0] * d->p[2] + 10.0 * d->p[0] * d->p[3] + 
-                                          4.0 * d->p[0] * d->p[5] + 4.0 * d->p[0] * d->p[6] + 
-                                          10.0 * d->p[0] * d->p[8] + 5.0 * d->p[0] * d->p[9] - 
-                                          10.0 * d->p[0] + 20.0 * d->p[1] * d->p[10] + 
-                                          15.0 * d->p[1] * d->p[2] + 
-                                          20.0 * d->p[1] * d->p[3] + 10.0 * d->p[1] * d->p[4] + 
-                                          4.0 * d->p[1] * d->p[5] + 10.0 * d->p[1] * d->p[6] + 
-                                          20.0 * d->p[1] * d->p[8] + 15.0 * d->p[1] * d->p[9] - 
-                                          20.0 * d->p[1] + 10.0 * pow(d->p[1], 2.0) + 
-                                          15.0 * d->p[10] * d->p[2] + 
-                                          20.0 * d->p[10] * d->p[3] + 10.0 * d->p[10] * d->p[4] + 
-                                          4.0 * d->p[10] * d->p[5] + 10.0 * d->p[10] * d->p[6] + 
-                                          20.0 * d->p[10] * d->p[8] + 15.0 * d->p[10] * d->p[9] - 
-                                          20.0 * d->p[10] + 10.0 * pow(d->p[10], 2.0) + 15.0 * d->p[2] * d->p[3] + 
-                                          5.0 * d->p[2] * d->p[4] + 4.0 * d->p[2] * d->p[5] + 
-                                          7.0 * d->p[2] * d->p[6] + 15.0 * d->p[2] * d->p[8] + 
-                                          10.0 * d->p[2] * d->p[9] - 15.0 * d->p[2] + 5.0 * pow(d->p[2], 2.0) + 
-                                          10.0 * d->p[3] * d->p[4] + 4.0 * d->p[3] * d->p[5] + 
-                                          10.0 * d->p[3] * d->p[6] + 20.0 * d->p[3] * d->p[8] + 
-                                          15.0 * d->p[3] * d->p[9] - 20.0 * d->p[3] + 10.0 * pow(d->p[3], 2.0) + 
-                                          10.0 * d->p[4] * d->p[8] + 5.0 * d->p[4] * d->p[9] - 
-                                          10.0 * d->p[4] + 4.0 * d->p[5] * d->p[8] + 4.0 * d->p[5] * d->p[9] - 
-                                          10.0 * d->p[5] + 10.0 * d->p[6] * d->p[8] + 7.0 * d->p[6] * d->p[9] - 
-                                          16.0 * d->p[6] + 15.0 * d->p[8] * d->p[9] - 20.0 * d->p[8] + 
-                                          10.0 * pow(d->p[8], 2.0) - 15.0 * d->p[9] + 5.0 * pow(d->p[9], 2.0) + 
-                                          10.0) / denom_Q2 : 
-                    d->bounds[9][0]; // Q2
+    d->iguess[3] = a;
+    d->iguess[4] = c;
+    d->iguess[5] = f;
+    d->iguess[2] = z;
+    d->iguess[1] = y;
+    d->iguess[0] = (denom_x != 0.0) ?
+                   (2.0*d->p[7] + 3.5*d->p[5] + 2.5*d->p[8]) / denom_x :
+                   d->bounds[0][0];
+    d->iguess[6] = d->iguess[0] - (d->p[5] + d->p[8]);
+    d->iguess[7] = (K != 0.0) ?
+                   d->iguess[0] - (d->p[5] + d->p[7]) / K :
+                   d->bounds[7][0];
 
-    // Bounds checking
     for (int i = 0; i < d->n_xeos; i++) {
         if (d->iguess[i] < d->bounds[i][0]) {
             d->iguess[i] = d->bounds[i][0];
@@ -455,7 +1590,7 @@ void p2x_mb_bi(void *SS_ref_db, double eps){
     d->iguess[3]  = d->p[4];
     d->iguess[1]  = d->p[3];
     d->iguess[0]  = (-3.0*d->p[1] -d->p[2])/(d->iguess[2] + d->iguess[3] + d->iguess[1] - 3.0);
-    d->iguess[4]  = 1.5*d->iguess[2]*d->iguess[0] - 1.5*d->iguess[2] + 1.5*d->p[0] + 1.5*d->iguess[3]*d->iguess[0] - 1.5*d->iguess[3] + 1.5*d->iguess[0]*d->iguess[1] - 1.5*d->iguess[0] - 1.5*d->iguess[1] + 1.5;
+    d->iguess[4]  = 3.0*(d->iguess[0] - d->p[1]);
     
     for (int i = 0; i < d->n_xeos; i++){
         if (d->iguess[i] < d->bounds[i][0]){
@@ -771,15 +1906,15 @@ void dpdx_mb_oamp(void *SS_ref_db, const double *x){
     SS_ref *d  = (SS_ref *) SS_ref_db;
     double **dp_dx = d->dp_dx;
 
-    dp_dx[0][0] = x[2] + x[4] - 1.0;      dp_dx[0][1] = x[7] - 1.0;      dp_dx[0][2] = x[0];      dp_dx[0][3] = -0.500000000000000;      dp_dx[0][4] = x[0] - 1.0;      dp_dx[0][5] = x[7] - 1.0;      dp_dx[0][6] = -1.50000000000000;      dp_dx[0][7] = x[1] + x[5] - 1.0;      
-    dp_dx[1][0] = 0.0;      dp_dx[1][1] = 1.00000000000000;      dp_dx[1][2] = -1.00000000000000;      dp_dx[1][3] = -0.500000000000000;      dp_dx[1][4] = 0.0;      dp_dx[1][5] = 1.00000000000000;      dp_dx[1][6] = 0.0;      dp_dx[1][7] = 0.0;      
-    dp_dx[2][0] = 0.0;      dp_dx[2][1] = 0.0;      dp_dx[2][2] = 0.0;      dp_dx[2][3] = 1.00000000000000;      dp_dx[2][4] = 0.0;      dp_dx[2][5] = 0.0;      dp_dx[2][6] = 0.0;      dp_dx[2][7] = 0.0;      
-    dp_dx[3][0] = 0.0;      dp_dx[3][1] = 0.0;      dp_dx[3][2] = 1.00000000000000;      dp_dx[3][3] = 0.0;      dp_dx[3][4] = 0.0;      dp_dx[3][5] = -1.00000000000000;      dp_dx[3][6] = 0.0;      dp_dx[3][7] = 0.0;      
-    dp_dx[4][0] = 0.0;      dp_dx[4][1] = 0.0;      dp_dx[4][2] = 0.0;      dp_dx[4][3] = 0.0;      dp_dx[4][4] = 1.00000000000000;      dp_dx[4][5] = 0.0;      dp_dx[4][6] = 0.0;      dp_dx[4][7] = 0.0;      
-    dp_dx[5][0] = -1.0*x[1] + x[2] + x[4] - 1.0*x[5] + 1.0;      dp_dx[5][1] = -1.0*x[0] + 2.0*x[7];      dp_dx[5][2] = x[0];      dp_dx[5][3] = 0.0;      dp_dx[5][4] = x[0];      dp_dx[5][5] = -1.0*x[0] + 2.0*x[7];      dp_dx[5][6] = -2.50000000000000;      dp_dx[5][7] = 2.0*x[1] + 2.0*x[5] - 2.0;      
-    dp_dx[6][0] = 0.0;      dp_dx[6][1] = 0.0;      dp_dx[6][2] = 0.0;      dp_dx[6][3] = 0.0;      dp_dx[6][4] = 0.0;      dp_dx[6][5] = 1.00000000000000;      dp_dx[6][6] = 0.0;      dp_dx[6][7] = 0.0;      
-    dp_dx[7][0] = -1.0*x[2] - 1.0*x[4];      dp_dx[7][1] = -1.0*x[7];      dp_dx[7][2] = -1.0*x[0];      dp_dx[7][3] = 0.0;      dp_dx[7][4] = -1.0*x[0];      dp_dx[7][5] = -1.0*x[7];      dp_dx[7][6] = 2.50000000000000;      dp_dx[7][7] = -1.0*x[1] - 1.0*x[5] + 1.0;      
-    dp_dx[8][0] = x[1] - 1.0*x[2] - 1.0*x[4] + x[5];      dp_dx[8][1] = x[0] - 2.0*x[7];      dp_dx[8][2] = -1.0*x[0];      dp_dx[8][3] = 0.0;      dp_dx[8][4] = -1.0*x[0];      dp_dx[8][5] = x[0] - 2.0*x[7];      dp_dx[8][6] = 1.50000000000000;      dp_dx[8][7] = -2.0*x[1] - 2.0*x[5] + 2.0;      
+    dp_dx[0][0] = x[2] + x[4] - 1.0;      dp_dx[0][1] = x[7] - 1.0;      dp_dx[0][2] = x[0];      dp_dx[0][3] = -0.5;      dp_dx[0][4] = x[0] - 1.0;      dp_dx[0][5] = x[7] - 1.0;      dp_dx[0][6] = -1.50000000000000;      dp_dx[0][7] = x[1] + x[5] - 1.0;      
+    dp_dx[1][0] = 0.0;      dp_dx[1][1] = 1.0;      dp_dx[1][2] = -1.0;      dp_dx[1][3] = -0.5;      dp_dx[1][4] = 0.0;      dp_dx[1][5] = 1.0;      dp_dx[1][6] = 0.0;      dp_dx[1][7] = 0.0;      
+    dp_dx[2][0] = 0.0;      dp_dx[2][1] = 0.0;      dp_dx[2][2] = 0.0;      dp_dx[2][3] = 1.0;      dp_dx[2][4] = 0.0;      dp_dx[2][5] = 0.0;      dp_dx[2][6] = 0.0;      dp_dx[2][7] = 0.0;      
+    dp_dx[3][0] = 0.0;      dp_dx[3][1] = 0.0;      dp_dx[3][2] = 1.0;      dp_dx[3][3] = 0.0;      dp_dx[3][4] = 0.0;      dp_dx[3][5] = -1.0;      dp_dx[3][6] = 0.0;      dp_dx[3][7] = 0.0;      
+    dp_dx[4][0] = 0.0;      dp_dx[4][1] = 0.0;      dp_dx[4][2] = 0.0;      dp_dx[4][3] = 0.0;      dp_dx[4][4] = 1.0;      dp_dx[4][5] = 0.0;      dp_dx[4][6] = 0.0;      dp_dx[4][7] = 0.0;      
+    dp_dx[5][0] = -x[1] + x[2] + x[4] -x[5] + 1.0;      dp_dx[5][1] = -x[0] + 2.0*x[7];      dp_dx[5][2] = x[0];      dp_dx[5][3] = 0.0;      dp_dx[5][4] = x[0];      dp_dx[5][5] = -x[0] + 2.0*x[7];      dp_dx[5][6] = -2.50000000000000;      dp_dx[5][7] = 2.0*x[1] + 2.0*x[5] - 2.0;      
+    dp_dx[6][0] = 0.0;      dp_dx[6][1] = 0.0;      dp_dx[6][2] = 0.0;      dp_dx[6][3] = 0.0;      dp_dx[6][4] = 0.0;      dp_dx[6][5] = 1.0;      dp_dx[6][6] = 0.0;      dp_dx[6][7] = 0.0;      
+    dp_dx[7][0] = -x[2] -x[4];      dp_dx[7][1] = -x[7];      dp_dx[7][2] = -x[0];      dp_dx[7][3] = 0.0;      dp_dx[7][4] = -x[0];      dp_dx[7][5] = -x[7];      dp_dx[7][6] = 2.50000000000000;      dp_dx[7][7] = -x[1] -x[5] + 1.0;      
+    dp_dx[8][0] = x[1] -x[2] -x[4] + x[5];      dp_dx[8][1] = x[0] - 2.0*x[7];      dp_dx[8][2] = -x[0];      dp_dx[8][3] = 0.0;      dp_dx[8][4] = -x[0];      dp_dx[8][5] = x[0] - 2.0*x[7];      dp_dx[8][6] = 1.50000000000000;      dp_dx[8][7] = -2.0*x[1] - 2.0*x[5] + 2.0;      
 }
 
 
@@ -790,10 +1925,10 @@ void dpdx_mb_ta(void *SS_ref_db, const double *x){
     SS_ref *d  = (SS_ref *) SS_ref_db;
     double **dp_dx = d->dp_dx;
 
-    dp_dx[0][0] = x[1] - 1.0;      dp_dx[0][1] = x[0] + x[3] - 2.0;      dp_dx[0][2] = 1.00000000000000;      dp_dx[0][3] = x[1] - 1.0;      
-    dp_dx[1][0] = 1.0 - 1.0*x[2];      dp_dx[1][1] = 0.5*x[3];      dp_dx[1][2] = -1.0*x[0];      dp_dx[1][3] = 0.5*x[1] - 0.5;      
-    dp_dx[2][0] = -1.0*x[1] + x[2];      dp_dx[2][1] = -1.0*x[0] - 1.5*x[3];      dp_dx[2][2] = x[0];      dp_dx[2][3] = 1.5 - 1.5*x[1];      
-    dp_dx[3][0] = 0.0;      dp_dx[3][1] = 0.0;      dp_dx[3][2] = 1.00000000000000;      dp_dx[3][3] = 0.0;      
+    dp_dx[0][0] = x[1] - 1.0;      dp_dx[0][1] = x[0] + x[3] - 2.0;      dp_dx[0][2] = 1.0;      dp_dx[0][3] = x[1] - 1.0;      
+    dp_dx[1][0] = 1.0 -x[2];      dp_dx[1][1] = 0.5*x[3];      dp_dx[1][2] = -x[0];      dp_dx[1][3] = 0.5*x[1] - 0.5;      
+    dp_dx[2][0] = -x[1] + x[2];      dp_dx[2][1] = -x[0] - 1.5*x[3];      dp_dx[2][2] = x[0];      dp_dx[2][3] = 1.5 - 1.5*x[1];      
+    dp_dx[3][0] = 0.0;      dp_dx[3][1] = 0.0;      dp_dx[3][2] = 1.0;      dp_dx[3][3] = 0.0;      
     dp_dx[4][0] = 0.0;      dp_dx[4][1] = 2.00000000000000;      dp_dx[4][2] = -2.00000000000000;      dp_dx[4][3] = 0.0;      
 }
 
@@ -1071,15 +2206,15 @@ void px_mb_chl(void *SS_ref_db, const double *x){
 void px_mb_oamp(void *SS_ref_db, const double *x){
     SS_ref *d  = (SS_ref *) SS_ref_db;
     double *p = d->p;
-        p[0]           = x[0]*x[2] + x[0]*x[4] - 1.0*x[0] + x[1]*x[7] - 1.0*x[1] - 0.5*x[3] - 1.0*x[4] + x[5]*x[7] - 1.0*x[5] - 1.5*x[6] - 1.0*x[7] + 1.0;
-        p[1]           = x[1] - 1.0*x[2] - 0.5*x[3] + x[5];
+        p[0]           = x[0]*x[2] + x[0]*x[4] -x[0] + x[1]*x[7] -x[1] - 0.5*x[3] -x[4] + x[5]*x[7] -x[5] - 1.5*x[6] -x[7] + 1.0;
+        p[1]           = x[1] -x[2] - 0.5*x[3] + x[5];
         p[2]           = x[3];
-        p[3]           = x[2] - 1.0*x[5];
+        p[3]           = x[2] -x[5];
         p[4]           = x[4];
-        p[5]           = -1.0*x[0]*x[1] + x[0]*x[2] + x[0]*x[4] - 1.0*x[0]*x[5] + x[0] + 2.0*x[1]*x[7] + 2.0*x[5]*x[7] - 2.5*x[6] - 2.0*x[7];
+        p[5]           = -x[0]*x[1] + x[0]*x[2] + x[0]*x[4] -x[0]*x[5] + x[0] + 2.0*x[1]*x[7] + 2.0*x[5]*x[7] - 2.5*x[6] - 2.0*x[7];
         p[6]           = x[5];
-        p[7]           = -1.0*x[0]*x[2] - 1.0*x[0]*x[4] - 1.0*x[1]*x[7] - 1.0*x[5]*x[7] + 2.5*x[6] + x[7];
-        p[8]           = x[0]*x[1] - 1.0*x[0]*x[2] - 1.0*x[0]*x[4] + x[0]*x[5] - 2.0*x[1]*x[7] - 2.0*x[5]*x[7] + 1.5*x[6] + 2.0*x[7];
+        p[7]           = -x[0]*x[2] -x[0]*x[4] -x[1]*x[7] -x[5]*x[7] + 2.5*x[6] + x[7];
+        p[8]           = x[0]*x[1] -x[0]*x[2] -x[0]*x[4] + x[0]*x[5] - 2.0*x[1]*x[7] - 2.0*x[5]*x[7] + 1.5*x[6] + 2.0*x[7];
 }
 
     
@@ -1089,9 +2224,9 @@ void px_mb_oamp(void *SS_ref_db, const double *x){
 void px_mb_ta(void *SS_ref_db, const double *x){
     SS_ref *d  = (SS_ref *) SS_ref_db;
     double *p = d->p;
-        p[0]           = x[0]*x[1] - 1.0*x[0] + x[1]*x[3] - 2.0*x[1] + x[2] - 1.0*x[3] + 1.0;
-        p[1]           = -1.0*x[0]*x[2] + x[0] + 0.5*x[1]*x[3] - 0.5*x[3];
-        p[2]           = -1.0*x[0]*x[1] + x[0]*x[2] - 1.5*x[1]*x[3] + 1.5*x[3];
+        p[0]           = x[0]*x[1] -x[0] + x[1]*x[3] - 2.0*x[1] + x[2] -x[3] + 1.0;
+        p[1]           = -x[0]*x[2] + x[0] + 0.5*x[1]*x[3] - 0.5*x[3];
+        p[2]           = -x[0]*x[1] + x[0]*x[2] - 1.5*x[1]*x[3] + 1.5*x[3];
         p[3]           = x[2];
         p[4]           = 2.0*x[1] - 2.0*x[2];
 }
@@ -1112,18 +2247,10 @@ double obj_mb_liq(unsigned n, const double *x, double *grad, void *SS_ref_db){
     double *mu_Gex    = d->mu_Gex;
     double *sf        = d->sf;
     double *mu        = d->mu;
+    double *d_em      = d->d_em;
     px_mb_liq(SS_ref_db,x);
 
-    for (int i = 0; i < n_em; i++){
-        mu_Gex[i] = 0.0;
-        int it    = 0;
-        for (int j = 0; j < d->n_xeos; j++){
-            for (int k = j+1; k < n_em; k++){
-                mu_Gex[i] -= (d->eye[i][j] - d->p[j])*(d->eye[i][k] - d->p[k])*(d->W[it]);
-                it += 1;
-            }
-        }
-    }
+    mu_Gex_sym_n2(d, mu_Gex);
     
     sf[0]          = -x[7] +(x[7] + 1.0)*(x[0] + x[1] + x[3] + x[4] + x[5]);
     sf[1]          = x[0]*(x[7] + 1.0);
@@ -1138,15 +2265,18 @@ double obj_mb_liq(unsigned n, const double *x, double *grad, void *SS_ref_db){
     sf[10]         = 1.0 - x[6];
     
     
-    mu[0]          = gb[0] + R*T*creal(clog(sf[0]*sf[1])) + mu_Gex[0];
-    mu[1]          = gb[1] + R*T*creal(clog(sf[0]*sf[2])) + mu_Gex[1];
-    mu[2]          = gb[2] + R*T*creal(clog(sf[0]*sf[3])) + mu_Gex[2];
-    mu[3]          = gb[3] + R*T*creal(clog(sf[0]*sf[4])) + mu_Gex[3];
-    mu[4]          = gb[4] + R*T*creal(clog(sf[0]*sf[5])) + mu_Gex[4];
-    mu[5]          = gb[5] + R*T*creal(clog(sf[0]*sf[8]*cpow(sf[9], 5.0))) + mu_Gex[5];
-    mu[6]          = gb[6] + R*T*creal(clog(sf[0]*cpow(sf[10], 5.0)*sf[8])) + mu_Gex[6];
-    mu[7]          = gb[7] + R*T*creal(clog(cpow(sf[6], 2.0))) + mu_Gex[7];
-    mu[8]          = gb[8] + R*T*creal(clog(sf[0]*sf[7])) + mu_Gex[8];
+    mu[0]          = gb[0] + R*T*rlog((sf[0]*sf[1])) + mu_Gex[0];
+    mu[1]          = gb[1] + R*T*rlog((sf[0]*sf[2] + d_em[1])) + mu_Gex[1];
+    mu[2]          = gb[2] + R*T*rlog((sf[0]*sf[3] + d_em[2])) + mu_Gex[2];
+    mu[3]          = gb[3] + R*T*rlog((sf[0]*sf[4] + d_em[3])) + mu_Gex[3];
+    mu[4]          = gb[4] + R*T*rlog((sf[0]*sf[5])) + mu_Gex[4];
+    double complex cp_9_5p0 = cpow(sf[9], 5.0);
+    double complex cp_10_5p0 = cpow(sf[10], 5.0);
+    double complex cp_6_2p0 = cpow(sf[6], 2.0);
+    mu[5]          = gb[5] + R*T*rlog((sf[0]*sf[8]*cp_9_5p0)) + mu_Gex[5];
+    mu[6]          = gb[6] + R*T*rlog((sf[0]*cp_10_5p0*sf[8])) + mu_Gex[6];
+    mu[7]          = gb[7] + R*T*rlog((cp_6_2p0)) + mu_Gex[7];
+    mu[8]          = gb[8] + R*T*rlog((sf[0]*sf[7] + d_em[8])) + mu_Gex[8];
     
     d->sum_apep = 0.0;
     for (int i = 0; i < n_em; i++){
@@ -1160,6 +2290,10 @@ double obj_mb_liq(unsigned n, const double *x, double *grad, void *SS_ref_db){
     }
     d->df = d->df_raw * d->factor;
 
+    for (int k = 0; k < n_em; k++){
+        d->df += d->ox_penalty[k] * d->p[k] * d->p[k];
+    }
+
     if (grad){
         double *dfx    = d->dfx;
         double **dp_dx = d->dp_dx;
@@ -1169,6 +2303,7 @@ double obj_mb_liq(unsigned n, const double *x, double *grad, void *SS_ref_db){
             dfx[i] = 0.0;
             for (int j = 0; j < n_em; j++){
                 dfx[i] += (mu[j] - (d->ape[j]/d->sum_apep)*d->df_raw)*d->factor*dp_dx[j][i];
+                dfx[i] += d->ox_penalty[j]*2.0*d->p[j]*dp_dx[j][i];
             }
             grad[i] = creal(dfx[i]);
         }
@@ -1177,7 +2312,7 @@ double obj_mb_liq(unsigned n, const double *x, double *grad, void *SS_ref_db){
 
     return d->df;
 }
-    
+
 /**
     Objective function of amp
 */
@@ -1205,16 +2340,7 @@ double obj_mb_amp(unsigned n, const double *x, double *grad, void *SS_ref_db){
         d->mat_phi[i] = (d->p[i]*d->v[i])/d->sum_v;
     }
     
-    for (int i = 0; i < d->n_em; i++){
-        mu_Gex[i] = 0.0;
-        int it = 0;
-        for (int j = 0; j < d->n_xeos; j++){
-            for (int k = j+1; k < d->n_em; k++){
-                mu_Gex[i] -= (d->eye[i][j] - d->mat_phi[j])*(d->eye[i][k] - d->mat_phi[k])*(d->W[it]*2.0*d->v[i]/(d->v[j]+d->v[k]));
-                it += 1;
-            }
-        }
-    }
+    mu_Gex_asym_n2(d, mu_Gex);
     
     sf[0]          = 1.0 - x[3];
     sf[1]          = -x[3]*x[4] +x[3];
@@ -1236,17 +2362,32 @@ double obj_mb_amp(unsigned n, const double *x, double *grad, void *SS_ref_db){
     sf[17]          =x[7];
     
     
-    mu[0]          = gb[0] + R*T*creal(clog(sf[0]*cpow(sf[10], 2.0)*sf[14]*cpow(sf[16], 2.0)*cpow(sf[3], 3.0)*cpow(sf[5], 2.0))) + mu_Gex[0];
-    mu[1]          = gb[1] + R*T*creal(clog(2.0*sf[0]*cpow(sf[10], 2.0)*csqrt(sf[14])*csqrt(sf[15])*cpow(sf[16], 2.0)*cpow(sf[3], 3.0)*cpow(sf[7], 2.0))) + mu_Gex[1];
-    mu[2]          = gb[2] + R*T*creal(clog(8.0*cpow(sf[10], 2.0)*csqrt(sf[14])*csqrt(sf[15])*cpow(sf[16], 2.0)*sf[1]*cpow(sf[3], 3.0)*sf[5]*sf[7])) + mu_Gex[2];
-    mu[3]          = gb[3] + R*T*creal(clog(sf[0]*cpow(sf[13], 2.0)*sf[14]*cpow(sf[16], 2.0)*cpow(sf[3], 3.0)*cpow(sf[7], 2.0))) + mu_Gex[3];
-    mu[4]          = gb[4] + R*T*creal(clog(sf[0]*cpow(sf[11], 2.0)*sf[14]*cpow(sf[16], 2.0)*cpow(sf[3], 3.0)*cpow(sf[5], 2.0))) + mu_Gex[4];
-    mu[5]          = gb[5] + R*T*creal(clog(sf[0]*cpow(sf[12], 2.0)*sf[14]*cpow(sf[16], 2.0)*cpow(sf[4], 3.0)*cpow(sf[6], 2.0))) + mu_Gex[5];
-    mu[6]          = gb[6] + R*T*creal(clog(sf[0]*cpow(sf[12], 2.0)*sf[14]*cpow(sf[16], 2.0)*cpow(sf[3], 3.0)*cpow(sf[6], 2.0))) + mu_Gex[6];
-    mu[7]          = gb[7] + R*T*creal(clog(sf[0]*cpow(sf[12], 2.0)*sf[14]*cpow(sf[16], 2.0)*cpow(sf[4], 3.0)*cpow(sf[5], 2.0))) + mu_Gex[7];
-    mu[8]          = gb[8] + R*T*creal(clog(sf[0]*cpow(sf[13], 2.0)*sf[14]*cpow(sf[16], 2.0)*cpow(sf[3], 3.0)*cpow(sf[8], 2.0) + d_em[8])) + mu_Gex[8];
-    mu[9]          = gb[9] + R*T*creal(clog(8.0*cpow(sf[10], 2.0)*csqrt(sf[14])*csqrt(sf[15])*cpow(sf[16], 2.0)*sf[2]*cpow(sf[3], 3.0)*sf[5]*sf[7])) + mu_Gex[9];
-    mu[10]          = gb[10] + R*T*creal(clog(2.0*sf[0]*cpow(sf[10], 2.0)*csqrt(sf[14])*csqrt(sf[15])*cpow(sf[17], 2.0)*cpow(sf[3], 3.0)*cpow(sf[9], 2.0)  + d_em[10] )) + mu_Gex[10];
+    double complex cp_10_2p0 = cpow(sf[10], 2.0);
+    double complex cp_16_2p0 = cpow(sf[16], 2.0);
+    double complex cp_3_3p0 = cpow(sf[3], 3.0);
+    double complex cp_5_2p0 = cpow(sf[5], 2.0);
+    double complex cp_7_2p0 = cpow(sf[7], 2.0);
+    double complex cp_13_2p0 = cpow(sf[13], 2.0);
+    double complex cp_11_2p0 = cpow(sf[11], 2.0);
+    double complex cp_12_2p0 = cpow(sf[12], 2.0);
+    double complex cp_4_3p0 = cpow(sf[4], 3.0);
+    double complex cp_6_2p0 = cpow(sf[6], 2.0);
+    double complex cp_8_2p0 = cpow(sf[8], 2.0);
+    double complex cp_17_2p0 = cpow(sf[17], 2.0);
+    double complex cp_9_2p0 = cpow(sf[9], 2.0);
+    double complex cs_14 = csqrt(sf[14]);
+    double complex cs_15 = csqrt(sf[15]);
+    mu[0]          = gb[0] + R*T*rlog((sf[0]*cp_10_2p0*sf[14]*cp_16_2p0*cp_3_3p0*cp_5_2p0)) + mu_Gex[0];
+    mu[1]          = gb[1] + R*T*rlog((2.0*sf[0]*cp_10_2p0*cs_14*cs_15*cp_16_2p0*cp_3_3p0*cp_7_2p0)) + mu_Gex[1];
+    mu[2]          = gb[2] + R*T*rlog((8.0*cp_10_2p0*cs_14*cs_15*cp_16_2p0*sf[1]*cp_3_3p0*sf[5]*sf[7] + d_em[2])) + mu_Gex[2];
+    mu[3]          = gb[3] + R*T*rlog((sf[0]*cp_13_2p0*sf[14]*cp_16_2p0*cp_3_3p0*cp_7_2p0 + d_em[3])) + mu_Gex[3];
+    mu[4]          = gb[4] + R*T*rlog((sf[0]*cp_11_2p0*sf[14]*cp_16_2p0*cp_3_3p0*cp_5_2p0)) + mu_Gex[4];
+    mu[5]          = gb[5] + R*T*rlog((sf[0]*cp_12_2p0*sf[14]*cp_16_2p0*cp_4_3p0*cp_6_2p0)) + mu_Gex[5];
+    mu[6]          = gb[6] + R*T*rlog((sf[0]*cp_12_2p0*sf[14]*cp_16_2p0*cp_3_3p0*cp_6_2p0)) + mu_Gex[6];
+    mu[7]          = gb[7] + R*T*rlog((sf[0]*cp_12_2p0*sf[14]*cp_16_2p0*cp_4_3p0*cp_5_2p0)) + mu_Gex[7];
+    mu[8]          = gb[8] + R*T*rlog((sf[0]*cp_13_2p0*sf[14]*cp_16_2p0*cp_3_3p0*cp_8_2p0 + d_em[8])) + mu_Gex[8];
+    mu[9]          = gb[9] + R*T*rlog((8.0*cp_10_2p0*cs_14*cs_15*cp_16_2p0*sf[2]*cp_3_3p0*sf[5]*sf[7] + d_em[9])) + mu_Gex[9];
+    mu[10]          = gb[10] + R*T*rlog((2.0*sf[0]*cp_10_2p0*cs_14*cs_15*cp_17_2p0*cp_3_3p0*cp_9_2p0  + d_em[10] )) + mu_Gex[10];
     
     d->sum_apep = 0.0;
     for (int i = 0; i < n_em; i++){
@@ -1260,6 +2401,10 @@ double obj_mb_amp(unsigned n, const double *x, double *grad, void *SS_ref_db){
     }
     d->df = d->df_raw * d->factor;
 
+    for (int k = 0; k < n_em; k++){
+        d->df += d->ox_penalty[k] * d->p[k] * d->p[k];
+    }
+
     if (grad){
         double *dfx    = d->dfx;
         double **dp_dx = d->dp_dx;
@@ -1268,6 +2413,7 @@ double obj_mb_amp(unsigned n, const double *x, double *grad, void *SS_ref_db){
             dfx[i] = 0.0;
             for (int j = 0; j < n_em; j++){
                 dfx[i] += (mu[j] - (d->ape[j]/d->sum_apep)*d->df_raw)*d->factor*dp_dx[j][i];
+                dfx[i] += d->ox_penalty[j]*2.0*d->p[j]*dp_dx[j][i];
             }
             grad[i] = creal(dfx[i]);
         }
@@ -1276,7 +2422,7 @@ double obj_mb_amp(unsigned n, const double *x, double *grad, void *SS_ref_db){
 
     return d->df;
 }
-    
+
 /**
     Objective function of aug
 */
@@ -1304,16 +2450,7 @@ double obj_mb_aug(unsigned n, const double *x, double *grad, void *SS_ref_db){
         d->mat_phi[i] = (d->p[i]*d->v[i])/d->sum_v;
     }
     
-    for (int i = 0; i < d->n_em; i++){
-        mu_Gex[i] = 0.0;
-        int it = 0;
-        for (int j = 0; j < d->n_xeos; j++){
-            for (int k = j+1; k < d->n_em; k++){
-                mu_Gex[i] -= (d->eye[i][j] - d->mat_phi[j])*(d->eye[i][k] - d->mat_phi[k])*(d->W[it]*2.0*d->v[i]/(d->v[j]+d->v[k]));
-                it += 1;
-            }
-        }
-    }
+    mu_Gex_asym_n2(d, mu_Gex);
     
     sf[0]          =x[0]*x[1] +x[0]*x[4] - x[0] - x[1] - 0.5*x[3]*x[5] - 0.5*x[4]*x[5] - x[4] + 0.5*x[5] + 1.0;
     sf[1]          = -x[0]*x[1] - x[0]*x[4] +x[0] + 0.5*x[3]*x[5] + 0.5*x[4]*x[5] - 0.5*x[5];
@@ -1329,14 +2466,21 @@ double obj_mb_aug(unsigned n, const double *x, double *grad, void *SS_ref_db){
     sf[11]          = 0.5*x[1] + 0.5*x[6];
     
     
-    mu[0]          = gb[0] + R*T*creal(clog(sf[0]*cpow(sf[10], 0.25)*sf[6]*cpow(sf[8], 0.25))) + mu_Gex[0];
-    mu[1]          = gb[1] + R*T*creal(clog(sf[0]*cpow(sf[10], 0.25)*sf[4]*cpow(sf[8], 0.25))) + mu_Gex[1];
-    mu[2]          = gb[2] + R*T*creal(clog(cpow(sf[10], 0.25)*sf[1]*sf[5]*cpow(sf[8], 0.25))) + mu_Gex[2];
-    mu[3]          = gb[3] + R*T*creal(clog(cpow(sf[10], 0.25)*sf[2]*sf[7]*cpow(sf[8], 0.25))) + mu_Gex[3];
-    mu[4]          = gb[4] + R*T*creal(clog(cpow(sf[10], 0.25)*sf[3]*sf[7]*cpow(sf[8], 0.25) + d_em[4])) + mu_Gex[4];
-    mu[5]          = gb[5] + R*T*creal(clog(cpow(sf[11], 0.25)*sf[2]*sf[6]*cpow(sf[8], 0.25))) + mu_Gex[5];
-    mu[6]          = gb[6] + R*T*creal(clog(1.4142*cpow(sf[10], 0.125)*cpow(sf[11], 0.125)*sf[2]*sf[6]*cpow(sf[8], 0.125)*cpow(sf[9], 0.125))) + mu_Gex[6];
-    mu[7]          = gb[7] + R*T*creal(clog(sf[0]*cpow(sf[10], 0.25)*sf[5]*cpow(sf[8], 0.25))) + mu_Gex[7];
+    double complex cp_10_0p25 = cpow(sf[10], 0.25);
+    double complex cp_8_0p25 = cpow(sf[8], 0.25);
+    double complex cp_11_0p25 = cpow(sf[11], 0.25);
+    double complex cp_10_0p125 = cpow(sf[10], 0.125);
+    double complex cp_11_0p125 = cpow(sf[11], 0.125);
+    double complex cp_8_0p125 = cpow(sf[8], 0.125);
+    double complex cp_9_0p125 = cpow(sf[9], 0.125);
+    mu[0]          = gb[0] + R*T*rlog((sf[0]*cp_10_0p25*sf[6]*cp_8_0p25 + d_em[0])) + mu_Gex[0];
+    mu[1]          = gb[1] + R*T*rlog((sf[0]*cp_10_0p25*sf[4]*cp_8_0p25)) + mu_Gex[1];
+    mu[2]          = gb[2] + R*T*rlog((cp_10_0p25*sf[1]*sf[5]*cp_8_0p25)) + mu_Gex[2];
+    mu[3]          = gb[3] + R*T*rlog((cp_10_0p25*sf[2]*sf[7]*cp_8_0p25 + d_em[3])) + mu_Gex[3];
+    mu[4]          = gb[4] + R*T*rlog((cp_10_0p25*sf[3]*sf[7]*cp_8_0p25 + d_em[4])) + mu_Gex[4];
+    mu[5]          = gb[5] + R*T*rlog((cp_11_0p25*sf[2]*sf[6]*cp_8_0p25 + d_em[5])) + mu_Gex[5];
+    mu[6]          = gb[6] + R*T*rlog((1.4142*cp_10_0p125*cp_11_0p125*sf[2]*sf[6]*cp_8_0p125*cp_9_0p125 + d_em[6])) + mu_Gex[6];
+    mu[7]          = gb[7] + R*T*rlog((sf[0]*cp_10_0p25*sf[5]*cp_8_0p25)) + mu_Gex[7];
     
     d->sum_apep = 0.0;
     for (int i = 0; i < n_em; i++){
@@ -1385,16 +2529,7 @@ double obj_mb_dio(unsigned n, const double *x, double *grad, void *SS_ref_db){
     double *d_em      = d->d_em;
     px_mb_dio(SS_ref_db,x);
 
-    for (int i = 0; i < n_em; i++){
-        mu_Gex[i] = 0.0;
-        int it    = 0;
-        for (int j = 0; j < d->n_xeos; j++){
-            for (int k = j+1; k < n_em; k++){
-                mu_Gex[i] -= (d->eye[i][j] - d->p[j])*(d->eye[i][k] - d->p[k])*(d->W[it]);
-                it += 1;
-            }
-        }
-    }
+    mu_Gex_sym_n2(d, mu_Gex);
     
     sf[0]          =x[0]*x[1] - x[0]*x[3] - x[0] - x[1]*x[5] - x[1] - x[3]*x[5] +x[3] +x[5] + 1.0;
     sf[1]          = -x[0]*x[1] +x[0]*x[3] +x[0] +x[1]*x[5] +x[3]*x[5] - x[5];
@@ -1410,13 +2545,25 @@ double obj_mb_dio(unsigned n, const double *x, double *grad, void *SS_ref_db){
     sf[11]          = -x[1] - x[3] + 1.0;
     
     
-    mu[0]          = gb[0] + R*T*creal(clog(csqrt(sf[10])*csqrt(sf[3])*csqrt(sf[7])*csqrt(sf[8]))) + mu_Gex[0];
-    mu[1]          = gb[1] + R*T*creal(clog(csqrt(sf[0])*csqrt(sf[11])*csqrt(sf[4])*csqrt(sf[9]))) + mu_Gex[1];
-    mu[2]          = gb[2] + R*T*creal(clog(csqrt(sf[11])*csqrt(sf[1])*csqrt(sf[5])*csqrt(sf[9]))) + mu_Gex[2];
-    mu[3]          = gb[3] + R*T*creal(clog(csqrt(sf[10])*csqrt(sf[2])*csqrt(sf[6])*csqrt(sf[8]) +d_em[3])) + mu_Gex[3];
-    mu[4]          = gb[4] + R*T*creal(clog(csqrt(sf[0])*csqrt(sf[10])*csqrt(sf[7])*csqrt(sf[9]))) + mu_Gex[4];
-    mu[5]          = gb[5] + R*T*creal(clog(csqrt(sf[11])*csqrt(sf[1])*csqrt(sf[4])*csqrt(sf[9]))) + mu_Gex[5];
-    mu[6]          = gb[6] + R*T*creal(clog(csqrt(sf[10])*csqrt(sf[3])*csqrt(sf[6])*csqrt(sf[8]) +d_em[6])) + mu_Gex[6];
+    double complex cs_10 = csqrt(sf[10]);
+    double complex cs_3 = csqrt(sf[3]);
+    double complex cs_7 = csqrt(sf[7]);
+    double complex cs_8 = csqrt(sf[8]);
+    double complex cs_0 = csqrt(sf[0]);
+    double complex cs_11 = csqrt(sf[11]);
+    double complex cs_4 = csqrt(sf[4]);
+    double complex cs_9 = csqrt(sf[9]);
+    double complex cs_1 = csqrt(sf[1]);
+    double complex cs_5 = csqrt(sf[5]);
+    double complex cs_2 = csqrt(sf[2]);
+    double complex cs_6 = csqrt(sf[6]);
+    mu[0]          = gb[0] + R*T*rlog((cs_10*cs_3*cs_7*cs_8 +d_em[0])) + mu_Gex[0];
+    mu[1]          = gb[1] + R*T*rlog((cs_0*cs_11*cs_4*cs_9 +d_em[1])) + mu_Gex[1];
+    mu[2]          = gb[2] + R*T*rlog((cs_11*cs_1*cs_5*cs_9 +d_em[2])) + mu_Gex[2];
+    mu[3]          = gb[3] + R*T*rlog((cs_10*cs_2*cs_6*cs_8 +d_em[3])) + mu_Gex[3];
+    mu[4]          = gb[4] + R*T*rlog((cs_0*cs_10*cs_7*cs_9 +d_em[4])) + mu_Gex[4];
+    mu[5]          = gb[5] + R*T*rlog((cs_11*cs_1*cs_4*cs_9 +d_em[5])) + mu_Gex[5];
+    mu[6]          = gb[6] + R*T*rlog((cs_10*cs_3*cs_6*cs_8 +d_em[6])) + mu_Gex[6];
     
     d->sum_apep = 0.0;
     for (int i = 0; i < n_em; i++){
@@ -1474,16 +2621,7 @@ double obj_mb_opx(unsigned n, const double *x, double *grad, void *SS_ref_db){
         d->mat_phi[i] = (d->p[i]*d->v[i])/d->sum_v;
     }
     
-    for (int i = 0; i < d->n_em; i++){
-        mu_Gex[i] = 0.0;
-        int it = 0;
-        for (int j = 0; j < d->n_xeos; j++){
-            for (int k = j+1; k < d->n_em; k++){
-                mu_Gex[i] -= (d->eye[i][j] - d->mat_phi[j])*(d->eye[i][k] - d->mat_phi[k])*(d->W[it]*2.0*d->v[i]/(d->v[j]+d->v[k]));
-                it += 1;
-            }
-        }
-    }
+    mu_Gex_asym_n2(d, mu_Gex);
     
     sf[0]          =x[0]*x[1] +x[0]*x[2] - x[0] - x[1] - x[2] - 0.5*x[3]*x[4] + 0.5*x[4] + 1.0;
     sf[1]          = -x[0]*x[1] - x[0]*x[2] +x[0] + 0.5*x[3]*x[4] - 0.5*x[4];
@@ -1496,13 +2634,16 @@ double obj_mb_opx(unsigned n, const double *x, double *grad, void *SS_ref_db){
     sf[8]          = -0.5*x[1] - 0.5*x[2] + 1.0;
     
     
-    mu[0]          = gb[0] + R*T*creal(clog(sf[0]*sf[4]*csqrt(sf[8]))) + mu_Gex[0];
-    mu[1]          = gb[1] + R*T*creal(clog(sf[1]*sf[5]*csqrt(sf[8]))) + mu_Gex[1];
-    mu[2]          = gb[2] + R*T*creal(clog(sf[0]*sf[5]*csqrt(sf[8]))) + mu_Gex[2];
-    mu[3]          = gb[3] + R*T*creal(clog(1.4142*sf[3]*sf[4]*cpow(sf[7], 0.25)*cpow(sf[8], 0.25))) + mu_Gex[3];
-    mu[4]          = gb[4] + R*T*creal(clog(1.4142*sf[2]*sf[4]*cpow(sf[7], 0.25)*cpow(sf[8], 0.25) + d_em[4])) + mu_Gex[4];
-    mu[5]          = gb[5] + R*T*creal(clog(sf[0]*sf[6]*csqrt(sf[8]))) + mu_Gex[5];
-    
+    double complex cp_7_0p25 = cpow(sf[7], 0.25);
+    double complex cp_8_0p25 = cpow(sf[8], 0.25);
+    double complex cs_8 = csqrt(sf[8]);
+    mu[0]          = gb[0] + R*T*rlog((sf[0]*sf[4]*cs_8)) + mu_Gex[0];
+    mu[1]          = gb[1] + R*T*rlog((sf[1]*sf[5]*cs_8)) + mu_Gex[1];
+    mu[2]          = gb[2] + R*T*rlog((sf[0]*sf[5]*cs_8)) + mu_Gex[2];
+    mu[3]          = gb[3] + R*T*rlog((1.4142*sf[3]*sf[4]*cp_7_0p25*cp_8_0p25)) + mu_Gex[3];
+    mu[4]          = gb[4] + R*T*rlog((1.4142*sf[2]*sf[4]*cp_7_0p25*cp_8_0p25 + d_em[4])) + mu_Gex[4];
+    mu[5]          = gb[5] + R*T*rlog((sf[0]*sf[6]*cs_8 + d_em[5])) + mu_Gex[5];
+
     d->sum_apep = 0.0;
     for (int i = 0; i < n_em; i++){
         d->sum_apep += d->ape[i]*d->p[i];
@@ -1559,16 +2700,7 @@ double obj_mb_g(unsigned n, const double *x, double *grad, void *SS_ref_db){
         d->mat_phi[i] = (d->p[i]*d->v[i])/d->sum_v;
     }
     
-    for (int i = 0; i < d->n_em; i++){
-        mu_Gex[i] = 0.0;
-        int it = 0;
-        for (int j = 0; j < d->n_xeos; j++){
-            for (int k = j+1; k < d->n_em; k++){
-                mu_Gex[i] -= (d->eye[i][j] - d->mat_phi[j])*(d->eye[i][k] - d->mat_phi[k])*(d->W[it]*2.0*d->v[i]/(d->v[j]+d->v[k]));
-                it += 1;
-            }
-        }
-    }
+    mu_Gex_asym_n2(d, mu_Gex);
     
     sf[0]          =x[0]*x[1] - x[0] - x[1] + 1.0;
     sf[1]          = -x[0]*x[1] +x[0];
@@ -1577,10 +2709,15 @@ double obj_mb_g(unsigned n, const double *x, double *grad, void *SS_ref_db){
     sf[4]          =x[2];
     
     
-    mu[0]          = gb[0] + R*T*creal(clog(cpow(sf[0], 3.0)*cpow(sf[3], 2.0))) + mu_Gex[0];
-    mu[1]          = gb[1] + R*T*creal(clog(cpow(sf[1], 3.0)*cpow(sf[3], 2.0))) + mu_Gex[1];
-    mu[2]          = gb[2] + R*T*creal(clog(cpow(sf[2], 3.0)*cpow(sf[3], 2.0))) + mu_Gex[2];
-    mu[3]          = gb[3] + R*T*creal(clog(cpow(sf[0], 3.0)*cpow(sf[4], 2.0) + d_em[3])) + mu_Gex[3];
+    double complex cp_0_3p0 = cpow(sf[0], 3.0);
+    double complex cp_3_2p0 = cpow(sf[3], 2.0);
+    double complex cp_1_3p0 = cpow(sf[1], 3.0);
+    double complex cp_2_3p0 = cpow(sf[2], 3.0);
+    double complex cp_4_2p0 = cpow(sf[4], 2.0);
+    mu[0]          = gb[0] + R*T*rlog((cp_0_3p0*cp_3_2p0)) + mu_Gex[0];
+    mu[1]          = gb[1] + R*T*rlog((cp_1_3p0*cp_3_2p0)) + mu_Gex[1];
+    mu[2]          = gb[2] + R*T*rlog((cp_2_3p0*cp_3_2p0 + d_em[2])) + mu_Gex[2];
+    mu[3]          = gb[3] + R*T*rlog((cp_0_3p0*cp_4_2p0 + d_em[3])) + mu_Gex[3];
     
     d->sum_apep = 0.0;
     for (int i = 0; i < n_em; i++){
@@ -1628,23 +2765,16 @@ double obj_mb_ol(unsigned n, const double *x, double *grad, void *SS_ref_db){
     double *mu        = d->mu;
     px_mb_ol(SS_ref_db,x);
 
-    for (int i = 0; i < n_em; i++){
-        mu_Gex[i] = 0.0;
-        int it    = 0;
-        for (int j = 0; j < d->n_xeos; j++){
-            for (int k = j+1; k < n_em; k++){
-                mu_Gex[i] -= (d->eye[i][j] - d->p[j])*(d->eye[i][k] - d->p[k])*(d->W[it]);
-                it += 1;
-            }
-        }
-    }
+    mu_Gex_sym_n2(d, mu_Gex);
     
     sf[0]          = 1.0 - x[0];
     sf[1]          =x[0];
     
     
-    mu[0]          = gb[0] + R*T*creal(clog(cpow(sf[0], 2.0))) + mu_Gex[0];
-    mu[1]          = gb[1] + R*T*creal(clog(cpow(sf[1], 2.0))) + mu_Gex[1];
+    double complex cp_0_2p0 = cpow(sf[0], 2.0);
+    double complex cp_1_2p0 = cpow(sf[1], 2.0);
+    mu[0]          = gb[0] + R*T*rlog((cp_0_2p0)) + mu_Gex[0];
+    mu[1]          = gb[1] + R*T*rlog((cp_1_2p0)) + mu_Gex[1];
     
     d->sum_apep = 0.0;
     for (int i = 0; i < n_em; i++){
@@ -1691,6 +2821,7 @@ double obj_mb_fsp(unsigned n, const double *x, double *grad, void *SS_ref_db){
     double *mu_Gex    = d->mu_Gex;
     double *sf        = d->sf;
     double *mu        = d->mu;
+    double *d_em      = d->d_em;
     px_mb_fsp(SS_ref_db,x);
 
     d->sum_v = 0.0;
@@ -1701,16 +2832,7 @@ double obj_mb_fsp(unsigned n, const double *x, double *grad, void *SS_ref_db){
         d->mat_phi[i] = (d->p[i]*d->v[i])/d->sum_v;
     }
     
-    for (int i = 0; i < d->n_em; i++){
-        mu_Gex[i] = 0.0;
-        int it = 0;
-        for (int j = 0; j < d->n_xeos; j++){
-            for (int k = j+1; k < d->n_em; k++){
-                mu_Gex[i] -= (d->eye[i][j] - d->mat_phi[j])*(d->eye[i][k] - d->mat_phi[k])*(d->W[it]*2.0*d->v[i]/(d->v[j]+d->v[k]));
-                it += 1;
-            }
-        }
-    }
+    mu_Gex_asym_n2(d, mu_Gex);
     
     sf[0]          = -x[0] - x[1] + 1.0;
     sf[1]          =x[0];
@@ -1719,10 +2841,14 @@ double obj_mb_fsp(unsigned n, const double *x, double *grad, void *SS_ref_db){
     sf[4]          = 0.75 - 0.25*x[0];
     
     
-    mu[0]          = gb[0] + R*T*creal(clog(1.7548*sf[0]*cpow(sf[3], 0.25)*cpow(sf[4], 0.75))) + mu_Gex[0];
-    mu[1]          = gb[1] + R*T*creal(clog(2.0*sf[1]*csqrt(sf[3])*csqrt(sf[4]))) + mu_Gex[1];
-    mu[2]          = gb[2] + R*T*creal(clog(1.7548*sf[2]*cpow(sf[3], 0.25)*cpow(sf[4], 0.75))) + mu_Gex[2];
-    
+    double complex cp_3_0p25 = cpow(sf[3], 0.25);
+    double complex cp_4_0p75 = cpow(sf[4], 0.75);
+    double complex cs_3 = csqrt(sf[3]);
+    double complex cs_4 = csqrt(sf[4]);
+    mu[0]          = gb[0] + R*T*rlog((1.7548*sf[0]*cp_3_0p25*cp_4_0p75 + d_em[0])) + mu_Gex[0];
+    mu[1]          = gb[1] + R*T*rlog((2.0*sf[1]*cs_3*cs_4 + d_em[1])) + mu_Gex[1];
+    mu[2]          = gb[2] + R*T*rlog((1.7548*sf[2]*cp_3_0p25*cp_4_0p75 + d_em[2])) + mu_Gex[2];
+
     d->sum_apep = 0.0;
     for (int i = 0; i < n_em; i++){
         d->sum_apep += d->ape[i]*d->p[i];
@@ -1735,6 +2861,10 @@ double obj_mb_fsp(unsigned n, const double *x, double *grad, void *SS_ref_db){
     }
     d->df = d->df_raw * d->factor;
 
+    for (int k = 0; k < n_em; k++){
+        d->df += d->ox_penalty[k] * d->p[k] * d->p[k];
+    }
+
     if (grad){
         double *dfx    = d->dfx;
         double **dp_dx = d->dp_dx;
@@ -1743,6 +2873,7 @@ double obj_mb_fsp(unsigned n, const double *x, double *grad, void *SS_ref_db){
             dfx[i] = 0.0;
             for (int j = 0; j < n_em; j++){
                 dfx[i] += (mu[j] - (d->ape[j]/d->sum_apep)*d->df_raw)*d->factor*dp_dx[j][i];
+                dfx[i] += d->ox_penalty[j]*2.0*d->p[j]*dp_dx[j][i];
             }
             grad[i] = creal(dfx[i]);
         }
@@ -1768,6 +2899,7 @@ double obj_mb_abc(unsigned n, const double *x, double *grad, void *SS_ref_db){
     double *mu_Gex    = d->mu_Gex;
     double *sf        = d->sf;
     double *mu        = d->mu;
+    double *d_em      = d->d_em;
     px_mb_abc(SS_ref_db,x);
 
     d->sum_v = 0.0;
@@ -1778,23 +2910,14 @@ double obj_mb_abc(unsigned n, const double *x, double *grad, void *SS_ref_db){
         d->mat_phi[i] = (d->p[i]*d->v[i])/d->sum_v;
     }
     
-    for (int i = 0; i < d->n_em; i++){
-        mu_Gex[i] = 0.0;
-        int it = 0;
-        for (int j = 0; j < d->n_xeos; j++){
-            for (int k = j+1; k < d->n_em; k++){
-                mu_Gex[i] -= (d->eye[i][j] - d->mat_phi[j])*(d->eye[i][k] - d->mat_phi[k])*(d->W[it]*2.0*d->v[i]/(d->v[j]+d->v[k]));
-                it += 1;
-            }
-        }
-    }
+    mu_Gex_asym_n2(d, mu_Gex);
     
     sf[0]          = 1.0 - x[0];
     sf[1]          =x[0];
     
     
-    mu[0]          = gb[0] + R*T*creal(clog(sf[0])) + mu_Gex[0];
-    mu[1]          = gb[1] + R*T*creal(clog(sf[1])) + mu_Gex[1];
+    mu[0]          = gb[0] + R*T*rlog((sf[0] + d_em[0])) + mu_Gex[0];
+    mu[1]          = gb[1] + R*T*rlog((sf[1] + d_em[1])) + mu_Gex[1];
     
     d->sum_apep = 0.0;
     for (int i = 0; i < n_em; i++){
@@ -1851,16 +2974,7 @@ double obj_mb_k4tr(unsigned n, const double *x, double *grad, void *SS_ref_db){
         d->mat_phi[i] = (d->p[i]*d->v[i])/d->sum_v;
     }
     
-    for (int i = 0; i < d->n_em; i++){
-        mu_Gex[i] = 0.0;
-        int it = 0;
-        for (int j = 0; j < d->n_xeos; j++){
-            for (int k = j+1; k < d->n_em; k++){
-                mu_Gex[i] -= (d->eye[i][j] - d->mat_phi[j])*(d->eye[i][k] - d->mat_phi[k])*(d->W[it]*2.0*d->v[i]/(d->v[j]+d->v[k]));
-                it += 1;
-            }
-        }
-    }
+    mu_Gex_asym_n2(d, mu_Gex);
     
     sf[0]          =x[0];
     sf[1]          =x[1];
@@ -1869,9 +2983,13 @@ double obj_mb_k4tr(unsigned n, const double *x, double *grad, void *SS_ref_db){
     sf[4]          = 0.75 - 0.25*x[1];
     
     
-    mu[0]          = gb[0] + R*T*creal(clog(1.7548*sf[0]*cpow(sf[3], 0.25)*cpow(sf[4], 0.75))) + mu_Gex[0];
-    mu[1]          = gb[1] + R*T*creal(clog(2.0*sf[1]*csqrt(sf[3])*csqrt(sf[4]))) + mu_Gex[1];
-    mu[2]          = gb[2] + R*T*creal(clog(1.7548*sf[2]*cpow(sf[3], 0.25)*cpow(sf[4], 0.75))) + mu_Gex[2];
+    double complex cp_3_0p25 = cpow(sf[3], 0.25);
+    double complex cp_4_0p75 = cpow(sf[4], 0.75);
+    double complex cs_3 = csqrt(sf[3]);
+    double complex cs_4 = csqrt(sf[4]);
+    mu[0]          = gb[0] + R*T*rlog((1.7548*sf[0]*cp_3_0p25*cp_4_0p75)) + mu_Gex[0];
+    mu[1]          = gb[1] + R*T*rlog((2.0*sf[1]*cs_3*cs_4)) + mu_Gex[1];
+    mu[2]          = gb[2] + R*T*rlog((1.7548*sf[2]*cp_3_0p25*cp_4_0p75)) + mu_Gex[2];
     
     d->sum_apep = 0.0;
     for (int i = 0; i < n_em; i++){
@@ -1920,16 +3038,7 @@ double obj_mb_spl(unsigned n, const double *x, double *grad, void *SS_ref_db){
     double *d_em      = d->d_em;
     px_mb_spl(SS_ref_db,x);
 
-    for (int i = 0; i < n_em; i++){
-        mu_Gex[i] = 0.0;
-        int it    = 0;
-        for (int j = 0; j < d->n_xeos; j++){
-            for (int k = j+1; k < n_em; k++){
-                mu_Gex[i] -= (d->eye[i][j] - d->p[j])*(d->eye[i][k] - d->p[k])*(d->W[it]);
-                it += 1;
-            }
-        }
-    }
+    mu_Gex_sym_n2(d, mu_Gex);
     
     sf[0]          =x[1];
     sf[1]          = 1.0 - x[1];
@@ -1937,9 +3046,9 @@ double obj_mb_spl(unsigned n, const double *x, double *grad, void *SS_ref_db){
     sf[3]          =x[0];
     
     
-    mu[0]          = gb[0] + R*T*creal(clog(sf[0]*sf[3])) + mu_Gex[0];
-    mu[1]          = gb[1] + R*T*creal(clog(sf[0]*sf[2])) + mu_Gex[1];
-    mu[2]          = gb[2] + R*T*creal(clog(sf[1]*sf[3]  + d_em[2])) + mu_Gex[2];
+    mu[0]          = gb[0] + R*T*rlog((sf[0]*sf[3])) + mu_Gex[0];
+    mu[1]          = gb[1] + R*T*rlog((sf[0]*sf[2])) + mu_Gex[1];
+    mu[2]          = gb[2] + R*T*rlog((sf[1]*sf[3]  + d_em[2])) + mu_Gex[2];
     
     d->sum_apep = 0.0;
     for (int i = 0; i < n_em; i++){
@@ -1956,11 +3065,18 @@ double obj_mb_spl(unsigned n, const double *x, double *grad, void *SS_ref_db){
     if (grad){
         double *dfx    = d->dfx;
         double **dp_dx = d->dp_dx;
+        double dsf[4][2] = {{0.0,1.0},{0.0,-1.0},{-1.0,0.0},{1.0,0.0}};
+        int    ia[3]    = {0, 0, 1};
+        int    ib[3]    = {3, 2, 3};
+        double de[3]    = {0.0, 0.0, d_em[2]};
         dpdx_mb_spl(SS_ref_db,x);
         for (int i = 0; i < (d->n_xeos); i++){
             dfx[i] = 0.0;
             for (int j = 0; j < n_em; j++){
                 dfx[i] += (mu[j] - (d->ape[j]/d->sum_apep)*d->df_raw)*d->factor*dp_dx[j][i];
+            }
+            for (int j = 0; j < n_em; j++){
+                dfx[i] += d->factor*R*T*d->p[j]*(sf[ib[j]]*dsf[ia[j]][i] + sf[ia[j]]*dsf[ib[j]][i])/(sf[ia[j]]*sf[ib[j]] + de[j]);
             }
             grad[i] = creal(dfx[i]);
         }
@@ -1986,16 +3102,7 @@ double obj_mb_sp(unsigned n, const double *x, double *grad, void *SS_ref_db){
     double *d_em      = d->d_em;
     px_mb_sp(SS_ref_db,x);
 
-    for (int i = 0; i < n_em; i++){
-        mu_Gex[i] = 0.0;
-        int it    = 0;
-        for (int j = 0; j < d->n_xeos; j++){
-            for (int k = j+1; k < n_em; k++){
-                mu_Gex[i] -= (d->eye[i][j] - d->p[j])*(d->eye[i][k] - d->p[k])*(d->W[it]);
-                it += 1;
-            }
-        }
-    }
+    mu_Gex_sym_n2(d, mu_Gex);
     
     sf[0]          =x[1];
     sf[1]          = -x[1] - x[2] + 1.0;
@@ -2004,10 +3111,10 @@ double obj_mb_sp(unsigned n, const double *x, double *grad, void *SS_ref_db){
     sf[4]          =x[0];
     
     
-    mu[0]          = gb[0] + R*T*creal(clog(sf[0]*sf[4])) + mu_Gex[0];
-    mu[1]          = gb[1] + R*T*creal(clog(sf[0]*sf[3])) + mu_Gex[1];
-    mu[2]          = gb[2] + R*T*creal(clog(sf[1]*sf[4] + d_em[2])) + mu_Gex[2];
-    mu[3]          = gb[3] + R*T*creal(clog(sf[2]*sf[4] + d_em[3])) + mu_Gex[3];
+    mu[0]          = gb[0] + R*T*rlog((sf[0]*sf[4])) + mu_Gex[0];
+    mu[1]          = gb[1] + R*T*rlog((sf[0]*sf[3])) + mu_Gex[1];
+    mu[2]          = gb[2] + R*T*rlog((sf[1]*sf[4] + d_em[2])) + mu_Gex[2];
+    mu[3]          = gb[3] + R*T*rlog((sf[2]*sf[4] + d_em[3])) + mu_Gex[3];
     
     d->sum_apep = 0.0;
     for (int i = 0; i < n_em; i++){
@@ -2024,11 +3131,18 @@ double obj_mb_sp(unsigned n, const double *x, double *grad, void *SS_ref_db){
     if (grad){
         double *dfx    = d->dfx;
         double **dp_dx = d->dp_dx;
+        double dsf[5][3] = {{0.0,1.0,0.0},{0.0,-1.0,-1.0},{0.0,0.0,1.0},{-1.0,0.0,0.0},{1.0,0.0,0.0}};
+        int    ia[4]    = {0, 0, 1, 2};
+        int    ib[4]    = {4, 3, 4, 4};
+        double de[4]    = {0.0, 0.0, d_em[2], d_em[3]};
         dpdx_mb_sp(SS_ref_db,x);
         for (int i = 0; i < (d->n_xeos); i++){
             dfx[i] = 0.0;
             for (int j = 0; j < n_em; j++){
                 dfx[i] += (mu[j] - (d->ape[j]/d->sum_apep)*d->df_raw)*d->factor*dp_dx[j][i];
+            }
+            for (int j = 0; j < n_em; j++){
+                dfx[i] += d->factor*R*T*d->p[j]*(sf[ib[j]]*dsf[ia[j]][i] + sf[ia[j]]*dsf[ib[j]][i])/(sf[ia[j]]*sf[ib[j]] + de[j]);
             }
             grad[i] = creal(dfx[i]);
         }
@@ -2056,16 +3170,7 @@ double obj_mb_ilm(unsigned n, const double *x, double *grad, void *SS_ref_db){
     double *d_em      = d->d_em;
     px_mb_ilm(SS_ref_db,x);
 
-    for (int i = 0; i < n_em; i++){
-        mu_Gex[i] = 0.0;
-        int it    = 0;
-        for (int j = 0; j < d->n_xeos; j++){
-            for (int k = j+1; k < n_em; k++){
-                mu_Gex[i] -= (d->eye[i][j] - d->p[j])*(d->eye[i][k] - d->p[k])*(d->W[it]);
-                it += 1;
-            }
-        }
-    }
+    mu_Gex_sym_n2(d, mu_Gex);
     
     sf[0]          = 0.5*x[0] + 0.5*x[1];
     sf[1]          = 0.5*x[0] - 0.5*x[1];
@@ -2075,9 +3180,13 @@ double obj_mb_ilm(unsigned n, const double *x, double *grad, void *SS_ref_db){
     sf[5]          = 1.0 - x[0];
     
     
-    mu[0]          = gb[0] + R*T*creal(clog(sf[0]*sf[4] + d_em[0])) + mu_Gex[0];
-    mu[1]          = gb[1] + R*T*creal(clog(4.0*csqrt(sf[0])*csqrt(sf[1])*csqrt(sf[3])*csqrt(sf[4]) + d_em[1])) + mu_Gex[1];
-    mu[2]          = gb[2] + R*T*creal(clog(sf[2]*sf[5] + d_em[2] )) + mu_Gex[2];
+    mu[0]          = gb[0] + R*T*rlog((sf[0]*sf[4] + d_em[0])) + mu_Gex[0];
+    double complex cs_0 = csqrt(sf[0]);
+    double complex cs_1 = csqrt(sf[1]);
+    double complex cs_3 = csqrt(sf[3]);
+    double complex cs_4 = csqrt(sf[4]);
+    mu[1]          = gb[1] + R*T*rlog((4.0*cs_0*cs_1*cs_3*cs_4 + d_em[1])) + mu_Gex[1];
+    mu[2]          = gb[2] + R*T*rlog((sf[2]*sf[5] + d_em[2] )) + mu_Gex[2];
     
     d->sum_apep = 0.0;
     for (int i = 0; i < n_em; i++){
@@ -2126,16 +3235,7 @@ double obj_mb_ilmm(unsigned n, const double *x, double *grad, void *SS_ref_db){
     double *d_em      = d->d_em;
     px_mb_ilmm(SS_ref_db,x);
 
-    for (int i = 0; i < n_em; i++){
-        mu_Gex[i] = 0.0;
-        int it    = 0;
-        for (int j = 0; j < d->n_xeos; j++){
-            for (int k = j+1; k < n_em; k++){
-                mu_Gex[i] -= (d->eye[i][j] - d->p[j])*(d->eye[i][k] - d->p[k])*(d->W[it]);
-                it += 1;
-            }
-        }
-    }
+    mu_Gex_sym_n2(d, mu_Gex);
     
     sf[0]          = 0.5*x[0] - 0.5*x[1] + 0.5*x[2];
     sf[1]          = 0.5*x[0] - 0.5*x[1] - 0.5*x[2];
@@ -2146,10 +3246,14 @@ double obj_mb_ilmm(unsigned n, const double *x, double *grad, void *SS_ref_db){
     sf[6]          = 1.0 - x[0];
     
     
-    mu[0]          = gb[0] + R*T*creal(clog(sf[0]*sf[5])) + mu_Gex[0];
-    mu[1]          = gb[1] + R*T*creal(clog(4.0*csqrt(sf[0])*csqrt(sf[1])*csqrt(sf[4])*csqrt(sf[5]))) + mu_Gex[1];
-    mu[2]          = gb[2] + R*T*creal(clog(sf[3]*sf[6] + d_em[2])) + mu_Gex[2];
-    mu[3]          = gb[3] + R*T*creal(clog(sf[2]*sf[5])) + mu_Gex[3];
+    mu[0]          = gb[0] + R*T*rlog((sf[0]*sf[5] + d_em[0])) + mu_Gex[0];
+    double complex cs_0 = csqrt(sf[0]);
+    double complex cs_1 = csqrt(sf[1]);
+    double complex cs_4 = csqrt(sf[4]);
+    double complex cs_5 = csqrt(sf[5]);
+    mu[1]          = gb[1] + R*T*rlog((4.0*cs_0*cs_1*cs_4*cs_5 + d_em[1])) + mu_Gex[1];
+    mu[2]          = gb[2] + R*T*rlog((sf[3]*sf[6] + d_em[2])) + mu_Gex[2];
+    mu[3]          = gb[3] + R*T*rlog((sf[2]*sf[5] + d_em[3])) + mu_Gex[3];
     
     d->sum_apep = 0.0;
     for (int i = 0; i < n_em; i++){
@@ -2198,16 +3302,7 @@ double obj_mb_ep(unsigned n, const double *x, double *grad, void *SS_ref_db){
     double *d_em      = d->d_em;
     px_mb_ep(SS_ref_db,x);
 
-    for (int i = 0; i < n_em; i++){
-        mu_Gex[i] = 0.0;
-        int it    = 0;
-        for (int j = 0; j < d->n_xeos; j++){
-            for (int k = j+1; k < n_em; k++){
-                mu_Gex[i] -= (d->eye[i][j] - d->p[j])*(d->eye[i][k] - d->p[k])*(d->W[it]);
-                it += 1;
-            }
-        }
-    }
+    mu_Gex_sym_n2(d, mu_Gex);
     
     sf[0]          =x[0] - x[1];
     sf[1]          = -x[0] +x[1] + 1.0;
@@ -2215,9 +3310,9 @@ double obj_mb_ep(unsigned n, const double *x, double *grad, void *SS_ref_db){
     sf[3]          = -x[0] - x[1] + 1.0;
     
     
-    mu[0]          = gb[0] + R*T*creal(clog(sf[1]*sf[3])) + mu_Gex[0];
-    mu[1]          = gb[1] + R*T*creal(clog(sf[1]*sf[2] + d_em[1])) + mu_Gex[1];
-    mu[2]          = gb[2] + R*T*creal(clog(sf[0]*sf[2] + d_em[2])) + mu_Gex[2];
+    mu[0]          = gb[0] + R*T*rlog((sf[1]*sf[3])) + mu_Gex[0];
+    mu[1]          = gb[1] + R*T*rlog((sf[1]*sf[2] + d_em[1])) + mu_Gex[1];
+    mu[2]          = gb[2] + R*T*rlog((sf[0]*sf[2] + d_em[2])) + mu_Gex[2];
     
     d->sum_apep = 0.0;
     for (int i = 0; i < n_em; i++){
@@ -2266,16 +3361,7 @@ double obj_mb_bi(unsigned n, const double *x, double *grad, void *SS_ref_db){
     double *d_em      = d->d_em;
     px_mb_bi(SS_ref_db,x);
 
-    for (int i = 0; i < n_em; i++){
-        mu_Gex[i] = 0.0;
-        int it    = 0;
-        for (int j = 0; j < d->n_xeos; j++){
-            for (int k = j+1; k < n_em; k++){
-                mu_Gex[i] -= (d->eye[i][j] - d->p[j])*(d->eye[i][k] - d->p[k])*(d->W[it]);
-                it += 1;
-            }
-        }
-    }
+    mu_Gex_sym_n2(d, mu_Gex);
     
     sf[0]          =x[0]*x[1] +x[0]*x[2] +x[0]*x[3] - x[0] - x[1] - x[2] - x[3] - 2.0/3.0*x[4] + 1.0;
     sf[1]          = -x[0]*x[1] - x[0]*x[2] - x[0]*x[3] +x[0] + 2.0/3.0*x[4];
@@ -2290,12 +3376,17 @@ double obj_mb_bi(unsigned n, const double *x, double *grad, void *SS_ref_db){
     sf[10]          =x[3];
     
     
-    mu[0]          = gb[0] + R*T*creal(clog(4.0*sf[0]*cpow(sf[5], 2.0)*sf[7]*sf[8]*cpow(sf[9], 2.0))) + mu_Gex[0];
-    mu[1]          = gb[1] + R*T*creal(clog(4.0*sf[1]*cpow(sf[6], 2.0)*sf[7]*sf[8]*cpow(sf[9], 2.0))) + mu_Gex[1];
-    mu[2]          = gb[2] + R*T*creal(clog(4.0*sf[1]*cpow(sf[5], 2.0)*sf[7]*sf[8]*cpow(sf[9], 2.0))) + mu_Gex[2];
-    mu[3]          = gb[3] + R*T*creal(clog(sf[4]*cpow(sf[5], 2.0)*cpow(sf[8], 2.0)*cpow(sf[9], 2.0))) + mu_Gex[3];
-    mu[4]          = gb[4] + R*T*creal(clog(4.0*cpow(sf[10], 2.0)*sf[3]*cpow(sf[5], 2.0)*sf[7]*sf[8] + d_em[4])) + mu_Gex[4];
-    mu[5]          = gb[5] + R*T*creal(clog(sf[2]*cpow(sf[5], 2.0)*cpow(sf[8], 2.0)*cpow(sf[9], 2.0) + d_em[5])) + mu_Gex[5];
+    double complex cp_5_2p0 = cpow(sf[5], 2.0);
+    double complex cp_9_2p0 = cpow(sf[9], 2.0);
+    double complex cp_6_2p0 = cpow(sf[6], 2.0);
+    double complex cp_8_2p0 = cpow(sf[8], 2.0);
+    double complex cp_10_2p0 = cpow(sf[10], 2.0);
+    mu[0]          = gb[0] + R*T*rlog((4.0*sf[0]*cp_5_2p0*sf[7]*sf[8]*cp_9_2p0)) + mu_Gex[0];
+    mu[1]          = gb[1] + R*T*rlog((4.0*sf[1]*cp_6_2p0*sf[7]*sf[8]*cp_9_2p0)) + mu_Gex[1];
+    mu[2]          = gb[2] + R*T*rlog((4.0*sf[1]*cp_5_2p0*sf[7]*sf[8]*cp_9_2p0)) + mu_Gex[2];
+    mu[3]          = gb[3] + R*T*rlog((sf[4]*cp_5_2p0*cp_8_2p0*cp_9_2p0)) + mu_Gex[3];
+    mu[4]          = gb[4] + R*T*rlog((4.0*cp_10_2p0*sf[3]*cp_5_2p0*sf[7]*sf[8] + d_em[4])) + mu_Gex[4];
+    mu[5]          = gb[5] + R*T*rlog((sf[2]*cp_5_2p0*cp_8_2p0*cp_9_2p0 + d_em[5])) + mu_Gex[5];
     
     d->sum_apep = 0.0;
     for (int i = 0; i < n_em; i++){
@@ -2353,16 +3444,7 @@ double obj_mb_mu(unsigned n, const double *x, double *grad, void *SS_ref_db){
         d->mat_phi[i] = (d->p[i]*d->v[i])/d->sum_v;
     }
     
-    for (int i = 0; i < d->n_em; i++){
-        mu_Gex[i] = 0.0;
-        int it = 0;
-        for (int j = 0; j < d->n_xeos; j++){
-            for (int k = j+1; k < d->n_em; k++){
-                mu_Gex[i] -= (d->eye[i][j] - d->mat_phi[j])*(d->eye[i][k] - d->mat_phi[k])*(d->W[it]*2.0*d->v[i]/(d->v[j]+d->v[k]));
-                it += 1;
-            }
-        }
-    }
+    mu_Gex_asym_n2(d, mu_Gex);
     
     sf[0]          = -x[3] - x[4] + 1.0;
     sf[1]          =x[3];
@@ -2376,13 +3458,15 @@ double obj_mb_mu(unsigned n, const double *x, double *grad, void *SS_ref_db){
     sf[9]          = 0.5*x[1] + 0.5*x[4];
     
     
-    mu[0]          = gb[0] + R*T*creal(clog(4.0*sf[0]*sf[5]*sf[6]*sf[8]*sf[9])) + mu_Gex[0];
-    mu[1]          = gb[1] + R*T*creal(clog(sf[0]*sf[3]*sf[6]*cpow(sf[8], 2.0))) + mu_Gex[1];
-    mu[2]          = gb[2] + R*T*creal(clog(sf[0]*sf[4]*sf[6]*cpow(sf[8], 2.0))) + mu_Gex[2];
-    mu[3]          = gb[3] + R*T*creal(clog(4.0*sf[1]*sf[5]*sf[6]*sf[8]*sf[9])) + mu_Gex[3];
-    mu[4]          = gb[4] + R*T*creal(clog(sf[2]*sf[5]*sf[6]*cpow(sf[9], 2.0))) + mu_Gex[4];
-    mu[5]          = gb[5] + R*T*creal(clog(4.0*sf[0]*sf[5]*sf[7]*sf[8]*sf[9]+ d_em[5])) + mu_Gex[5];
-    
+    mu[0]          = gb[0] + R*T*rlog((4.0*sf[0]*sf[5]*sf[6]*sf[8]*sf[9])) + mu_Gex[0];
+    double complex cp_8_2p0 = cpow(sf[8], 2.0);
+    double complex cp_9_2p0 = cpow(sf[9], 2.0);
+    mu[1]          = gb[1] + R*T*rlog((sf[0]*sf[3]*sf[6]*cp_8_2p0)) + mu_Gex[1];
+    mu[2]          = gb[2] + R*T*rlog((sf[0]*sf[4]*sf[6]*cp_8_2p0)) + mu_Gex[2];
+    mu[3]          = gb[3] + R*T*rlog((4.0*sf[1]*sf[5]*sf[6]*sf[8]*sf[9] + d_em[3])) + mu_Gex[3];
+    mu[4]          = gb[4] + R*T*rlog((sf[2]*sf[5]*sf[6]*cp_9_2p0 + d_em[4])) + mu_Gex[4];
+    mu[5]          = gb[5] + R*T*rlog((4.0*sf[0]*sf[5]*sf[7]*sf[8]*sf[9]+ d_em[5])) + mu_Gex[5];
+
     d->sum_apep = 0.0;
     for (int i = 0; i < n_em; i++){
         d->sum_apep += d->ape[i]*d->p[i];
@@ -2395,6 +3479,10 @@ double obj_mb_mu(unsigned n, const double *x, double *grad, void *SS_ref_db){
     }
     d->df = d->df_raw * d->factor;
 
+    for (int k = 0; k < n_em; k++){
+        d->df += d->ox_penalty[k] * d->p[k] * d->p[k];
+    }
+
     if (grad){
         double *dfx    = d->dfx;
         double **dp_dx = d->dp_dx;
@@ -2403,6 +3491,7 @@ double obj_mb_mu(unsigned n, const double *x, double *grad, void *SS_ref_db){
             dfx[i] = 0.0;
             for (int j = 0; j < n_em; j++){
                 dfx[i] += (mu[j] - (d->ape[j]/d->sum_apep)*d->df_raw)*d->factor*dp_dx[j][i];
+                dfx[i] += d->ox_penalty[j]*2.0*d->p[j]*dp_dx[j][i];
             }
             grad[i] = creal(dfx[i]);
         }
@@ -2411,7 +3500,7 @@ double obj_mb_mu(unsigned n, const double *x, double *grad, void *SS_ref_db){
 
     return d->df;
 }
-    
+
 /**
     Objective function of chl
 */
@@ -2430,16 +3519,7 @@ double obj_mb_chl(unsigned n, const double *x, double *grad, void *SS_ref_db){
     double *d_em      = d->d_em;
     px_mb_chl(SS_ref_db,x);
 
-    for (int i = 0; i < n_em; i++){
-        mu_Gex[i] = 0.0;
-        int it    = 0;
-        for (int j = 0; j < d->n_xeos; j++){
-            for (int k = j+1; k < n_em; k++){
-                mu_Gex[i] -= (d->eye[i][j] - d->p[j])*(d->eye[i][k] - d->p[k])*(d->W[it]);
-                it += 1;
-            }
-        }
-    }
+    mu_Gex_sym_n2(d, mu_Gex);
     
     sf[0]          =x[0]*x[1] - x[0]*x[3] - x[0] - x[1]*x[4] - x[1] +x[3]*x[4] +x[3] +x[4] + 1.0;
     sf[1]          = -x[0]*x[1] +x[0]*x[3] +x[0] +x[1]*x[4] - x[3]*x[4] - x[4];
@@ -2454,13 +3534,17 @@ double obj_mb_chl(unsigned n, const double *x, double *grad, void *SS_ref_db){
     sf[10]          =x[1] + 0.5*x[2];
     
     
-    mu[0]          = gb[0] + R*T*creal(clog(4.0*sf[0]*sf[10]*cpow(sf[3], 4.0)*sf[8]*sf[9])) + mu_Gex[0];
-    mu[1]          = gb[1] + R*T*creal(clog(sf[0]*cpow(sf[3], 4.0)*sf[5]*cpow(sf[9], 2.0))) + mu_Gex[1];
-    mu[2]          = gb[2] + R*T*creal(clog(cpow(sf[10], 2.0)*sf[2]*cpow(sf[3], 4.0)*sf[8])) + mu_Gex[2];
-    mu[3]          = gb[3] + R*T*creal(clog(4.0*sf[10]*sf[1]*cpow(sf[4], 4.0)*sf[8]*sf[9])) + mu_Gex[3];
-    mu[4]          = gb[4] + R*T*creal(clog(sf[0]*cpow(sf[4], 4.0)*sf[6]*cpow(sf[9], 2.0))) + mu_Gex[4];
-    mu[5]          = gb[5] + R*T*creal(clog(sf[1]*cpow(sf[3], 4.0)*sf[5]*cpow(sf[9], 2.0))) + mu_Gex[5];
-    mu[6]          = gb[6] + R*T*creal(clog(4.0*sf[0]*sf[10]*cpow(sf[3], 4.0)*sf[7]*sf[9] + d_em[6])) + mu_Gex[6];
+    double complex cp_3_4p0 = cpow(sf[3], 4.0);
+    double complex cp_9_2p0 = cpow(sf[9], 2.0);
+    double complex cp_10_2p0 = cpow(sf[10], 2.0);
+    double complex cp_4_4p0 = cpow(sf[4], 4.0);
+    mu[0]          = gb[0] + R*T*rlog((4.0*sf[0]*sf[10]*cp_3_4p0*sf[8]*sf[9])) + mu_Gex[0];
+    mu[1]          = gb[1] + R*T*rlog((sf[0]*cp_3_4p0*sf[5]*cp_9_2p0)) + mu_Gex[1];
+    mu[2]          = gb[2] + R*T*rlog((cp_10_2p0*sf[2]*cp_3_4p0*sf[8])) + mu_Gex[2];
+    mu[3]          = gb[3] + R*T*rlog((4.0*sf[10]*sf[1]*cp_4_4p0*sf[8]*sf[9])) + mu_Gex[3];
+    mu[4]          = gb[4] + R*T*rlog((sf[0]*cp_4_4p0*sf[6]*cp_9_2p0)) + mu_Gex[4];
+    mu[5]          = gb[5] + R*T*rlog((sf[1]*cp_3_4p0*sf[5]*cp_9_2p0)) + mu_Gex[5];
+    mu[6]          = gb[6] + R*T*rlog((4.0*sf[0]*sf[10]*cp_3_4p0*sf[7]*sf[9] + d_em[6])) + mu_Gex[6];
     
     d->sum_apep = 0.0;
     for (int i = 0; i < n_em; i++){
@@ -2518,42 +3602,45 @@ double obj_mb_oamp(unsigned n, const double *x, double *grad, void *SS_ref_db){
         d->mat_phi[i] = (d->p[i]*d->v[i])/d->sum_v;
     }
     
-    for (int i = 0; i < d->n_em; i++){
-        mu_Gex[i] = 0.0;
-        int it = 0;
-        for (int j = 0; j < d->n_xeos; j++){
-            for (int k = j+1; k < d->n_em; k++){
-                mu_Gex[i] -= (d->eye[i][j] - d->mat_phi[j])*(d->eye[i][k] - d->mat_phi[k])*(d->W[it]*2.0*d->v[i]/(d->v[j]+d->v[k]));
-                it += 1;
-            }
-        }
-    }
+    mu_Gex_asym_n2(d, mu_Gex);
     
     sf[0]          = 1.0 - x[3];
-    sf[1]          = 1.0*x[3];
-    sf[2]          = 1.0*x[4];
-    sf[3]          = 1.0*x[2];
-    sf[4]          = 1.0*x[0]*x[2] + 1.0*x[0]*x[4] - x[0] + 1.0*x[1]*x[7] - x[2] - x[4] + 1.0*x[5]*x[7] - 1.5*x[6] - x[7] + 1.0;
-    sf[5]          = -x[0]*x[2] - x[0]*x[4] + 1.0*x[0] - x[1]*x[7] - x[5]*x[7] + 1.5*x[6] + 1.0*x[7];
-    sf[6]          = -x[0] + 1.0*x[6] + 1.0;
-    sf[7]          = 1.0*x[0] - x[6];
-    sf[8]          = 1.0*x[1];
-    sf[9]          = 1.0*x[5];
-    sf[10]          = 1.0*x[0]*x[1] + 1.0*x[0]*x[5] - x[0] - x[1]*x[7] - x[1] - x[5]*x[7] - x[5] + 1.0*x[7] + 1.0;
-    sf[11]          = -x[0]*x[1] - x[0]*x[5] + 1.0*x[0] + 1.0*x[1]*x[7] + 1.0*x[5]*x[7] - x[7];
+    sf[1]          =x[3];
+    sf[2]          =x[4];
+    sf[3]          =x[2];
+    sf[4]          =x[0]*x[2] +x[0]*x[4] - x[0] +x[1]*x[7] - x[2] - x[4] +x[5]*x[7] - 1.5*x[6] - x[7] + 1.0;
+    sf[5]          = -x[0]*x[2] - x[0]*x[4] +x[0] - x[1]*x[7] - x[5]*x[7] + 1.5*x[6] +x[7];
+    sf[6]          = -x[0] +x[6] + 1.0;
+    sf[7]          =x[0] - x[6];
+    sf[8]          =x[1];
+    sf[9]          =x[5];
+    sf[10]          =x[0]*x[1] +x[0]*x[5] - x[0] - x[1]*x[7] - x[1] - x[5]*x[7] - x[5] +x[7] + 1.0;
+    sf[11]          = -x[0]*x[1] - x[0]*x[5] +x[0] +x[1]*x[7] +x[5]*x[7] - x[7];
     sf[12]          = 0.5*x[1] - 0.5*x[2] + 0.25*x[3] + 0.5*x[5];
     sf[13]          = -0.5*x[1] + 0.5*x[2] - 0.25*x[3] - 0.5*x[5] + 1.0;
     
     
-    mu[0]          = gb[0] + R*T*creal(clog(sf[0]*cpow(sf[10], 2.0)*sf[13]*cpow(sf[4], 2.0)*cpow(sf[6], 3.0))) + mu_Gex[0];
-    mu[1]          = gb[1] + R*T*creal(clog(2.0*sf[0]*csqrt(sf[12])*csqrt(sf[13])*cpow(sf[4], 2.0)*cpow(sf[6], 3.0)*cpow(sf[8], 2.0))) + mu_Gex[1];
-    mu[2]          = gb[2] + R*T*creal(clog(8.0*sf[10]*csqrt(sf[12])*csqrt(sf[13])*sf[1]*cpow(sf[4], 2.0)*cpow(sf[6], 3.0)*sf[8])) + mu_Gex[2];
-    mu[3]          = gb[3] + R*T*creal(clog(sf[0]*sf[13]*cpow(sf[3], 2.0)*cpow(sf[6], 3.0)*cpow(sf[8], 2.0))) + mu_Gex[3];
-    mu[4]          = gb[4] + R*T*creal(clog(sf[0]*cpow(sf[10], 2.0)*sf[13]*cpow(sf[2], 2.0)*cpow(sf[6], 3.0))) + mu_Gex[4];
-    mu[5]          = gb[5] + R*T*creal(clog(sf[0]*cpow(sf[11], 2.0)*sf[13]*cpow(sf[5], 2.0)*cpow(sf[7], 3.0))) + mu_Gex[5];
-    mu[6]          = gb[6] + R*T*creal(clog(sf[0]*sf[13]*cpow(sf[3], 2.0)*cpow(sf[6], 3.0)*cpow(sf[9], 2.0) + d_em[6])) + mu_Gex[6];
-    mu[7]          = gb[7] + R*T*creal(clog(sf[0]*cpow(sf[11], 2.0)*sf[13]*cpow(sf[5], 2.0)*cpow(sf[6], 3.0))) + mu_Gex[7];
-    mu[8]          = gb[8] + R*T*creal(clog(sf[0]*cpow(sf[10], 2.0)*sf[13]*cpow(sf[5], 2.0)*cpow(sf[7], 3.0))) + mu_Gex[8];
+    double complex cp_10_2p0 = cpow(sf[10], 2.0);
+    double complex cp_4_2p0 = cpow(sf[4], 2.0);
+    double complex cp_6_3p0 = cpow(sf[6], 3.0);
+    double complex cp_8_2p0 = cpow(sf[8], 2.0);
+    double complex cp_3_2p0 = cpow(sf[3], 2.0);
+    double complex cp_2_2p0 = cpow(sf[2], 2.0);
+    double complex cp_11_2p0 = cpow(sf[11], 2.0);
+    double complex cp_5_2p0 = cpow(sf[5], 2.0);
+    double complex cp_7_3p0 = cpow(sf[7], 3.0);
+    double complex cp_9_2p0 = cpow(sf[9], 2.0);
+    double complex cs_12 = csqrt(sf[12]);
+    double complex cs_13 = csqrt(sf[13]);
+    mu[0]          = gb[0] + R*T*rlog((sf[0]*cp_10_2p0*sf[13]*cp_4_2p0*cp_6_3p0)) + mu_Gex[0];
+    mu[1]          = gb[1] + R*T*rlog((2.0*sf[0]*cs_12*cs_13*cp_4_2p0*cp_6_3p0*cp_8_2p0)) + mu_Gex[1];
+    mu[2]          = gb[2] + R*T*rlog((8.0*sf[10]*cs_12*cs_13*sf[1]*cp_4_2p0*cp_6_3p0*sf[8] + d_em[2])) + mu_Gex[2];
+    mu[3]          = gb[3] + R*T*rlog((sf[0]*sf[13]*cp_3_2p0*cp_6_3p0*cp_8_2p0 + d_em[3])) + mu_Gex[3];
+    mu[4]          = gb[4] + R*T*rlog((sf[0]*cp_10_2p0*sf[13]*cp_2_2p0*cp_6_3p0 + d_em[4])) + mu_Gex[4];
+    mu[5]          = gb[5] + R*T*rlog((sf[0]*cp_11_2p0*sf[13]*cp_5_2p0*cp_7_3p0)) + mu_Gex[5];
+    mu[6]          = gb[6] + R*T*rlog((sf[0]*sf[13]*cp_3_2p0*cp_6_3p0*cp_9_2p0 + d_em[6])) + mu_Gex[6];
+    mu[7]          = gb[7] + R*T*rlog((sf[0]*cp_11_2p0*sf[13]*cp_5_2p0*cp_6_3p0)) + mu_Gex[7];
+    mu[8]          = gb[8] + R*T*rlog((sf[0]*cp_10_2p0*sf[13]*cp_5_2p0*cp_7_3p0)) + mu_Gex[8];
     
     d->sum_apep = 0.0;
     for (int i = 0; i < n_em; i++){
@@ -2600,32 +3687,27 @@ double obj_mb_ta(unsigned n, const double *x, double *grad, void *SS_ref_db){
     double *mu        = d->mu;
     px_mb_ta(SS_ref_db,x);
 
-    for (int i = 0; i < n_em; i++){
-        mu_Gex[i] = 0.0;
-        int it    = 0;
-        for (int j = 0; j < d->n_xeos; j++){
-            for (int k = j+1; k < n_em; k++){
-                mu_Gex[i] -= (d->eye[i][j] - d->p[j])*(d->eye[i][k] - d->p[k])*(d->W[it]);
-                it += 1;
-            }
-        }
-    }
+    mu_Gex_sym_n2(d, mu_Gex);
     
-    sf[0]          = 1.0*x[2];
-    sf[1]          = 1.0*x[0]*x[2] - x[0] - 0.5*x[1]*x[3] - x[2] + 0.5*x[3] + 1.0;
-    sf[2]          = -x[0]*x[2] + 1.0*x[0] + 0.5*x[1]*x[3] - 0.5*x[3];
-    sf[3]          = 1.0*x[0]*x[1] - x[0] + 1.0*x[1]*x[3] - x[1] - x[3] + 1.0;
-    sf[4]          = -x[0]*x[1] + 1.0*x[0] - x[1]*x[3] + 1.0*x[3];
-    sf[5]          = 1.0*x[1];
-    sf[6]          = -x[1] + 1.0*x[2] + 1.0;
-    sf[7]          = 1.0*x[1] - x[2];
+    sf[0]          =x[2];
+    sf[1]          =x[0]*x[2] - x[0] - 0.5*x[1]*x[3] - x[2] + 0.5*x[3] + 1.0;
+    sf[2]          = -x[0]*x[2] +x[0] + 0.5*x[1]*x[3] - 0.5*x[3];
+    sf[3]          =x[0]*x[1] - x[0] +x[1]*x[3] - x[1] - x[3] + 1.0;
+    sf[4]          = -x[0]*x[1] +x[0] - x[1]*x[3] +x[3];
+    sf[5]          =x[1];
+    sf[6]          = -x[1] +x[2] + 1.0;
+    sf[7]          =x[1] - x[2];
     
     
-    mu[0]          = gb[0] + R*T*creal(clog(sf[1]*cpow(sf[3], 2.0)*cpow(sf[6], 2.0))) + mu_Gex[0];
-    mu[1]          = gb[1] + R*T*creal(clog(sf[2]*cpow(sf[4], 2.0)*cpow(sf[6], 2.0))) + mu_Gex[1];
-    mu[2]          = gb[2] + R*T*creal(clog(sf[1]*cpow(sf[4], 2.0)*cpow(sf[6], 2.0))) + mu_Gex[2];
-    mu[3]          = gb[3] + R*T*creal(clog(sf[0]*cpow(sf[5], 2.0)*cpow(sf[6], 2.0))) + mu_Gex[3];
-    mu[4]          = gb[4] + R*T*creal(clog(16.0*sf[1]*sf[3]*sf[5]*sf[6]*sf[7])) + mu_Gex[4];
+    double complex cp_3_2p0 = cpow(sf[3], 2.0);
+    double complex cp_6_2p0 = cpow(sf[6], 2.0);
+    double complex cp_4_2p0 = cpow(sf[4], 2.0);
+    double complex cp_5_2p0 = cpow(sf[5], 2.0);
+    mu[0]          = gb[0] + R*T*rlog((sf[1]*cp_3_2p0*cp_6_2p0)) + mu_Gex[0];
+    mu[1]          = gb[1] + R*T*rlog((sf[2]*cp_4_2p0*cp_6_2p0)) + mu_Gex[1];
+    mu[2]          = gb[2] + R*T*rlog((sf[1]*cp_4_2p0*cp_6_2p0)) + mu_Gex[2];
+    mu[3]          = gb[3] + R*T*rlog((sf[0]*cp_5_2p0*cp_6_2p0)) + mu_Gex[3];
+    mu[4]          = gb[4] + R*T*rlog((16.0*sf[1]*sf[3]*sf[5]*sf[6]*sf[7])) + mu_Gex[4];
     
     d->sum_apep = 0.0;
     for (int i = 0; i < n_em; i++){
@@ -2881,13 +3963,13 @@ void dpdx_ume_spl(void *SS_ref_db, const double *x){
     SS_ref *d  = (SS_ref *) SS_ref_db;
     double **dp_dx = d->dp_dx;
 
-    dp_dx[0][0] = -0.333333333333333;      dp_dx[0][1] = 0.0;      dp_dx[0][2] = -1.00000000000000;      dp_dx[0][3] = 0.666666666666667;      dp_dx[0][4] = 0.0;      dp_dx[0][5] = 0.0;      
-    dp_dx[1][0] = -0.666666666666667;      dp_dx[1][1] = 0.0;      dp_dx[1][2] = 0.0;      dp_dx[1][3] = -0.666666666666667;      dp_dx[1][4] = 0.0;      dp_dx[1][5] = 0.0;      
-    dp_dx[2][0] = 0.333333333333333;      dp_dx[2][1] = 0.333333333333333*x[2] - 0.333333333333333;      dp_dx[2][2] = 0.333333333333333*x[1];      dp_dx[2][3] = 0.0;      dp_dx[2][4] = 0.666666666666667;      dp_dx[2][5] = 0.666666666666667;      
-    dp_dx[3][0] = 0.666666666666667;      dp_dx[3][1] = 0.666666666666667*x[2] - 0.666666666666667;      dp_dx[3][2] = 0.666666666666667*x[1];      dp_dx[3][3] = 0.0;      dp_dx[3][4] = -0.666666666666667;      dp_dx[3][5] = -0.666666666666667;      
-    dp_dx[4][0] = 0.0;      dp_dx[4][1] = 0.333333333333333 - 0.333333333333333*x[2];      dp_dx[4][2] = -0.333333333333333*x[1];      dp_dx[4][3] = 0.0;      dp_dx[4][4] = 0.0;      dp_dx[4][5] = -0.666666666666667;      
-    dp_dx[5][0] = 0.0;      dp_dx[5][1] = 0.666666666666667 - 0.666666666666667*x[2];      dp_dx[5][2] = -0.666666666666667*x[1];      dp_dx[5][3] = 0.0;      dp_dx[5][4] = 0.0;      dp_dx[5][5] = 0.666666666666667;      
-    dp_dx[6][0] = 0.0;      dp_dx[6][1] = 0.0;      dp_dx[6][2] = 1.00000000000000;      dp_dx[6][3] = 0.0;      dp_dx[6][4] = 0.0;      dp_dx[6][5] = 0.0;      
+    dp_dx[0][0] = -1.0/3.0;      dp_dx[0][1] = 0.0;      dp_dx[0][2] = -1.0;      dp_dx[0][3] = 2.0/3.0;      dp_dx[0][4] = 0.0;      dp_dx[0][5] = 0.0;      
+    dp_dx[1][0] = -2.0/3.0;      dp_dx[1][1] = 0.0;      dp_dx[1][2] = 0.0;      dp_dx[1][3] = -2.0/3.0;      dp_dx[1][4] = 0.0;      dp_dx[1][5] = 0.0;      
+    dp_dx[2][0] = 1.0/3.0;      dp_dx[2][1] = 1.0/3.0*x[2] - 1.0/3.0;      dp_dx[2][2] = 1.0/3.0*x[1];      dp_dx[2][3] = 0.0;      dp_dx[2][4] = 2.0/3.0;      dp_dx[2][5] = 2.0/3.0;      
+    dp_dx[3][0] = 2.0/3.0;      dp_dx[3][1] = 2.0/3.0*x[2] - 2.0/3.0;      dp_dx[3][2] = 2.0/3.0*x[1];      dp_dx[3][3] = 0.0;      dp_dx[3][4] = -2.0/3.0;      dp_dx[3][5] = -2.0/3.0;      
+    dp_dx[4][0] = 0.0;      dp_dx[4][1] = 1.0/3.0 - 1.0/3.0*x[2];      dp_dx[4][2] = -1.0/3.0*x[1];      dp_dx[4][3] = 0.0;      dp_dx[4][4] = 0.0;      dp_dx[4][5] = -2.0/3.0;      
+    dp_dx[5][0] = 0.0;      dp_dx[5][1] = 2.0/3.0 - 2.0/3.0*x[2];      dp_dx[5][2] = -2.0/3.0*x[1];      dp_dx[5][3] = 0.0;      dp_dx[5][4] = 0.0;      dp_dx[5][5] = 2.0/3.0;      
+    dp_dx[6][0] = 0.0;      dp_dx[6][1] = 0.0;      dp_dx[6][2] = 1.0;      dp_dx[6][3] = 0.0;      dp_dx[6][4] = 0.0;      dp_dx[6][5] = 0.0;      
 }
 
 //-----------------------px for ev------------------- 
@@ -3095,12 +4177,12 @@ void px_ume_aug(void *SS_ref_db, const double *x){
 void px_ume_spl(void *SS_ref_db, const double *x){
     SS_ref *d  = (SS_ref *) SS_ref_db;
     double *p = d->p;
-        p[0]           = -0.333333333333333*x[0] - 1.0*x[2] + 0.666666666666667*x[3] + 0.333333333333333;
-        p[1]           = -0.666666666666667*x[0] - 0.666666666666667*x[3] + 0.666666666666667;
-        p[2]           = 0.333333333333333*x[0] + 0.333333333333333*x[1]*x[2] - 0.333333333333333*x[1] + 0.666666666666667*x[4] + 0.666666666666667*x[5];
-        p[3]           = 0.666666666666667*x[0] + 0.666666666666667*x[1]*x[2] - 0.666666666666667*x[1] - 0.666666666666667*x[4] - 0.666666666666667*x[5];
-        p[4]           = -0.333333333333333*x[1]*x[2] + 0.333333333333333*x[1] - 0.666666666666667*x[5];
-        p[5]           = -0.666666666666667*x[1]*x[2] + 0.666666666666667*x[1] + 0.666666666666667*x[5];
+        p[0]           = -1.0/3.0*x[0] -x[2] + 2.0/3.0*x[3] + 1.0/3.0;
+        p[1]           = -2.0/3.0*x[0] - 2.0/3.0*x[3] + 2.0/3.0;
+        p[2]           = 1.0/3.0*x[0] + 1.0/3.0*x[1]*x[2] - 1.0/3.0*x[1] + 2.0/3.0*x[4] + 2.0/3.0*x[5];
+        p[3]           = 2.0/3.0*x[0] + 2.0/3.0*x[1]*x[2] - 2.0/3.0*x[1] - 2.0/3.0*x[4] - 2.0/3.0*x[5];
+        p[4]           = -1.0/3.0*x[1]*x[2] + 1.0/3.0*x[1] - 2.0/3.0*x[5];
+        p[5]           = -2.0/3.0*x[1]*x[2] + 2.0/3.0*x[1] + 2.0/3.0*x[5];
         p[6]           = x[2];
 }
 
@@ -3131,8 +4213,8 @@ double obj_um_fluid(unsigned n, const double *x, double *grad, void *SS_ref_db){
     sf[1]          = 1.0 - x[0];
     
     
-    mu[0]          = gb[0] + R*T*creal(clog(sf[0] + d_em[0]));
-    mu[1]          = gb[1] + R*T*creal(clog(sf[1]));
+    mu[0]          = gb[0] + R*T*rlog((sf[0] + d_em[0]));
+    mu[1]          = gb[1] + R*T*rlog((sf[1]));
     
     d->sum_apep = 0.0;
     for (int i = 0; i < n_em; i++){
@@ -3181,25 +4263,16 @@ double obj_um_ol(unsigned n, const double *x, double *grad, void *SS_ref_db){
 
     double tmp = 0.0;
     double Gex = 0.0;
-    for (int i = 0; i < n_em; i++){
-        Gex = 0.0;
-        int it    = 0;
-        for (int j = 0; j < d->n_xeos; j++){
-            tmp = (d->eye[i][j] - d->p[j]);
-            for (int k = j+1; k < n_em; k++){
-                Gex -= tmp*(d->eye[i][k] - d->p[k])*(d->W[it]);
-                it += 1;
-            }
-        }
-        mu_Gex[i] = Gex;
-    }   
+    mu_Gex_sym_n2(d, mu_Gex);   
   
     sf[0]          = 1.0 - x[0];
     sf[1]          = x[0];
     
     
-    mu[0]          = gb[0] + R*T*creal(clog(cpow(sf[0], 2.0))) + mu_Gex[0];
-    mu[1]          = gb[1] + R*T*creal(clog(cpow(sf[1], 2.0))) + mu_Gex[1];
+    double complex cp_0_2p0 = cpow(sf[0], 2.0);
+    double complex cp_1_2p0 = cpow(sf[1], 2.0);
+    mu[0]          = gb[0] + R*T*rlog((cp_0_2p0)) + mu_Gex[0];
+    mu[1]          = gb[1] + R*T*rlog((cp_1_2p0)) + mu_Gex[1];
     
     d->sum_apep = 0.0;
     for (int i = 0; i < n_em; i++){
@@ -3250,8 +4323,8 @@ double obj_um_br(unsigned n, const double *x, double *grad, void *SS_ref_db){
     sf[0]          = 1.0 - x[0];
     sf[1]          = x[0];
     
-    mu[0]          = gb[0] + R*T*creal(clog(sf[0]));
-    mu[1]          = gb[1] + R*T*creal(clog(sf[1]));
+    mu[0]          = gb[0] + R*T*rlog((sf[0]));
+    mu[1]          = gb[1] + R*T*rlog((sf[1]));
     
     d->sum_apep = 0.0;
     for (int i = 0; i < n_em; i++){
@@ -3300,25 +4373,16 @@ double obj_um_ch(unsigned n, const double *x, double *grad, void *SS_ref_db){
 
     double tmp = 0.0;
     double Gex = 0.0;
-    for (int i = 0; i < n_em; i++){
-        Gex = 0.0;
-        int it    = 0;
-        for (int j = 0; j < d->n_xeos; j++){
-            tmp = (d->eye[i][j] - d->p[j]);
-            for (int k = j+1; k < n_em; k++){
-                Gex -= tmp*(d->eye[i][k] - d->p[k])*(d->W[it]);
-                it += 1;
-            }
-        }
-        mu_Gex[i] = Gex;
-    }   
+    mu_Gex_sym_n2(d, mu_Gex);   
   
     sf[0]          = 1.0 - x[0];
     sf[1]          = x[0];
     
     
-    mu[0]          = gb[0] + R*T*creal(clog(cpow(sf[0], 9.0))) + mu_Gex[0];
-    mu[1]          = gb[1] + R*T*creal(clog(cpow(sf[1], 9.0))) + mu_Gex[1];
+    double complex cp_0_9p0 = cpow(sf[0], 9.0);
+    double complex cp_1_9p0 = cpow(sf[1], 9.0);
+    mu[0]          = gb[0] + R*T*rlog((cp_0_9p0)) + mu_Gex[0];
+    mu[1]          = gb[1] + R*T*rlog((cp_1_9p0)) + mu_Gex[1];
     
     d->sum_apep = 0.0;
     for (int i = 0; i < n_em; i++){
@@ -3368,18 +4432,7 @@ double obj_um_atg(unsigned n, const double *x, double *grad, void *SS_ref_db){
 
     double tmp = 0.0;
     double Gex = 0.0;
-    for (int i = 0; i < n_em; i++){
-        Gex = 0.0;
-        int it    = 0;
-        for (int j = 0; j < d->n_xeos; j++){
-            tmp = (d->eye[i][j] - d->p[j]);
-            for (int k = j+1; k < n_em; k++){
-                Gex -= tmp*(d->eye[i][k] - d->p[k])*(d->W[it]);
-                it += 1;
-            }
-        }
-        mu_Gex[i] = Gex;
-    }   
+    mu_Gex_sym_n2(d, mu_Gex);   
   
     sf[0]          = x[0]*x[1] + x[0]*x[2] - x[0] - x[1]*x[3] - x[1] - x[2]*x[3] - x[2] + x[3] + 1.0;
     sf[1]          = -x[0]*x[1] - x[0]*x[2] + x[0] + x[1]*x[3] + x[2]*x[3] - x[3];
@@ -3391,11 +4444,14 @@ double obj_um_atg(unsigned n, const double *x, double *grad, void *SS_ref_db){
     sf[7]          = 0.5*x[1] + 0.5*x[2];
     
     
-    mu[0]          = gb[0] + R*T*creal(clog(sf[0]*cpow(sf[4], 2.0)*cpow(sf[6], 2.0))) + mu_Gex[0];
-    mu[1]          = gb[1] + R*T*creal(clog(sf[1]*cpow(sf[5], 2.0)*cpow(sf[6], 2.0))) + mu_Gex[1];
-    mu[2]          = gb[2] + R*T*creal(clog(sf[1]*cpow(sf[4], 2.0)*cpow(sf[6], 2.0))) + mu_Gex[2];
-    mu[3]          = gb[3] + R*T*creal(clog(4.0*sf[3]*cpow(sf[4], 2.0)*sf[6]*sf[7])) + mu_Gex[3];
-    mu[4]          = gb[4] + R*T*creal(clog(4.0*sf[2]*cpow(sf[4], 2.0)*sf[6]*sf[7] + d_em[4])) + mu_Gex[4];
+    double complex cp_4_2p0 = cpow(sf[4], 2.0);
+    double complex cp_6_2p0 = cpow(sf[6], 2.0);
+    double complex cp_5_2p0 = cpow(sf[5], 2.0);
+    mu[0]          = gb[0] + R*T*rlog((sf[0]*cp_4_2p0*cp_6_2p0)) + mu_Gex[0];
+    mu[1]          = gb[1] + R*T*rlog((sf[1]*cp_5_2p0*cp_6_2p0)) + mu_Gex[1];
+    mu[2]          = gb[2] + R*T*rlog((sf[1]*cp_4_2p0*cp_6_2p0)) + mu_Gex[2];
+    mu[3]          = gb[3] + R*T*rlog((4.0*sf[3]*cp_4_2p0*sf[6]*sf[7])) + mu_Gex[3];
+    mu[4]          = gb[4] + R*T*rlog((4.0*sf[2]*cp_4_2p0*sf[6]*sf[7] + d_em[4])) + mu_Gex[4];
     
     d->sum_apep = 0.0;
     for (int i = 0; i < n_em; i++){
@@ -3444,25 +4500,16 @@ double obj_um_g(unsigned n, const double *x, double *grad, void *SS_ref_db){
 
     double tmp = 0.0;
     double Gex = 0.0;
-    for (int i = 0; i < n_em; i++){
-        Gex = 0.0;
-        int it    = 0;
-        for (int j = 0; j < d->n_xeos; j++){
-            tmp = (d->eye[i][j] - d->p[j]);
-            for (int k = j+1; k < n_em; k++){
-                Gex -= tmp*(d->eye[i][k] - d->p[k])*(d->W[it]);
-                it += 1;
-            }
-        }
-        mu_Gex[i] = Gex;
-    }   
+    mu_Gex_sym_n2(d, mu_Gex);   
   
     sf[0]          = 1.0 - x[0];
     sf[1]          = x[0];
     
     
-    mu[0]          = gb[0] + R*T*creal(clog(cpow(sf[0], 3.0))) + mu_Gex[0];
-    mu[1]          = gb[1] + R*T*creal(clog(cpow(sf[1], 3.0))) + mu_Gex[1];
+    double complex cp_0_3p0 = cpow(sf[0], 3.0);
+    double complex cp_1_3p0 = cpow(sf[1], 3.0);
+    mu[0]          = gb[0] + R*T*rlog((cp_0_3p0)) + mu_Gex[0];
+    mu[1]          = gb[1] + R*T*rlog((cp_1_3p0)) + mu_Gex[1];
     
     d->sum_apep = 0.0;
     for (int i = 0; i < n_em; i++){
@@ -3512,18 +4559,7 @@ double obj_um_ta(unsigned n, const double *x, double *grad, void *SS_ref_db){
 
     double tmp = 0.0;
     double Gex = 0.0;
-    for (int i = 0; i < n_em; i++){
-        Gex = 0.0;
-        int it    = 0;
-        for (int j = 0; j < d->n_xeos; j++){
-            tmp = (d->eye[i][j] - d->p[j]);
-            for (int k = j+1; k < n_em; k++){
-                Gex -= tmp*(d->eye[i][k] - d->p[k])*(d->W[it]);
-                it += 1;
-            }
-        }
-        mu_Gex[i] = Gex;
-    }   
+    mu_Gex_sym_n2(d, mu_Gex);   
   
     sf[0]          = x[0]*x[3] - x[0] - x[3]*x[4] - x[3] + x[4] + 1.0;
     sf[1]          = -x[0]*x[3] + x[0] + x[3]*x[4] - x[4];
@@ -3536,12 +4572,16 @@ double obj_um_ta(unsigned n, const double *x, double *grad, void *SS_ref_db){
     sf[8]          = x[1] + x[2] - x[3];
     
     
-    mu[0]          = gb[0] + R*T*creal(clog(sf[0]*cpow(sf[3], 2.0)*cpow(sf[7], 2.0))) + mu_Gex[0];
-    mu[1]          = gb[1] + R*T*creal(clog(sf[1]*cpow(sf[4], 2.0)*cpow(sf[7], 2.0))) + mu_Gex[1];
-    mu[2]          = gb[2] + R*T*creal(clog(sf[0]*cpow(sf[4], 2.0)*cpow(sf[7], 2.0))) + mu_Gex[2];
-    mu[3]          = gb[3] + R*T*creal(clog(16.0*sf[0]*sf[3]*sf[6]*sf[7]*sf[8])) + mu_Gex[3];
-    mu[4]          = gb[4] + R*T*creal(clog(16.0*sf[0]*sf[3]*sf[5]*sf[7]*sf[8] + d_em[4])) + mu_Gex[4];
-    mu[5]          = gb[5] + R*T*creal(clog(sf[2]*cpow(sf[6], 2.0)*cpow(sf[7], 2.0))) + mu_Gex[5];
+    double complex cp_3_2p0 = cpow(sf[3], 2.0);
+    double complex cp_7_2p0 = cpow(sf[7], 2.0);
+    double complex cp_4_2p0 = cpow(sf[4], 2.0);
+    double complex cp_6_2p0 = cpow(sf[6], 2.0);
+    mu[0]          = gb[0] + R*T*rlog((sf[0]*cp_3_2p0*cp_7_2p0)) + mu_Gex[0];
+    mu[1]          = gb[1] + R*T*rlog((sf[1]*cp_4_2p0*cp_7_2p0)) + mu_Gex[1];
+    mu[2]          = gb[2] + R*T*rlog((sf[0]*cp_4_2p0*cp_7_2p0)) + mu_Gex[2];
+    mu[3]          = gb[3] + R*T*rlog((16.0*sf[0]*sf[3]*sf[6]*sf[7]*sf[8])) + mu_Gex[3];
+    mu[4]          = gb[4] + R*T*rlog((16.0*sf[0]*sf[3]*sf[5]*sf[7]*sf[8] + d_em[4])) + mu_Gex[4];
+    mu[5]          = gb[5] + R*T*rlog((sf[2]*cp_6_2p0*cp_7_2p0)) + mu_Gex[5];
     
     d->sum_apep = 0.0;
     for (int i = 0; i < n_em; i++){
@@ -3591,18 +4631,7 @@ double obj_um_chl(unsigned n, const double *x, double *grad, void *SS_ref_db){
 
     double tmp = 0.0;
     double Gex = 0.0;
-    for (int i = 0; i < n_em; i++){
-        Gex = 0.0;
-        int it    = 0;
-        for (int j = 0; j < d->n_xeos; j++){
-            tmp = (d->eye[i][j] - d->p[j]);
-            for (int k = j+1; k < n_em; k++){
-                Gex -= tmp*(d->eye[i][k] - d->p[k])*(d->W[it]);
-                it += 1;
-            }
-        }
-        mu_Gex[i] = Gex;
-    }   
+    mu_Gex_sym_n2(d, mu_Gex);   
   
     sf[0]          = x[0]*x[1] - x[0]*x[3] - x[0] - x[1]*x[4] - x[1] + x[3]*x[4] + x[3] + x[4] + 1.0;
     sf[1]          = -x[0]*x[1] + x[0]*x[3] + x[0] + x[1]*x[4] - x[3]*x[4] - x[4];
@@ -3617,13 +4646,17 @@ double obj_um_chl(unsigned n, const double *x, double *grad, void *SS_ref_db){
     sf[10]          = x[1] + 0.5*x[2];
     
     
-    mu[0]          = gb[0] + R*T*creal(clog(4.0*sf[0]*sf[10]*cpow(sf[3], 4.0)*sf[8]*sf[9])) + mu_Gex[0];
-    mu[1]          = gb[1] + R*T*creal(clog(sf[0]*cpow(sf[3], 4.0)*sf[5]*cpow(sf[9], 2.0))) + mu_Gex[1];
-    mu[2]          = gb[2] + R*T*creal(clog(cpow(sf[10], 2.0)*sf[2]*cpow(sf[3], 4.0)*sf[8])) + mu_Gex[2];
-    mu[3]          = gb[3] + R*T*creal(clog(4.0*sf[10]*sf[1]*cpow(sf[4], 4.0)*sf[8]*sf[9])) + mu_Gex[3];
-    mu[4]          = gb[4] + R*T*creal(clog(sf[0]*cpow(sf[4], 4.0)*sf[6]*cpow(sf[9], 2.0))) + mu_Gex[4];
-    mu[5]          = gb[5] + R*T*creal(clog(sf[1]*cpow(sf[3], 4.0)*sf[5]*cpow(sf[9], 2.0))) + mu_Gex[5];
-    mu[6]          = gb[6] + R*T*creal(clog(4.0*sf[0]*sf[10]*cpow(sf[3], 4.0)*sf[7]*sf[9] + d_em[6])) + mu_Gex[6];
+    double complex cp_3_4p0 = cpow(sf[3], 4.0);
+    double complex cp_9_2p0 = cpow(sf[9], 2.0);
+    double complex cp_10_2p0 = cpow(sf[10], 2.0);
+    double complex cp_4_4p0 = cpow(sf[4], 4.0);
+    mu[0]          = gb[0] + R*T*rlog((4.0*sf[0]*sf[10]*cp_3_4p0*sf[8]*sf[9])) + mu_Gex[0];
+    mu[1]          = gb[1] + R*T*rlog((sf[0]*cp_3_4p0*sf[5]*cp_9_2p0)) + mu_Gex[1];
+    mu[2]          = gb[2] + R*T*rlog((cp_10_2p0*sf[2]*cp_3_4p0*sf[8])) + mu_Gex[2];
+    mu[3]          = gb[3] + R*T*rlog((4.0*sf[10]*sf[1]*cp_4_4p0*sf[8]*sf[9])) + mu_Gex[3];
+    mu[4]          = gb[4] + R*T*rlog((sf[0]*cp_4_4p0*sf[6]*cp_9_2p0)) + mu_Gex[4];
+    mu[5]          = gb[5] + R*T*rlog((sf[1]*cp_3_4p0*sf[5]*cp_9_2p0)) + mu_Gex[5];
+    mu[6]          = gb[6] + R*T*rlog((4.0*sf[0]*sf[10]*cp_3_4p0*sf[7]*sf[9] + d_em[6])) + mu_Gex[6];
     
     d->sum_apep = 0.0;
     for (int i = 0; i < n_em; i++){
@@ -3681,18 +4714,7 @@ double obj_um_anth(unsigned n, const double *x, double *grad, void *SS_ref_db){
     
     double tmp = 0.0;
     double Gex = 0.0;
-    for (int i = 0; i < d->n_em; i++){
-        Gex = 0.0;
-        int it = 0;
-        for (int j = 0; j < d->n_xeos; j++){
-            tmp = (d->eye[i][j] - d->mat_phi[j]);
-            for (int k = j+1; k < d->n_em; k++){
-                Gex -= tmp*(d->eye[i][k] - d->mat_phi[k])*(d->W[it]*2.0*d->v[i]/(d->v[j]+d->v[k]));
-                it += 1;
-            }
-        }
-        mu_Gex[i] = Gex;
-    }
+    mu_Gex_asym_n2(d, mu_Gex);
     
     sf[0]          = -x[0] + x[1]*x[3] - 1.5*x[2] - x[3] + 1.0;
     sf[1]          = x[0] - x[1]*x[3] + 1.5*x[2] + x[3];
@@ -3705,11 +4727,20 @@ double obj_um_anth(unsigned n, const double *x, double *grad, void *SS_ref_db){
     sf[8]          = 1.0 - 0.5*x[1];
     
     
-    mu[0]          = gb[0] + R*T*creal(clog(cpow(sf[0], 2.0)*cpow(sf[2], 3.0)*cpow(sf[5], 2.0)*sf[8])) + mu_Gex[0];
-    mu[1]          = gb[1] + R*T*creal(clog(2.0*cpow(sf[0], 2.0)*cpow(sf[2], 3.0)*cpow(sf[4], 2.0)*csqrt(sf[7])*csqrt(sf[8]))) + mu_Gex[1];
-    mu[2]          = gb[2] + R*T*creal(clog(cpow(sf[1], 2.0)*cpow(sf[3], 3.0)*cpow(sf[6], 2.0)*sf[8])) + mu_Gex[2];
-    mu[3]          = gb[3] + R*T*creal(clog(cpow(sf[1], 2.0)*cpow(sf[2], 3.0)*cpow(sf[6], 2.0)*sf[8])) + mu_Gex[3];
-    mu[4]          = gb[4] + R*T*creal(clog(cpow(sf[1], 2.0)*cpow(sf[3], 3.0)*cpow(sf[5], 2.0)*sf[8])) + mu_Gex[4];
+    double complex cp_0_2p0 = cpow(sf[0], 2.0);
+    double complex cp_2_3p0 = cpow(sf[2], 3.0);
+    double complex cp_5_2p0 = cpow(sf[5], 2.0);
+    double complex cp_4_2p0 = cpow(sf[4], 2.0);
+    double complex cp_1_2p0 = cpow(sf[1], 2.0);
+    double complex cp_3_3p0 = cpow(sf[3], 3.0);
+    double complex cp_6_2p0 = cpow(sf[6], 2.0);
+    double complex cs_7 = csqrt(sf[7]);
+    double complex cs_8 = csqrt(sf[8]);
+    mu[0]          = gb[0] + R*T*rlog((cp_0_2p0*cp_2_3p0*cp_5_2p0*sf[8])) + mu_Gex[0];
+    mu[1]          = gb[1] + R*T*rlog((2.0*cp_0_2p0*cp_2_3p0*cp_4_2p0*cs_7*cs_8)) + mu_Gex[1];
+    mu[2]          = gb[2] + R*T*rlog((cp_1_2p0*cp_3_3p0*cp_6_2p0*sf[8])) + mu_Gex[2];
+    mu[3]          = gb[3] + R*T*rlog((cp_1_2p0*cp_2_3p0*cp_6_2p0*sf[8])) + mu_Gex[3];
+    mu[4]          = gb[4] + R*T*rlog((cp_1_2p0*cp_3_3p0*cp_5_2p0*sf[8])) + mu_Gex[4];
     
     d->sum_apep = 0.0;
     for (int i = 0; i < n_em; i++){
@@ -3759,18 +4790,7 @@ double obj_um_spi(unsigned n, const double *x, double *grad, void *SS_ref_db){
 
     double tmp = 0.0;
     double Gex = 0.0;
-    for (int i = 0; i < n_em; i++){
-        Gex = 0.0;
-        int it    = 0;
-        for (int j = 0; j < d->n_xeos; j++){
-            tmp = (d->eye[i][j] - d->p[j]);
-            for (int k = j+1; k < n_em; k++){
-                Gex -= tmp*(d->eye[i][k] - d->p[k])*(d->W[it]);
-                it += 1;
-            }
-        }
-        mu_Gex[i] = Gex;
-    }   
+    mu_Gex_sym_n2(d, mu_Gex);   
   
     sf[0]          = x[1];
     sf[1]          = 1.0 - x[1];
@@ -3778,9 +4798,9 @@ double obj_um_spi(unsigned n, const double *x, double *grad, void *SS_ref_db){
     sf[3]          = x[0];
     
     
-    mu[0]          = gb[0] + R*T*creal(clog(sf[0]*sf[3])) + mu_Gex[0];
-    mu[1]          = gb[1] + R*T*creal(clog(sf[0]*sf[2])) + mu_Gex[1];
-    mu[2]          = gb[2] + R*T*creal(clog(sf[1]*sf[3] + d_em[2])) + mu_Gex[2];
+    mu[0]          = gb[0] + R*T*rlog((sf[0]*sf[3])) + mu_Gex[0];
+    mu[1]          = gb[1] + R*T*rlog((sf[0]*sf[2])) + mu_Gex[1];
+    mu[2]          = gb[2] + R*T*rlog((sf[1]*sf[3] + d_em[2])) + mu_Gex[2];
     
     d->sum_apep = 0.0;
     for (int i = 0; i < n_em; i++){
@@ -3830,18 +4850,7 @@ double obj_um_opx(unsigned n, const double *x, double *grad, void *SS_ref_db){
 
     double tmp = 0.0;
     double Gex = 0.0;
-    for (int i = 0; i < n_em; i++){
-        Gex = 0.0;
-        int it    = 0;
-        for (int j = 0; j < d->n_xeos; j++){
-            tmp = (d->eye[i][j] - d->p[j]);
-            for (int k = j+1; k < n_em; k++){
-                Gex -= tmp*(d->eye[i][k] - d->p[k])*(d->W[it]);
-                it += 1;
-            }
-        }
-        mu_Gex[i] = Gex;
-    }   
+    mu_Gex_sym_n2(d, mu_Gex);   
   
     sf[0]          = x[0]*x[1] + x[0]*x[2] - x[0] - x[1] - x[2] + 0.5*x[3] + 1.0;
     sf[1]          = -x[0]*x[1] - x[0]*x[2] + x[0] - 0.5*x[3];
@@ -3853,11 +4862,14 @@ double obj_um_opx(unsigned n, const double *x, double *grad, void *SS_ref_db){
     sf[7]          = -0.5*x[1] - 0.5*x[2] + 1.0;
     
     
-    mu[0]          = gb[0] + R*T*creal(clog(sf[0]*sf[4]*csqrt(sf[7]))) + mu_Gex[0];
-    mu[1]          = gb[1] + R*T*creal(clog(sf[1]*sf[5]*csqrt(sf[7]))) + mu_Gex[1];
-    mu[2]          = gb[2] + R*T*creal(clog(sf[0]*sf[5]*csqrt(sf[7]))) + mu_Gex[2];
-    mu[3]          = gb[3] + R*T*creal(clog(1.4142*sf[3]*sf[4]*cpow(sf[6], 0.25)*cpow(sf[7], 0.25))) + mu_Gex[3];
-    mu[4]          = gb[4] + R*T*creal(clog(1.4142*sf[2]*sf[4]*cpow(sf[6], 0.25)*cpow(sf[7], 0.25) + d_em[4])) + mu_Gex[4];
+    double complex cp_6_0p25 = cpow(sf[6], 0.25);
+    double complex cp_7_0p25 = cpow(sf[7], 0.25);
+    double complex cs_7 = csqrt(sf[7]);
+    mu[0]          = gb[0] + R*T*rlog((sf[0]*sf[4]*cs_7)) + mu_Gex[0];
+    mu[1]          = gb[1] + R*T*rlog((sf[1]*sf[5]*cs_7)) + mu_Gex[1];
+    mu[2]          = gb[2] + R*T*rlog((sf[0]*sf[5]*cs_7)) + mu_Gex[2];
+    mu[3]          = gb[3] + R*T*rlog((1.4142*sf[3]*sf[4]*cp_6_0p25*cp_7_0p25)) + mu_Gex[3];
+    mu[4]          = gb[4] + R*T*rlog((1.4142*sf[2]*sf[4]*cp_6_0p25*cp_7_0p25 + d_em[4])) + mu_Gex[4];
     
     d->sum_apep = 0.0;
     for (int i = 0; i < n_em; i++){
@@ -3906,24 +4918,15 @@ double obj_um_po(unsigned n, const double *x, double *grad, void *SS_ref_db){
 
     double tmp = 0.0;
     double Gex = 0.0;
-    for (int i = 0; i < n_em; i++){
-        Gex = 0.0;
-        int it    = 0;
-        for (int j = 0; j < d->n_xeos; j++){
-            tmp = (d->eye[i][j] - d->p[j]);
-            for (int k = j+1; k < n_em; k++){
-                Gex -= tmp*(d->eye[i][k] - d->p[k])*(d->W[it]);
-                it += 1;
-            }
-        }
-        mu_Gex[i] = Gex;
-    }   
+    mu_Gex_sym_n2(d, mu_Gex);   
   
     sf[0]          = 1.0 - x[0];
     sf[1]          = x[0];
     
-    mu[0]          = gb[0] + R*T*creal(clog(1.4576*cpow(sf[0], 0.875)*cpow(sf[1], 0.125))) + mu_Gex[0];
-    mu[1]          = gb[1] + R*T*creal(clog(sf[0])) + mu_Gex[1];
+    double complex cp_0_0p875 = cpow(sf[0], 0.875);
+    double complex cp_1_0p125 = cpow(sf[1], 0.125);
+    mu[0]          = gb[0] + R*T*rlog((1.4576*cp_0_0p875*cp_1_0p125)) + mu_Gex[0];
+    mu[1]          = gb[1] + R*T*rlog((sf[0])) + mu_Gex[1];
     
     d->sum_apep = 0.0;
     for (int i = 0; i < n_em; i++){
@@ -3970,22 +4973,12 @@ double obj_ume_pl4tr(unsigned n, const double *x, double *grad, void *SS_ref_db)
     double *mu_Gex    = d->mu_Gex;
     double *sf        = d->sf;
     double *mu        = d->mu;
+    double *d_em      = d->d_em;
     px_ume_pl4tr(SS_ref_db,x);
 
     double tmp = 0.0;
     double Gex = 0.0;
-    for (int i = 0; i < n_em; i++){
-        Gex = 0.0;
-        int it    = 0;
-        for (int j = 0; j < d->n_xeos; j++){
-            tmp = (d->eye[i][j] - d->p[j]);
-            for (int k = j+1; k < n_em; k++){
-                Gex -= tmp*(d->eye[i][k] - d->p[k])*(d->W[it]);
-                it += 1;
-            }
-        }
-        mu_Gex[i] = Gex;
-    }   
+    mu_Gex_sym_n2(d, mu_Gex);   
     
     sf[0]          = 1.0 - x[0];
     sf[1]          =x[0];
@@ -3993,8 +4986,12 @@ double obj_ume_pl4tr(unsigned n, const double *x, double *grad, void *SS_ref_db)
     sf[3]          = 0.75 - 0.25*x[0];
     
     
-    mu[0]          = gb[0] + R*T*creal(clog(1.7547999999999999*sf[0]*cpow(sf[2], 0.25)*cpow(sf[3], 0.75))) + mu_Gex[0];
-    mu[1]          = gb[1] + R*T*creal(clog(2.0*sf[1]*csqrt(sf[2])*csqrt(sf[3]))) + mu_Gex[1];
+    double complex cp_2_0p25 = cpow(sf[2], 0.25);
+    double complex cp_3_0p75 = cpow(sf[3], 0.75);
+    double complex cs_2 = csqrt(sf[2]);
+    double complex cs_3 = csqrt(sf[3]);
+    mu[0]          = gb[0] + R*T*rlog((1.7547999999999999*sf[0]*cp_2_0p25*cp_3_0p75 + d_em[0])) + mu_Gex[0];
+    mu[1]          = gb[1] + R*T*rlog((2.0*sf[1]*cs_2*cs_3 + d_em[1])) + mu_Gex[1];
     
     d->sum_apep = 0.0;
     for (int i = 0; i < n_em; i++){
@@ -4051,16 +5048,7 @@ double obj_ume_amp(unsigned n, const double *x, double *grad, void *SS_ref_db){
         d->mat_phi[i] = (d->p[i]*d->v[i])/d->sum_v;
     }
     
-    for (int i = 0; i < d->n_em; i++){
-        mu_Gex[i] = 0.0;
-        int it = 0;
-        for (int j = 0; j < d->n_xeos; j++){
-            for (int k = j+1; k < d->n_em; k++){
-                mu_Gex[i] -= (d->eye[i][j] - d->mat_phi[j])*(d->eye[i][k] - d->mat_phi[k])*(d->W[it]*2.0*d->v[i]/(d->v[j]+d->v[k]));
-                it += 1;
-            }
-        }
-    }
+    mu_Gex_asym_n2(d, mu_Gex);
     
     sf[0]          = 1.0 - x[3];
     sf[1]          =x[3];
@@ -4078,16 +5066,28 @@ double obj_ume_amp(unsigned n, const double *x, double *grad, void *SS_ref_db){
     sf[13]          = 0.5*x[1] - 0.5*x[2] + 0.25*x[3] + 0.5*x[5];
     
     
-    mu[0]          = gb[0] + R*T*creal(clog(sf[0]*sf[12]*cpow(sf[2], 3.0)*cpow(sf[4], 2.0)*cpow(sf[8], 2.0))) + mu_Gex[0];
-    mu[1]          = gb[1] + R*T*creal(clog(2.0*sf[0]*csqrt(sf[12])*csqrt(sf[13])*cpow(sf[2], 3.0)*cpow(sf[6], 2.0)*cpow(sf[8], 2.0))) + mu_Gex[1];
-    mu[2]          = gb[2] + R*T*creal(clog(8.0*csqrt(sf[12])*csqrt(sf[13])*sf[1]*cpow(sf[2], 3.0)*sf[4]*sf[6]*cpow(sf[8], 2.0))) + mu_Gex[2];
-    mu[3]          = gb[3] + R*T*creal(clog(sf[0]*cpow(sf[11], 2.0)*sf[12]*cpow(sf[2], 3.0)*cpow(sf[6], 2.0))) + mu_Gex[3];
-    mu[4]          = gb[4] + R*T*creal(clog(sf[0]*sf[12]*cpow(sf[2], 3.0)*cpow(sf[4], 2.0)*cpow(sf[9], 2.0))) + mu_Gex[4];
-    mu[5]          = gb[5] + R*T*creal(clog(sf[0]*cpow(sf[10], 2.0)*sf[12]*cpow(sf[3], 3.0)*cpow(sf[5], 2.0))) + mu_Gex[5];
-    mu[6]          = gb[6] + R*T*creal(clog(sf[0]*cpow(sf[10], 2.0)*sf[12]*cpow(sf[2], 3.0)*cpow(sf[5], 2.0))) + mu_Gex[6];
-    mu[7]          = gb[7] + R*T*creal(clog(sf[0]*cpow(sf[10], 2.0)*sf[12]*cpow(sf[3], 3.0)*cpow(sf[4], 2.0))) + mu_Gex[7];
-    mu[8]          = gb[8] + R*T*creal(clog(sf[0]*cpow(sf[11], 2.0)*sf[12]*cpow(sf[2], 3.0)*cpow(sf[7], 2.0) + d_em[8])) + mu_Gex[8];
-    
+    double complex cp_2_3p0 = cpow(sf[2], 3.0);
+    double complex cp_4_2p0 = cpow(sf[4], 2.0);
+    double complex cp_8_2p0 = cpow(sf[8], 2.0);
+    double complex cp_6_2p0 = cpow(sf[6], 2.0);
+    double complex cp_11_2p0 = cpow(sf[11], 2.0);
+    double complex cp_9_2p0 = cpow(sf[9], 2.0);
+    double complex cp_10_2p0 = cpow(sf[10], 2.0);
+    double complex cp_3_3p0 = cpow(sf[3], 3.0);
+    double complex cp_5_2p0 = cpow(sf[5], 2.0);
+    double complex cp_7_2p0 = cpow(sf[7], 2.0);
+    double complex cs_12 = csqrt(sf[12]);
+    double complex cs_13 = csqrt(sf[13]);
+    mu[0]          = gb[0] + R*T*rlog((sf[0]*sf[12]*cp_2_3p0*cp_4_2p0*cp_8_2p0)) + mu_Gex[0];
+    mu[1]          = gb[1] + R*T*rlog((2.0*sf[0]*cs_12*cs_13*cp_2_3p0*cp_6_2p0*cp_8_2p0)) + mu_Gex[1];
+    mu[2]          = gb[2] + R*T*rlog((8.0*cs_12*cs_13*sf[1]*cp_2_3p0*sf[4]*sf[6]*cp_8_2p0 + d_em[2])) + mu_Gex[2];
+    mu[3]          = gb[3] + R*T*rlog((sf[0]*cp_11_2p0*sf[12]*cp_2_3p0*cp_6_2p0 + d_em[3])) + mu_Gex[3];
+    mu[4]          = gb[4] + R*T*rlog((sf[0]*sf[12]*cp_2_3p0*cp_4_2p0*cp_9_2p0)) + mu_Gex[4];
+    mu[5]          = gb[5] + R*T*rlog((sf[0]*cp_10_2p0*sf[12]*cp_3_3p0*cp_5_2p0)) + mu_Gex[5];
+    mu[6]          = gb[6] + R*T*rlog((sf[0]*cp_10_2p0*sf[12]*cp_2_3p0*cp_5_2p0)) + mu_Gex[6];
+    mu[7]          = gb[7] + R*T*rlog((sf[0]*cp_10_2p0*sf[12]*cp_3_3p0*cp_4_2p0)) + mu_Gex[7];
+    mu[8]          = gb[8] + R*T*rlog((sf[0]*cp_11_2p0*sf[12]*cp_2_3p0*cp_7_2p0 + d_em[8])) + mu_Gex[8];
+
     d->sum_apep = 0.0;
     for (int i = 0; i < n_em; i++){
         d->sum_apep += d->ape[i]*d->p[i];
@@ -4100,6 +5100,10 @@ double obj_ume_amp(unsigned n, const double *x, double *grad, void *SS_ref_db){
     }
     d->df = d->df_raw * d->factor;
 
+    for (int k = 0; k < n_em; k++){
+        d->df += d->ox_penalty[k] * d->p[k] * d->p[k];
+    }
+
     if (grad){
         double *dfx    = d->dfx;
         double **dp_dx = d->dp_dx;
@@ -4108,6 +5112,7 @@ double obj_ume_amp(unsigned n, const double *x, double *grad, void *SS_ref_db){
             dfx[i] = 0.0;
             for (int j = 0; j < n_em; j++){
                 dfx[i] += (mu[j] - (d->ape[j]/d->sum_apep)*d->df_raw)*d->factor*dp_dx[j][i];
+                dfx[i] += d->ox_penalty[j]*2.0*d->p[j]*dp_dx[j][i];
             }
             grad[i] = creal(dfx[i]);
         }
@@ -4115,7 +5120,7 @@ double obj_ume_amp(unsigned n, const double *x, double *grad, void *SS_ref_db){
 
     return d->df;
 }
-    
+
 /**
     Objective function of aug
 */
@@ -4143,16 +5148,7 @@ double obj_ume_aug(unsigned n, const double *x, double *grad, void *SS_ref_db){
         d->mat_phi[i] = (d->p[i]*d->v[i])/d->sum_v;
     }
     
-    for (int i = 0; i < d->n_em; i++){
-        mu_Gex[i] = 0.0;
-        int it = 0;
-        for (int j = 0; j < d->n_xeos; j++){
-            for (int k = j+1; k < d->n_em; k++){
-                mu_Gex[i] -= (d->eye[i][j] - d->mat_phi[j])*(d->eye[i][k] - d->mat_phi[k])*(d->W[it]*2.0*d->v[i]/(d->v[j]+d->v[k]));
-                it += 1;
-            }
-        }
-    }
+    mu_Gex_asym_n2(d, mu_Gex);
     
     sf[0]          =x[0]*x[1] +x[0]*x[4] - x[0] - x[1] - 0.5*x[3]*x[5] - 0.5*x[4]*x[5] - x[4] + 0.5*x[5] + 1.0;
     sf[1]          = -x[0]*x[1] - x[0]*x[4] +x[0] + 0.5*x[3]*x[5] + 0.5*x[4]*x[5] - 0.5*x[5];
@@ -4168,14 +5164,21 @@ double obj_ume_aug(unsigned n, const double *x, double *grad, void *SS_ref_db){
     sf[11]          = 0.5*x[1] + 0.5*x[6];
     
     
-    mu[0]          = gb[0] + R*T*creal(clog(sf[0]*cpow(sf[10], 0.25)*sf[6]*cpow(sf[8], 0.25))) + mu_Gex[0];
-    mu[1]          = gb[1] + R*T*creal(clog(sf[0]*cpow(sf[10], 0.25)*sf[4]*cpow(sf[8], 0.25))) + mu_Gex[1];
-    mu[2]          = gb[2] + R*T*creal(clog(cpow(sf[10], 0.25)*sf[1]*sf[5]*cpow(sf[8], 0.25))) + mu_Gex[2];
-    mu[3]          = gb[3] + R*T*creal(clog(cpow(sf[10], 0.25)*sf[2]*sf[7]*cpow(sf[8], 0.25))) + mu_Gex[3];
-    mu[4]          = gb[4] + R*T*creal(clog(cpow(sf[10], 0.25)*sf[3]*sf[7]*cpow(sf[8], 0.25) + d_em[4])) + mu_Gex[4];
-    mu[5]          = gb[5] + R*T*creal(clog(cpow(sf[11], 0.25)*sf[2]*sf[6]*cpow(sf[8], 0.25))) + mu_Gex[5];
-    mu[6]          = gb[6] + R*T*creal(clog(1.4141999999999999*cpow(sf[10], 0.125)*cpow(sf[11], 0.125)*sf[2]*sf[6]*cpow(sf[8], 0.125)*cpow(sf[9], 0.125))) + mu_Gex[6];
-    mu[7]          = gb[7] + R*T*creal(clog(sf[0]*cpow(sf[10], 0.25)*sf[5]*cpow(sf[8], 0.25))) + mu_Gex[7];
+    double complex cp_10_0p25 = cpow(sf[10], 0.25);
+    double complex cp_8_0p25 = cpow(sf[8], 0.25);
+    double complex cp_11_0p25 = cpow(sf[11], 0.25);
+    double complex cp_10_0p125 = cpow(sf[10], 0.125);
+    double complex cp_11_0p125 = cpow(sf[11], 0.125);
+    double complex cp_8_0p125 = cpow(sf[8], 0.125);
+    double complex cp_9_0p125 = cpow(sf[9], 0.125);
+    mu[0]          = gb[0] + R*T*rlog((sf[0]*cp_10_0p25*sf[6]*cp_8_0p25 + d_em[0])) + mu_Gex[0];
+    mu[1]          = gb[1] + R*T*rlog((sf[0]*cp_10_0p25*sf[4]*cp_8_0p25)) + mu_Gex[1];
+    mu[2]          = gb[2] + R*T*rlog((cp_10_0p25*sf[1]*sf[5]*cp_8_0p25)) + mu_Gex[2];
+    mu[3]          = gb[3] + R*T*rlog((cp_10_0p25*sf[2]*sf[7]*cp_8_0p25 + d_em[3])) + mu_Gex[3];
+    mu[4]          = gb[4] + R*T*rlog((cp_10_0p25*sf[3]*sf[7]*cp_8_0p25 + d_em[4])) + mu_Gex[4];
+    mu[5]          = gb[5] + R*T*rlog((cp_11_0p25*sf[2]*sf[6]*cp_8_0p25 + d_em[5])) + mu_Gex[5];
+    mu[6]          = gb[6] + R*T*rlog((1.4142*cp_10_0p125*cp_11_0p125*sf[2]*sf[6]*cp_8_0p125*cp_9_0p125 + d_em[6])) + mu_Gex[6];
+    mu[7]          = gb[7] + R*T*rlog((sf[0]*cp_10_0p25*sf[5]*cp_8_0p25)) + mu_Gex[7];
     
     d->sum_apep = 0.0;
     for (int i = 0; i < n_em; i++){
@@ -4233,36 +5236,30 @@ double obj_ume_spl(unsigned n, const double *x, double *grad, void *SS_ref_db){
         d->mat_phi[i] = (d->p[i]*d->v[i])/d->sum_v;
     }
     
-    for (int i = 0; i < d->n_em; i++){
-        mu_Gex[i] = 0.0;
-        int it = 0;
-        for (int j = 0; j < d->n_xeos; j++){
-            for (int k = j+1; k < d->n_em; k++){
-                mu_Gex[i] -= (d->eye[i][j] - d->mat_phi[j])*(d->eye[i][k] - d->mat_phi[k])*(d->W[it]*2.0*d->v[i]/(d->v[j]+d->v[k]));
-                it += 1;
-            }
-        }
-    }
+    mu_Gex_asym_n2(d, mu_Gex);
     
-    sf[0]          = -0.333333333333333*x[0] + 0.666666666666667*x[3] + 0.333333333333333;
-    sf[1]          = 0.333333333333333*x[0] + 0.666666666666667*x[4];
-    sf[2]          = 0.666666666666667*x[1]*x[2] - 0.666666666666667*x[1] - 0.666666666666667*x[3] - 0.666666666666667*x[4] - 0.666666666666667*x[5] + 0.666666666666667;
-    sf[3]          = -0.666666666666667*x[1]*x[2] + 0.666666666666667*x[1] + 0.666666666666667*x[5];
-    sf[4]          = -0.333333333333333*x[0] - 0.333333333333333*x[3] + 0.333333333333333;
-    sf[5]          = 0.333333333333333*x[0] - 0.333333333333333*x[4];
-    sf[6]          = 0.666666666666667*x[1]*x[2] - 0.666666666666667*x[1] - x[2] + 0.333333333333333*x[3] + 0.333333333333333*x[4] + 0.333333333333333*x[5] + 0.666666666666667;
-    sf[7]          = -0.666666666666667*x[1]*x[2] + 0.666666666666667*x[1] - 0.333333333333333*x[5];
-    sf[8]          = 1.0*x[2];
+    sf[0]          = -1.0/3.0*x[0] + 2.0/3.0*x[3] + 1.0/3.0;
+    sf[1]          = 1.0/3.0*x[0] + 2.0/3.0*x[4];
+    sf[2]          = 2.0/3.0*x[1]*x[2] - 2.0/3.0*x[1] - 2.0/3.0*x[3] - 2.0/3.0*x[4] - 2.0/3.0*x[5] + 2.0/3.0;
+    sf[3]          = -2.0/3.0*x[1]*x[2] + 2.0/3.0*x[1] + 2.0/3.0*x[5];
+    sf[4]          = -1.0/3.0*x[0] - 1.0/3.0*x[3] + 1.0/3.0;
+    sf[5]          = 1.0/3.0*x[0] - 1.0/3.0*x[4];
+    sf[6]          = 2.0/3.0*x[1]*x[2] - 2.0/3.0*x[1] - x[2] + 1.0/3.0*x[3] + 1.0/3.0*x[4] + 1.0/3.0*x[5] + 2.0/3.0;
+    sf[7]          = -2.0/3.0*x[1]*x[2] + 2.0/3.0*x[1] - 1.0/3.0*x[5];
+    sf[8]          =x[2];
     
-    
-    mu[0]          = gb[0] + R*T*creal(clog(sf[0]*sf[6])) + mu_Gex[0];
-    mu[1]          = gb[1] + R*T*creal(clog(2.0*sf[2]*sqrt(sf[4])*sqrt(sf[6]))) + mu_Gex[1];
-    mu[2]          = gb[2] + R*T*creal(clog(sf[1]*sf[6])) + mu_Gex[2];
-    mu[3]          = gb[3] + R*T*creal(clog(2.0*sf[2]*sqrt(sf[5])*sqrt(sf[6]))) + mu_Gex[3];
-    mu[4]          = gb[4] + R*T*creal(clog(sf[1]*sf[7])) + mu_Gex[4];
-    mu[5]          = gb[5] + R*T*creal(clog(2.0*sf[3]*sqrt(sf[5])*sqrt(sf[7]))) + mu_Gex[5];
-    mu[6]          = gb[6] + R*T*creal(clog(sf[0]*sf[8] + d_em[6])) + mu_Gex[6];
-    
+    mu[0]          = gb[0] + R*T*rlog((sf[0]*sf[6])) + mu_Gex[0];
+    double complex cs_4 = csqrt(sf[4]);
+    double complex cs_6 = csqrt(sf[6]);
+    double complex cs_5 = csqrt(sf[5]);
+    double complex cs_7 = csqrt(sf[7]);
+    mu[1]          = gb[1] + R*T*rlog((2.0*sf[2]*cs_4*cs_6)) + mu_Gex[1];
+    mu[2]          = gb[2] + R*T*rlog((sf[1]*sf[6])) + mu_Gex[2];
+    mu[3]          = gb[3] + R*T*rlog((2.0*sf[2]*cs_5*cs_6)) + mu_Gex[3];
+    mu[4]          = gb[4] + R*T*rlog((sf[1]*sf[7] + d_em[4])) + mu_Gex[4];
+    mu[5]          = gb[5] + R*T*rlog((2.0*sf[3]*cs_5*cs_7 + d_em[5])) + mu_Gex[5];
+    mu[6]          = gb[6] + R*T*rlog((sf[0]*sf[8] + d_em[6])) + mu_Gex[6];
+
     d->sum_apep = 0.0;
     for (int i = 0; i < n_em; i++){
         d->sum_apep += d->ape[i]*d->p[i];
@@ -4560,7 +5557,7 @@ void p2x_ume_amp(void *SS_ref_db, double eps){
     d->iguess[2]   = d->iguess[5] + d->p[3];
     d->iguess[3]   = d->p[2];
     d->iguess[4]   = d->iguess[3] + d->p[0] + d->p[1];
-    d->iguess[1]   = -0.5*d->iguess[3] + d->iguess[4] - 1.0*d->iguess[5] - 1.0*d->p[0] + d->iguess[2];
+    d->iguess[1]   = -0.5*d->iguess[3] + d->iguess[4] -d->iguess[5] -d->p[0] + d->iguess[2];
     d->iguess[0]   = 0.142857142857143*(5.0*d->iguess[4] + 5.0*d->p[4] - 2.0*d->p[5] + d->p[6] + 5.0*d->iguess[2] - 5.0)/(0.285714285714286*d->iguess[4] + 0.285714285714286*d->iguess[5] + 0.285714285714286*d->iguess[1] + 0.285714285714286*d->iguess[2] - 1);
     d->iguess[6]   = -0.4*d->iguess[4]*d->iguess[0] + 2.0*d->iguess[4] - 0.4*d->iguess[5]*d->iguess[0] + 2.0*d->p[4] - 0.4*d->p[5] + 1.2*d->p[6] - 0.4*d->iguess[0]*d->iguess[1] - 0.4*d->iguess[0]*d->iguess[2] + 2.4*d->iguess[0] + 2.0*d->iguess[2] - 2.0;
     d->iguess[7]   = 0.5*(-2.0*d->iguess[4]*d->iguess[0] + 5.0*d->iguess[4] + 5.0*d->p[4] + 3.0*d->p[6] - 2.0*d->iguess[0]*d->iguess[2] + 5.0*d->iguess[0] + 5.0*d->iguess[2] - 5.0)/(d->iguess[5] + d->iguess[1] - 1);
@@ -4604,12 +5601,12 @@ void p2x_ume_aug(void *SS_ref_db, double eps){
 void p2x_ume_spl(void *SS_ref_db, double eps){
     SS_ref *d  = (SS_ref *) SS_ref_db;
     
-    d->iguess[2]  = d->p[5];
-    d->iguess[1]  = (-1.0*d->p[3] - 1.0*d->p[4])/(d->iguess[2] - 1.0);
-    d->iguess[0]  = -1.0*d->iguess[2] - 1.0*d->p[-1] - 1.0*d->p[0] + 1.0;
-    d->iguess[3]  = -1.5*d->p[0] - 1.0*d->iguess[0] + 1.0;
-    d->iguess[5]  = d->iguess[2]*d->iguess[1] + 1.5*d->p[4] - 1.0*d->iguess[1];
-    d->iguess[4]  = d->iguess[2]*d->iguess[1] - 1.5*d->p[2] - 1.0*d->iguess[5] + d->iguess[0] - 1.0*d->iguess[1];
+    d->iguess[2]  = d->p[6];
+    d->iguess[0]  = 1.0 - d->p[0] - d->p[1] - d->p[6];
+    d->iguess[3]  = d->p[0] - 0.5*d->p[1] + d->p[6];
+    d->iguess[1]  = (d->p[4] + d->p[5])/(1.0 - d->p[6]);
+    d->iguess[5]  = 0.5*d->p[5] - d->p[4];
+    d->iguess[4]  = 1.5*d->p[2] + 1.5*d->p[4] - 0.5*d->iguess[0];
     
     for (int i = 0; i < d->n_xeos; i++){
         if (d->iguess[i] < d->bounds[i][0]){
@@ -5115,18 +6112,7 @@ double obj_mp_liq(unsigned n, const double *x, double *grad, void *SS_ref_db){
 
     double tmp = 0.0;
     double Gex = 0.0;
-    for (int i = 0; i < n_em; i++){
-        Gex = 0.0;
-        int it    = 0;
-        for (int j = 0; j < d->n_xeos; j++){
-            tmp = (d->eye[i][j] - d->p[j]);
-            for (int k = j+1; k < n_em; k++){
-                Gex -= tmp*(d->eye[i][k] - d->p[k])*(d->W[it]);
-                it += 1;
-            }
-        }
-        mu_Gex[i] = Gex;
-    }   
+    mu_Gex_sym_n2(d, mu_Gex);   
   
     sf[0]          = 1.0 - x[6];
     sf[1]          = x[0];
@@ -5140,14 +6126,17 @@ double obj_mp_liq(unsigned n, const double *x, double *grad, void *SS_ref_db){
     sf[9]          = x[6];
     
     
-    mu[0]          = R*T*creal(clog(sf[0]*sf[1])) + gb[0] + mu_Gex[0];
-    mu[1]          = R*T*creal(clog(sf[0]*sf[2])) + gb[1] + mu_Gex[1];
-    mu[2]          = R*T*creal(clog(sf[0]*sf[3])) + gb[2] + mu_Gex[2];
-    mu[3]          = R*T*creal(clog(sf[0]*sf[4])) + gb[3] + mu_Gex[3];
-    mu[4]          = R*T*creal(clog(sf[0]*sf[5])) + gb[4] + mu_Gex[4];
-    mu[5]          = R*T*creal(clog(sf[0]*sf[6]*cpow(sf[8], 5.0))) + gb[5] + mu_Gex[5];
-    mu[6]          = R*T*creal(clog(sf[0]*sf[6]*cpow(sf[7], 5.0))) + gb[6] + mu_Gex[6];
-    mu[7]          = R*T*creal(clog(cpow(sf[9], 2.0) + d_em[7])) + gb[7] + mu_Gex[7];
+    mu[0]          = R*T*rlog((sf[0]*sf[1])) + gb[0] + mu_Gex[0];
+    mu[1]          = R*T*rlog((sf[0]*sf[2] + d_em[1])) + gb[1] + mu_Gex[1];
+    mu[2]          = R*T*rlog((sf[0]*sf[3] + d_em[2])) + gb[2] + mu_Gex[2];
+    mu[3]          = R*T*rlog((sf[0]*sf[4] + d_em[3])) + gb[3] + mu_Gex[3];
+    mu[4]          = R*T*rlog((sf[0]*sf[5])) + gb[4] + mu_Gex[4];
+    double complex cp_8_5p0 = cpow(sf[8], 5.0);
+    double complex cp_7_5p0 = cpow(sf[7], 5.0);
+    double complex cp_9_2p0 = cpow(sf[9], 2.0);
+    mu[5]          = R*T*rlog((sf[0]*sf[6]*cp_8_5p0)) + gb[5] + mu_Gex[5];
+    mu[6]          = R*T*rlog((sf[0]*sf[6]*cp_7_5p0)) + gb[6] + mu_Gex[6];
+    mu[7]          = R*T*rlog((cp_9_2p0 + d_em[7])) + gb[7] + mu_Gex[7];
     
     d->sum_apep = 0.0;
     for (int i = 0; i < n_em; i++){
@@ -5194,6 +6183,7 @@ double obj_mp_fsp(unsigned n, const double *x, double *grad, void *SS_ref_db){
 	double *mu_Gex = d->mu_Gex;
 	double *sf     = d->sf;
 	double *mu     = d->mu;
+	double *d_em   = d->d_em;
 
 	px_mp_fsp(SS_ref_db,x);
 
@@ -5205,16 +6195,7 @@ double obj_mp_fsp(unsigned n, const double *x, double *grad, void *SS_ref_db){
 		d->mat_phi[i] = (d->p[i]*d->v[i])/d->sum_v;
 	}
 
-	for (int i = 0; i < d->n_em; i++){
-		mu_Gex[i] = 0.0;
-		int it = 0;
-		for (int j = 0; j < d->n_xeos; j++){
-			for (int k = j+1; k < d->n_em; k++){
-				mu_Gex[i] -= (d->eye[i][j] - d->mat_phi[j])*(d->eye[i][k] - d->mat_phi[k])*(d->W[it]*2.0*d->v[i]/(d->v[j]+d->v[k]));
-				it += 1;
-			}
-		}
-	}
+    mu_Gex_asym_n2(d, mu_Gex);
 	
     sf[0]           = -x[0] - x[1] + 1.0;
     sf[1]           = x[0];
@@ -5222,9 +6203,9 @@ double obj_mp_fsp(unsigned n, const double *x, double *grad, void *SS_ref_db){
     sf[3]           = 0.25*x[0] + 0.25;
     sf[4]           = 0.75 - 0.25*x[0];
 
-	mu[0]          = R*T*creal(clog(1.7548*sf[0]*cpow(sf[3], 0.25)*cpow(sf[4], 0.75))) 	+ gb[0] + mu_Gex[0];
-	mu[1]          = R*T*creal(clog(2.0*sf[1]*csqrt(sf[3])*csqrt(sf[4]))) 				+ gb[1] + mu_Gex[1];
-	mu[2]          = R*T*creal(clog(1.7548*sf[2]*cpow(sf[3], 0.25)*cpow(sf[4], 0.75))) 	+ gb[2] + mu_Gex[2];
+	mu[0]          = R*T*rlog((1.7548*sf[0]*cpow(sf[3], 0.25)*cpow(sf[4], 0.75) + d_em[0])) 	+ gb[0] + mu_Gex[0];
+	mu[1]          = R*T*rlog((2.0*sf[1]*csqrt(sf[3])*csqrt(sf[4]) + d_em[1])) 		+ gb[1] + mu_Gex[1];
+	mu[2]          = R*T*rlog((1.7548*sf[2]*cpow(sf[3], 0.25)*cpow(sf[4], 0.75) + d_em[2])) 	+ gb[2] + mu_Gex[2];
 
 	d->sum_apep = 0.0;
 	for (int i = 0; i < n_em; i++){
@@ -5237,7 +6218,11 @@ double obj_mp_fsp(unsigned n, const double *x, double *grad, void *SS_ref_db){
 		d->df_raw += mu[i]*d->p[i];
 	}
 	d->df = d->df_raw * d->factor;
-	
+
+	for (int k = 0; k < n_em; k++){
+		d->df += d->ox_penalty[k] * d->p[k] * d->p[k];
+	}
+
 	if (grad){
 	double *dfx    = d->dfx;
 	double **dp_dx = d->dp_dx;
@@ -5246,6 +6231,7 @@ double obj_mp_fsp(unsigned n, const double *x, double *grad, void *SS_ref_db){
 		   dfx[i] = 0.0;
 		   for (int j = 0; j < n_em; j++){
 			   dfx[i] += (mu[j] - (d->ape[j]/d->sum_apep)*d->df_raw)*d->factor*dp_dx[j][i];
+			   dfx[i] += d->ox_penalty[j]*2.0*d->p[j]*dp_dx[j][i];
 		   }
 		   grad[i] = creal(dfx[i]);
 		}
@@ -5253,7 +6239,7 @@ double obj_mp_fsp(unsigned n, const double *x, double *grad, void *SS_ref_db){
 
 	return d->df;
 }
-    
+
 /**
     Objective function of bi_mp
 */
@@ -5274,18 +6260,7 @@ double obj_mp_bi(unsigned n, const double *x, double *grad, void *SS_ref_db){
 
     double tmp = 0.0;
     double Gex = 0.0;
-    for (int i = 0; i < n_em; i++){
-        Gex = 0.0;
-        int it    = 0;
-        for (int j = 0; j < d->n_xeos; j++){
-            tmp = (d->eye[i][j] - d->p[j]);
-            for (int k = j+1; k < n_em; k++){
-                Gex -= tmp*(d->eye[i][k] - d->p[k])*(d->W[it]);
-                it += 1;
-            }
-        }
-        mu_Gex[i] = Gex;
-    }   
+    mu_Gex_sym_n2(d, mu_Gex);   
   
     sf[0]          = x[3]*x[0] - x[3] + 3.0*x[1]*x[0] - x[1] - 2./3.*x[5] + x[4]*x[0] - x[4] + x[0]*x[2] - x[0] - x[2] + 1.0;
     sf[1]          = x[1];
@@ -5302,13 +6277,19 @@ double obj_mp_bi(unsigned n, const double *x, double *grad, void *SS_ref_db){
     sf[12]          = x[4];
     
     
-    mu[0]          = R*T*creal(clog(4.0*sf[10]*cpow(sf[6], 2.0)*sf[0]*cpow(sf[11], 2.0)*sf[9])) + gb[0] + mu_Gex[0];
-    mu[1]          = R*T*creal(clog(4.0*sf[10]*cpow(sf[8], 2.0)*sf[2]*cpow(sf[11], 2.0)*sf[9])) + gb[1] + mu_Gex[1];
-    mu[2]          = R*T*creal(clog(4.0*sf[10]*sf[2]*cpow(sf[6], 2.0)*cpow(sf[11], 2.0)*sf[9])) + gb[2] + mu_Gex[2];
-    mu[3]          = R*T*creal(clog(sf[5]*cpow(sf[10], 2.0)*cpow(sf[6], 2.0)*cpow(sf[11], 2.0))) + gb[3] + mu_Gex[3];
-    mu[4]          = R*T*creal(clog(4.0*sf[10]*cpow(sf[6], 2.0)*cpow(sf[12], 2.0)*sf[9]*sf[4] + d_em[4])) + gb[4] + mu_Gex[4];
-    mu[5]          = R*T*creal(clog(cpow(sf[10], 2.0)*sf[3]*cpow(sf[6], 2.0)*cpow(sf[11], 2.0) + d_em[5])) + gb[5] + mu_Gex[5];
-    mu[6]          = R*T*creal(clog(4.0*sf[10]*cpow(sf[7], 2.0)*sf[1]*cpow(sf[11], 2.0)*sf[9] + d_em[6])) + gb[6] + mu_Gex[6];
+    double complex cp_6_2p0 = cpow(sf[6], 2.0);
+    double complex cp_11_2p0 = cpow(sf[11], 2.0);
+    double complex cp_8_2p0 = cpow(sf[8], 2.0);
+    double complex cp_10_2p0 = cpow(sf[10], 2.0);
+    double complex cp_12_2p0 = cpow(sf[12], 2.0);
+    double complex cp_7_2p0 = cpow(sf[7], 2.0);
+    mu[0]          = R*T*rlog((4.0*sf[10]*cp_6_2p0*sf[0]*cp_11_2p0*sf[9])) + gb[0] + mu_Gex[0];
+    mu[1]          = R*T*rlog((4.0*sf[10]*cp_8_2p0*sf[2]*cp_11_2p0*sf[9])) + gb[1] + mu_Gex[1];
+    mu[2]          = R*T*rlog((4.0*sf[10]*sf[2]*cp_6_2p0*cp_11_2p0*sf[9])) + gb[2] + mu_Gex[2];
+    mu[3]          = R*T*rlog((sf[5]*cp_10_2p0*cp_6_2p0*cp_11_2p0)) + gb[3] + mu_Gex[3];
+    mu[4]          = R*T*rlog((4.0*sf[10]*cp_6_2p0*cp_12_2p0*sf[9]*sf[4] + d_em[4])) + gb[4] + mu_Gex[4];
+    mu[5]          = R*T*rlog((cp_10_2p0*sf[3]*cp_6_2p0*cp_11_2p0 + d_em[5])) + gb[5] + mu_Gex[5];
+    mu[6]          = R*T*rlog((4.0*sf[10]*cp_7_2p0*sf[1]*cp_11_2p0*sf[9] + d_em[6])) + gb[6] + mu_Gex[6];
     
     d->sum_apep = 0.0;
     for (int i = 0; i < n_em; i++){
@@ -5368,18 +6349,7 @@ double obj_mp_g(unsigned n, const double *x, double *grad, void *SS_ref_db){
     
     double tmp = 0.0;
     double Gex = 0.0;
-    for (int i = 0; i < d->n_em; i++){
-        Gex = 0.0;
-        int it = 0;
-        for (int j = 0; j < d->n_xeos; j++){
-            tmp = (d->eye[i][j] - d->mat_phi[j]);
-            for (int k = j+1; k < d->n_em; k++){
-                Gex -= tmp*(d->eye[i][k] - d->mat_phi[k])*(d->W[it]*2.0*d->v[i]/(d->v[j]+d->v[k]));
-                it += 1;
-            }
-        }
-        mu_Gex[i] = Gex;
-    }
+    mu_Gex_asym_n2(d, mu_Gex);
     
     sf[0]          = x[2]*x[0] - x[2] + x[0]*x[1] - x[0] - x[1] + 1.0;
     sf[1]          = -x[2]*x[0] - x[0]*x[1] + x[0];
@@ -5388,11 +6358,17 @@ double obj_mp_g(unsigned n, const double *x, double *grad, void *SS_ref_db){
     sf[4]          = 1.0 - x[3];
     sf[5]          = x[3];
     
-    mu[0]          = R*T*creal(clog(cpow(sf[4], 2.0)*cpow(sf[0], 3.0))) + gb[0] + mu_Gex[0];
-    mu[1]          = R*T*creal(clog(cpow(sf[4], 2.0)*cpow(sf[1], 3.0))) + gb[1] + mu_Gex[1];
-    mu[2]          = R*T*creal(clog(cpow(sf[4], 2.0)*cpow(sf[2], 3.0) + d_em[2])) + gb[2] + mu_Gex[2];
-    mu[3]          = R*T*creal(clog(cpow(sf[4], 2.0)*cpow(sf[3], 3.0))) + gb[3] + mu_Gex[3];
-    mu[4]          = R*T*creal(clog(cpow(sf[5], 2.0)*cpow(sf[0], 3.0) + d_em[4])) + gb[4] + mu_Gex[4];
+    double complex cp_4_2p0 = cpow(sf[4], 2.0);
+    double complex cp_0_3p0 = cpow(sf[0], 3.0);
+    double complex cp_1_3p0 = cpow(sf[1], 3.0);
+    double complex cp_2_3p0 = cpow(sf[2], 3.0);
+    double complex cp_3_3p0 = cpow(sf[3], 3.0);
+    double complex cp_5_2p0 = cpow(sf[5], 2.0);
+    mu[0]          = R*T*rlog((cp_4_2p0*cp_0_3p0)) + gb[0] + mu_Gex[0];
+    mu[1]          = R*T*rlog((cp_4_2p0*cp_1_3p0)) + gb[1] + mu_Gex[1];
+    mu[2]          = R*T*rlog((cp_4_2p0*cp_2_3p0 + d_em[2])) + gb[2] + mu_Gex[2];
+    mu[3]          = R*T*rlog((cp_4_2p0*cp_3_3p0 + d_em[3])) + gb[3] + mu_Gex[3];
+    mu[4]          = R*T*rlog((cp_5_2p0*cp_0_3p0 + d_em[4])) + gb[4] + mu_Gex[4];
     
 
 	d->sum_apep = 0.0;
@@ -5443,18 +6419,7 @@ double obj_mp_ep(unsigned n, const double *x, double *grad, void *SS_ref_db){
 
     double tmp = 0.0;
     double Gex = 0.0;
-    for (int i = 0; i < n_em; i++){
-        Gex = 0.0;
-        int it    = 0;
-        for (int j = 0; j < d->n_xeos; j++){
-            tmp = (d->eye[i][j] - d->p[j]);
-            for (int k = j+1; k < n_em; k++){
-                Gex -= tmp*(d->eye[i][k] - d->p[k])*(d->W[it]);
-                it += 1;
-            }
-        }
-        mu_Gex[i] = Gex;
-    }   
+    mu_Gex_sym_n2(d, mu_Gex);   
   
     sf[0]          = x[0] - x[1];
     sf[1]          = -x[0] + x[1] + 1.0;
@@ -5462,9 +6427,9 @@ double obj_mp_ep(unsigned n, const double *x, double *grad, void *SS_ref_db){
     sf[3]          = -x[0] - x[1] + 1.0;
     
     
-    mu[0]          = R*T*creal(clog(sf[1]*sf[3])) + gb[0] + mu_Gex[0];
-    mu[1]          = R*T*creal(clog(sf[1]*sf[2] + d_em[1])) + gb[1] + mu_Gex[1];
-    mu[2]          = R*T*creal(clog(sf[0]*sf[2] + d_em[2])) + gb[2] + mu_Gex[2];
+    mu[0]          = R*T*rlog((sf[1]*sf[3])) + gb[0] + mu_Gex[0];
+    mu[1]          = R*T*rlog((sf[1]*sf[2] + d_em[1])) + gb[1] + mu_Gex[1];
+    mu[2]          = R*T*rlog((sf[0]*sf[2] + d_em[2])) + gb[2] + mu_Gex[2];
     
     d->sum_apep = 0.0;
     for (int i = 0; i < n_em; i++){
@@ -5523,18 +6488,7 @@ double obj_mp_ma(unsigned n, const double *x, double *grad, void *SS_ref_db){
     
     double tmp = 0.0;
     double Gex = 0.0;
-    for (int i = 0; i < d->n_em; i++){
-        Gex = 0.0;
-        int it = 0;
-        for (int j = 0; j < d->n_xeos; j++){
-            tmp = (d->eye[i][j] - d->mat_phi[j]);
-            for (int k = j+1; k < d->n_em; k++){
-                Gex -= tmp*(d->eye[i][k] - d->mat_phi[k])*(d->W[it]*2.0*d->v[i]/(d->v[j]+d->v[k]));
-                it += 1;
-            }
-        }
-        mu_Gex[i] = Gex;
-    }
+    mu_Gex_asym_n2(d, mu_Gex);
     
     sf[0]          = -x[4] - x[3] + 1.0;
     sf[1]          = x[3];
@@ -5548,13 +6502,15 @@ double obj_mp_ma(unsigned n, const double *x, double *grad, void *SS_ref_db){
     sf[9]          = 0.5*x[4] + 0.5*x[1];
     
     
-    mu[0]          = R*T*creal(clog(4.0*sf[5]*sf[6]*sf[9]*sf[0]*sf[8])) + gb[0] + mu_Gex[0];
-    mu[1]          = R*T*creal(clog(sf[6]*sf[0]*sf[3]*cpow(sf[8], 2.0))) + gb[1] + mu_Gex[1];
-    mu[2]          = R*T*creal(clog(sf[6]*sf[4]*sf[0]*cpow(sf[8], 2.0))) + gb[2] + mu_Gex[2];
-    mu[3]          = R*T*creal(clog(4.0*sf[5]*sf[6]*sf[9]*sf[1]*sf[8])) + gb[3] + mu_Gex[3];
-    mu[4]          = R*T*creal(clog(sf[5]*sf[6]*cpow(sf[9], 2.0)*sf[2])) + gb[4] + mu_Gex[4];
-    mu[5]          = R*T*creal(clog(4.0*sf[5]*sf[9]*sf[7]*sf[0]*sf[8] + d_em[5])) + gb[5] + mu_Gex[5];
-    
+    mu[0]          = R*T*rlog((4.0*sf[5]*sf[6]*sf[9]*sf[0]*sf[8])) + gb[0] + mu_Gex[0];
+    double complex cp_8_2p0 = cpow(sf[8], 2.0);
+    double complex cp_9_2p0 = cpow(sf[9], 2.0);
+    mu[1]          = R*T*rlog((sf[6]*sf[0]*sf[3]*cp_8_2p0)) + gb[1] + mu_Gex[1];
+    mu[2]          = R*T*rlog((sf[6]*sf[4]*sf[0]*cp_8_2p0)) + gb[2] + mu_Gex[2];
+    mu[3]          = R*T*rlog((4.0*sf[5]*sf[6]*sf[9]*sf[1]*sf[8] + d_em[3])) + gb[3] + mu_Gex[3];
+    mu[4]          = R*T*rlog((sf[5]*sf[6]*cp_9_2p0*sf[2] + d_em[4])) + gb[4] + mu_Gex[4];
+    mu[5]          = R*T*rlog((4.0*sf[5]*sf[9]*sf[7]*sf[0]*sf[8] + d_em[5])) + gb[5] + mu_Gex[5];
+
     d->sum_apep = 0.0;
     for (int i = 0; i < n_em; i++){
         d->sum_apep += d->ape[i]*d->p[i];
@@ -5567,6 +6523,10 @@ double obj_mp_ma(unsigned n, const double *x, double *grad, void *SS_ref_db){
     }
     d->df = d->df_raw * d->factor;
 
+    for (int k = 0; k < n_em; k++){
+        d->df += d->ox_penalty[k] * d->p[k] * d->p[k];
+    }
+
     if (grad){
         double *dfx    = d->dfx;
         double **dp_dx = d->dp_dx;
@@ -5575,6 +6535,7 @@ double obj_mp_ma(unsigned n, const double *x, double *grad, void *SS_ref_db){
             dfx[i] = 0.0;
             for (int j = 0; j < n_em; j++){
                 dfx[i] += (mu[j] - (d->ape[j]/d->sum_apep)*d->df_raw)*d->factor*dp_dx[j][i];
+                dfx[i] += d->ox_penalty[j]*2.0*d->p[j]*dp_dx[j][i];
             }
             grad[i] = creal(dfx[i]);
         }
@@ -5582,7 +6543,7 @@ double obj_mp_ma(unsigned n, const double *x, double *grad, void *SS_ref_db){
 
     return d->df;
 }
-    
+
 /**
     Objective function of mu_mp
 */
@@ -5612,18 +6573,7 @@ double obj_mp_mu(unsigned n, const double *x, double *grad, void *SS_ref_db){
     
     double tmp = 0.0;
     double Gex = 0.0;
-    for (int i = 0; i < d->n_em; i++){
-        Gex = 0.0;
-        int it = 0;
-        for (int j = 0; j < d->n_xeos; j++){
-            tmp = (d->eye[i][j] - d->mat_phi[j]);
-            for (int k = j+1; k < d->n_em; k++){
-                Gex -= tmp*(d->eye[i][k] - d->mat_phi[k])*(d->W[it]*2.0*d->v[i]/(d->v[j]+d->v[k]));
-                it += 1;
-            }
-        }
-        mu_Gex[i] = Gex;
-    }
+    mu_Gex_asym_n2(d, mu_Gex);
     
     sf[0]          = -x[4] - x[3] + 1.0;
     sf[1]          = x[3];
@@ -5637,13 +6587,15 @@ double obj_mp_mu(unsigned n, const double *x, double *grad, void *SS_ref_db){
     sf[9]          = 0.5*x[4] + 0.5*x[1];
     
     
-    mu[0]          = R*T*creal(clog(4.0*sf[5]*sf[6]*sf[9]*sf[0]*sf[8])) + gb[0] + mu_Gex[0];
-    mu[1]          = R*T*creal(clog(sf[6]*sf[0]*sf[3]*cpow(sf[8], 2.0))) + gb[1] + mu_Gex[1];
-    mu[2]          = R*T*creal(clog(sf[6]*sf[4]*sf[0]*cpow(sf[8], 2.0))) + gb[2] + mu_Gex[2];
-    mu[3]          = R*T*creal(clog(4.0*sf[5]*sf[6]*sf[9]*sf[1]*sf[8])) + gb[3] + mu_Gex[3];
-    mu[4]          = R*T*creal(clog(sf[5]*sf[6]*cpow(sf[9], 2.0)*sf[2])) + gb[4] + mu_Gex[4];
-    mu[5]          = R*T*creal(clog(4.0*sf[5]*sf[9]*sf[7]*sf[0]*sf[8] + d_em[5])) + gb[5] + mu_Gex[5];
-    
+    mu[0]          = R*T*rlog((4.0*sf[5]*sf[6]*sf[9]*sf[0]*sf[8])) + gb[0] + mu_Gex[0];
+    double complex cp_8_2p0 = cpow(sf[8], 2.0);
+    double complex cp_9_2p0 = cpow(sf[9], 2.0);
+    mu[1]          = R*T*rlog((sf[6]*sf[0]*sf[3]*cp_8_2p0)) + gb[1] + mu_Gex[1];
+    mu[2]          = R*T*rlog((sf[6]*sf[4]*sf[0]*cp_8_2p0)) + gb[2] + mu_Gex[2];
+    mu[3]          = R*T*rlog((4.0*sf[5]*sf[6]*sf[9]*sf[1]*sf[8] + d_em[3])) + gb[3] + mu_Gex[3];
+    mu[4]          = R*T*rlog((sf[5]*sf[6]*cp_9_2p0*sf[2] + d_em[4])) + gb[4] + mu_Gex[4];
+    mu[5]          = R*T*rlog((4.0*sf[5]*sf[9]*sf[7]*sf[0]*sf[8] + d_em[5])) + gb[5] + mu_Gex[5];
+
     d->sum_apep = 0.0;
     for (int i = 0; i < n_em; i++){
         d->sum_apep += d->ape[i]*d->p[i];
@@ -5656,6 +6608,10 @@ double obj_mp_mu(unsigned n, const double *x, double *grad, void *SS_ref_db){
     }
     d->df = d->df_raw * d->factor;
 
+    for (int k = 0; k < n_em; k++){
+        d->df += d->ox_penalty[k] * d->p[k] * d->p[k];
+    }
+
     if (grad){
         double *dfx    = d->dfx;
         double **dp_dx = d->dp_dx;
@@ -5664,6 +6620,7 @@ double obj_mp_mu(unsigned n, const double *x, double *grad, void *SS_ref_db){
             dfx[i] = 0.0;
             for (int j = 0; j < n_em; j++){
                 dfx[i] += (mu[j] - (d->ape[j]/d->sum_apep)*d->df_raw)*d->factor*dp_dx[j][i];
+                dfx[i] += d->ox_penalty[j]*2.0*d->p[j]*dp_dx[j][i];
             }
             grad[i] = creal(dfx[i]);
         }
@@ -5671,7 +6628,7 @@ double obj_mp_mu(unsigned n, const double *x, double *grad, void *SS_ref_db){
 
     return d->df;
 }
-    
+
 /**
     Objective function of opx_mp
 */
@@ -5701,18 +6658,7 @@ double obj_mp_opx(unsigned n, const double *x, double *grad, void *SS_ref_db){
     
     double tmp = 0.0;
     double Gex = 0.0;
-    for (int i = 0; i < d->n_em; i++){
-        Gex = 0.0;
-        int it = 0;
-        for (int j = 0; j < d->n_xeos; j++){
-            tmp = (d->eye[i][j] - d->mat_phi[j]);
-            for (int k = j+1; k < d->n_em; k++){
-                Gex -= tmp*(d->eye[i][k] - d->mat_phi[k])*(d->W[it]*2.0*d->v[i]/(d->v[j]+d->v[k]));
-                it += 1;
-            }
-        }
-        mu_Gex[i] = Gex;
-    }
+    mu_Gex_asym_n2(d, mu_Gex);
     
     sf[0]          = -0.5*x[4]*x[5] + x[3]*x[0] - x[3] - 0.5*x[1]*x[5] + x[1]*x[0] - x[1] + 0.5*x[5] + x[0]*x[2] - x[0] - x[2] + 1.0;
     sf[1]          = 0.5*x[4]*x[5] - x[3]*x[0] + 0.5*x[1]*x[5] - x[1]*x[0] - 0.5*x[5] - x[0]*x[2] + x[0];
@@ -5727,13 +6673,16 @@ double obj_mp_opx(unsigned n, const double *x, double *grad, void *SS_ref_db){
     sf[10]         = -0.5*x[3] - 0.5*x[2] + 1.0;
     
     
-    mu[0]          = R*T*creal(clog(sf[0]*sf[5]*csqrt(sf[10]))) + gb[0] + mu_Gex[0];
-    mu[1]          = R*T*creal(clog(sf[1]*sf[6]*csqrt(sf[10]))) + gb[1] + mu_Gex[1];
-    mu[2]          = R*T*creal(clog(sf[6]*sf[0]*csqrt(sf[10]))) + gb[2] + mu_Gex[2];
-    mu[3]          = R*T*creal(clog(1.4142*sf[4]*cpow(sf[9], 0.25)*sf[5]*cpow(sf[10], 0.25))) + gb[3] + mu_Gex[3];
-    mu[4]          = R*T*creal(clog(1.4142*cpow(sf[9], 0.25)*sf[3]*sf[5]*cpow(sf[10], 0.25) + d_em[4])) + gb[4] + mu_Gex[4];
-    mu[5]          = R*T*creal(clog(sf[2]*sf[7]*csqrt(sf[10]) + d_em[5])) + gb[5] + mu_Gex[5];
-    mu[6]          = R*T*creal(clog(sf[8]*sf[0]*csqrt(sf[10]))) + gb[6] + mu_Gex[6];
+    double complex cp_9_0p25 = cpow(sf[9], 0.25);
+    double complex cp_10_0p25 = cpow(sf[10], 0.25);
+    double complex cs_10 = csqrt(sf[10]);
+    mu[0]          = R*T*rlog((sf[0]*sf[5]*cs_10)) + gb[0] + mu_Gex[0];
+    mu[1]          = R*T*rlog((sf[1]*sf[6]*cs_10)) + gb[1] + mu_Gex[1];
+    mu[2]          = R*T*rlog((sf[6]*sf[0]*cs_10)) + gb[2] + mu_Gex[2];
+    mu[3]          = R*T*rlog((1.4142*sf[4]*cp_9_0p25*sf[5]*cp_10_0p25)) + gb[3] + mu_Gex[3];
+    mu[4]          = R*T*rlog((1.4142*cp_9_0p25*sf[3]*sf[5]*cp_10_0p25 + d_em[4])) + gb[4] + mu_Gex[4];
+    mu[5]          = R*T*rlog((sf[2]*sf[7]*cs_10 + d_em[5])) + gb[5] + mu_Gex[5];
+    mu[6]          = R*T*rlog((sf[8]*sf[0]*cs_10 + d_em[6])) + gb[6] + mu_Gex[6];
     
     d->sum_apep = 0.0;
     for (int i = 0; i < n_em; i++){
@@ -5783,18 +6732,7 @@ double obj_mp_sa(unsigned n, const double *x, double *grad, void *SS_ref_db){
 
     double tmp = 0.0;
     double Gex = 0.0;
-    for (int i = 0; i < n_em; i++){
-        Gex = 0.0;
-        int it    = 0;
-        for (int j = 0; j < d->n_xeos; j++){
-            tmp = (d->eye[i][j] - d->p[j]);
-            for (int k = j+1; k < n_em; k++){
-                Gex -= tmp*(d->eye[i][k] - d->p[k])*(d->W[it]);
-                it += 1;
-            }
-        }
-        mu_Gex[i] = Gex;
-    }   
+    mu_Gex_sym_n2(d, mu_Gex);   
   
     sf[0]          = x[2]*x[0] - x[2] + 0.75*x[3] + x[0]*x[1] - x[0] - x[1] + 1.0;
     sf[1]          = -x[2]*x[0] - 0.75*x[3] - x[0]*x[1] + x[0];
@@ -5806,11 +6744,13 @@ double obj_mp_sa(unsigned n, const double *x, double *grad, void *SS_ref_db){
     sf[7]          = x[2] + x[1];
     
     
-    mu[0]          = R*T*creal(clog(sf[0]*cpow(sf[4], 3.0)*sf[6])) + gb[0] + mu_Gex[0];
-    mu[1]          = R*T*creal(clog(sf[3]*sf[7]*cpow(sf[4], 3.0))) + gb[1] + mu_Gex[1];
-    mu[2]          = R*T*creal(clog(sf[1]*cpow(sf[5], 3.0)*sf[6])) + gb[2] + mu_Gex[2];
-    mu[3]          = R*T*creal(clog(cpow(sf[5], 3.0)*sf[0]*sf[6])) + gb[3] + mu_Gex[3];
-    mu[4]          = R*T*creal(clog(sf[7]*sf[2]*cpow(sf[4], 3.0) + d_em[4])) + gb[4] + mu_Gex[4];
+    double complex cp_4_3p0 = cpow(sf[4], 3.0);
+    double complex cp_5_3p0 = cpow(sf[5], 3.0);
+    mu[0]          = R*T*rlog((sf[0]*cp_4_3p0*sf[6])) + gb[0] + mu_Gex[0];
+    mu[1]          = R*T*rlog((sf[3]*sf[7]*cp_4_3p0)) + gb[1] + mu_Gex[1];
+    mu[2]          = R*T*rlog((sf[1]*cp_5_3p0*sf[6])) + gb[2] + mu_Gex[2];
+    mu[3]          = R*T*rlog((cp_5_3p0*sf[0]*sf[6])) + gb[3] + mu_Gex[3];
+    mu[4]          = R*T*rlog((sf[7]*sf[2]*cp_4_3p0 + d_em[4])) + gb[4] + mu_Gex[4];
     
     d->sum_apep = 0.0;
     for (int i = 0; i < n_em; i++){
@@ -5858,16 +6798,7 @@ double obj_mp_cd(unsigned n, const double *x, double *grad, void *SS_ref_db){
     double *d_em      = d->d_em;
     px_mp_cd(SS_ref_db,x);
 
-    for (int i = 0; i < n_em; i++){
-        mu_Gex[i] = 0.0;
-        int it    = 0;
-        for (int j = 0; j < d->n_xeos; j++){
-            for (int k = j+1; k < n_em; k++){
-                mu_Gex[i] -= (d->eye[i][j] - d->p[j])*(d->eye[i][k] - d->p[k])*(d->W[it]);
-                it += 1;
-            }
-        }
-    }
+    mu_Gex_sym_n2(d, mu_Gex);
     
     sf[0]          = -x[0]*x[1] +x[0];
     sf[1]          =x[0]*x[1] - x[0] - x[1] + 1.0;
@@ -5876,10 +6807,13 @@ double obj_mp_cd(unsigned n, const double *x, double *grad, void *SS_ref_db){
     sf[4]          = 1.0 - x[2];
     
     
-    mu[0]          = gb[0] + R*T*creal(clog(cpow(sf[1], 2.0)*sf[4])) + mu_Gex[0];
-    mu[1]          = gb[1] + R*T*creal(clog(cpow(sf[0], 2.0)*sf[4])) + mu_Gex[1];
-    mu[2]          = gb[2] + R*T*creal(clog(cpow(sf[1], 2.0)*sf[3])) + mu_Gex[2];
-    mu[3]          = gb[3] + R*T*creal(clog(cpow(sf[2], 2.0)*sf[4] + d_em[3])) + mu_Gex[3];
+    double complex cp_1_2p0 = cpow(sf[1], 2.0);
+    double complex cp_0_2p0 = cpow(sf[0], 2.0);
+    double complex cp_2_2p0 = cpow(sf[2], 2.0);
+    mu[0]          = gb[0] + R*T*rlog((cp_1_2p0*sf[4])) + mu_Gex[0];
+    mu[1]          = gb[1] + R*T*rlog((cp_0_2p0*sf[4])) + mu_Gex[1];
+    mu[2]          = gb[2] + R*T*rlog((cp_1_2p0*sf[3])) + mu_Gex[2];
+    mu[3]          = gb[3] + R*T*rlog((cp_2_2p0*sf[4] + d_em[3])) + mu_Gex[3];
     
     d->sum_apep = 0.0;
     for (int i = 0; i < n_em; i++){
@@ -5929,18 +6863,7 @@ double obj_mp_st(unsigned n, const double *x, double *grad, void *SS_ref_db){
 
     double tmp = 0.0;
     double Gex = 0.0;
-    for (int i = 0; i < n_em; i++){
-        Gex = 0.0;
-        int it    = 0;
-        for (int j = 0; j < d->n_xeos; j++){
-            tmp = (d->eye[i][j] - d->p[j]);
-            for (int k = j+1; k < n_em; k++){
-                Gex -= tmp*(d->eye[i][k] - d->p[k])*(d->W[it]);
-                it += 1;
-            }
-        }
-        mu_Gex[i] = Gex;
-    }   
+    mu_Gex_sym_n2(d, mu_Gex);   
   
     sf[0]          = x[1]*x[0] - x[1] - x[0] + 1.0;
     sf[1]          = -x[1]*x[0] + x[0];
@@ -5951,11 +6874,18 @@ double obj_mp_st(unsigned n, const double *x, double *grad, void *SS_ref_db){
     sf[6]          = 1./3.*x[3];
     
     
-    mu[0]          = R*T*creal(clog(cpow(sf[3], 2.0)*cpow(sf[0], 4.0))) + gb[0] + mu_Gex[0];
-    mu[1]          = R*T*creal(clog(cpow(sf[3], 2.0)*cpow(sf[1], 4.0))) + gb[1] + mu_Gex[1];
-    mu[2]          = R*T*creal(clog(cpow(sf[3], 2.0)*cpow(sf[2], 4.0) + d_em[2])) + gb[2] + mu_Gex[2];
-    mu[3]          = R*T*creal(clog(cpow(sf[4], 2.0)*cpow(sf[0], 4.0) + d_em[3])) + gb[3] + mu_Gex[3];
-    mu[4]          = R*T*creal(clog(3.0792*cpow(sf[0], 4.0)*cpow(sf[5], 1.5)*csqrt(sf[6]) + d_em[4])) + gb[4] + mu_Gex[4];
+    double complex cp_3_2p0 = cpow(sf[3], 2.0);
+    double complex cp_0_4p0 = cpow(sf[0], 4.0);
+    double complex cp_1_4p0 = cpow(sf[1], 4.0);
+    double complex cp_2_4p0 = cpow(sf[2], 4.0);
+    double complex cp_4_2p0 = cpow(sf[4], 2.0);
+    double complex cp_5_1p5 = cpow(sf[5], 1.5);
+    double complex cs_6 = csqrt(sf[6]);
+    mu[0]          = R*T*rlog((cp_3_2p0*cp_0_4p0)) + gb[0] + mu_Gex[0];
+    mu[1]          = R*T*rlog((cp_3_2p0*cp_1_4p0)) + gb[1] + mu_Gex[1];
+    mu[2]          = R*T*rlog((cp_3_2p0*cp_2_4p0 + d_em[2])) + gb[2] + mu_Gex[2];
+    mu[3]          = R*T*rlog((cp_4_2p0*cp_0_4p0 + d_em[3])) + gb[3] + mu_Gex[3];
+    mu[4]          = R*T*rlog((3.0792*cp_0_4p0*cp_5_1p5*cs_6 + d_em[4])) + gb[4] + mu_Gex[4];
     
     d->sum_apep = 0.0;
     for (int i = 0; i < n_em; i++){
@@ -6005,18 +6935,7 @@ double obj_mp_chl(unsigned n, const double *x, double *grad, void *SS_ref_db){
 
     double tmp = 0.0;
     double Gex = 0.0;
-    for (int i = 0; i < n_em; i++){
-        Gex = 0.0;
-        int it    = 0;
-        for (int j = 0; j < d->n_xeos; j++){
-            tmp = (d->eye[i][j] - d->p[j]);
-            for (int k = j+1; k < n_em; k++){
-                Gex -= tmp*(d->eye[i][k] - d->p[k])*(d->W[it]);
-                it += 1;
-            }
-        }
-        mu_Gex[i] = Gex;
-    }   
+    mu_Gex_sym_n2(d, mu_Gex);   
   
     sf[0]          = -x[3]*x[5] + x[3]*x[0] - x[3] + x[5]*x[4] - x[5]*x[1] + x[5] - x[4]*x[0] + x[4] + x[0]*x[1] - x[0] - x[1] + 1.0;
     sf[1]          = x[3]*x[5] - x[3]*x[0] - x[5]*x[4] + x[5]*x[1] - x[5] + x[4]*x[0] - x[0]*x[1] + x[0];
@@ -6032,14 +6951,19 @@ double obj_mp_chl(unsigned n, const double *x, double *grad, void *SS_ref_db){
     sf[11]          = 0.5*x[2] + x[1];
     
     
-    mu[0]          = R*T*creal(clog(4.0*sf[9]*sf[11]*sf[0]*cpow(sf[3], 4.0)*sf[10])) + gb[0] + mu_Gex[0];
-    mu[1]          = R*T*creal(clog(sf[0]*cpow(sf[3], 4.0)*sf[6]*cpow(sf[10], 2.0))) + gb[1] + mu_Gex[1];
-    mu[2]          = R*T*creal(clog(sf[2]*sf[9]*cpow(sf[11], 2.0)*cpow(sf[3], 4.0))) + gb[2] + mu_Gex[2];
-    mu[3]          = R*T*creal(clog(4.0*sf[9]*sf[11]*sf[1]*cpow(sf[5], 4.0)*sf[10])) + gb[3] + mu_Gex[3];
-    mu[4]          = R*T*creal(clog(cpow(sf[5], 4.0)*sf[7]*sf[0]*cpow(sf[10], 2.0))) + gb[4] + mu_Gex[4];
-    mu[5]          = R*T*creal(clog(sf[1]*cpow(sf[3], 4.0)*sf[6]*cpow(sf[10], 2.0))) + gb[5] + mu_Gex[5];
-    mu[6]          = R*T*creal(clog(4.0*sf[11]*sf[8]*sf[0]*cpow(sf[3], 4.0)*sf[10] + d_em[6])) + gb[6] + mu_Gex[6];
-    mu[7]          = R*T*creal(clog(4.0*sf[9]*sf[11]*cpow(sf[4], 5.0)*sf[10] + d_em[7])) + gb[7] + mu_Gex[7];
+    double complex cp_3_4p0 = cpow(sf[3], 4.0);
+    double complex cp_10_2p0 = cpow(sf[10], 2.0);
+    double complex cp_11_2p0 = cpow(sf[11], 2.0);
+    double complex cp_5_4p0 = cpow(sf[5], 4.0);
+    double complex cp_4_5p0 = cpow(sf[4], 5.0);
+    mu[0]          = R*T*rlog((4.0*sf[9]*sf[11]*sf[0]*cp_3_4p0*sf[10])) + gb[0] + mu_Gex[0];
+    mu[1]          = R*T*rlog((sf[0]*cp_3_4p0*sf[6]*cp_10_2p0)) + gb[1] + mu_Gex[1];
+    mu[2]          = R*T*rlog((sf[2]*sf[9]*cp_11_2p0*cp_3_4p0)) + gb[2] + mu_Gex[2];
+    mu[3]          = R*T*rlog((4.0*sf[9]*sf[11]*sf[1]*cp_5_4p0*sf[10])) + gb[3] + mu_Gex[3];
+    mu[4]          = R*T*rlog((cp_5_4p0*sf[7]*sf[0]*cp_10_2p0)) + gb[4] + mu_Gex[4];
+    mu[5]          = R*T*rlog((sf[1]*cp_3_4p0*sf[6]*cp_10_2p0)) + gb[5] + mu_Gex[5];
+    mu[6]          = R*T*rlog((4.0*sf[11]*sf[8]*sf[0]*cp_3_4p0*sf[10] + d_em[6])) + gb[6] + mu_Gex[6];
+    mu[7]          = R*T*rlog((4.0*sf[9]*sf[11]*cp_4_5p0*sf[10] + d_em[7])) + gb[7] + mu_Gex[7];
     
     d->sum_apep = 0.0;
     for (int i = 0; i < n_em; i++){
@@ -6089,18 +7013,7 @@ double obj_mp_ctd(unsigned n, const double *x, double *grad, void *SS_ref_db){
 
     double tmp = 0.0;
     double Gex = 0.0;
-    for (int i = 0; i < n_em; i++){
-        Gex = 0.0;
-        int it    = 0;
-        for (int j = 0; j < d->n_xeos; j++){
-            tmp = (d->eye[i][j] - d->p[j]);
-            for (int k = j+1; k < n_em; k++){
-                Gex -= tmp*(d->eye[i][k] - d->p[k])*(d->W[it]);
-                it += 1;
-            }
-        }
-        mu_Gex[i] = Gex;
-    }   
+    mu_Gex_sym_n2(d, mu_Gex);   
   
     sf[0]          = 1.0 - x[2];
     sf[1]          = x[2];
@@ -6109,10 +7022,12 @@ double obj_mp_ctd(unsigned n, const double *x, double *grad, void *SS_ref_db){
     sf[4]          = x[1];
     
     
-    mu[0]          = R*T*creal(clog(csqrt(sf[0])*sf[3])) + gb[0] + mu_Gex[0];
-    mu[1]          = R*T*creal(clog(csqrt(sf[0])*sf[2])) + gb[1] + mu_Gex[1];
-    mu[2]          = R*T*creal(clog(csqrt(sf[0])*sf[4] + d_em[2])) + gb[2] + mu_Gex[2];
-    mu[3]          = R*T*creal(clog(csqrt(sf[1])*sf[3] + d_em[3])) + gb[3] + mu_Gex[3];
+    double complex cs_0 = csqrt(sf[0]);
+    double complex cs_1 = csqrt(sf[1]);
+    mu[0]          = R*T*rlog((cs_0*sf[3])) + gb[0] + mu_Gex[0];
+    mu[1]          = R*T*rlog((cs_0*sf[2])) + gb[1] + mu_Gex[1];
+    mu[2]          = R*T*rlog((cs_0*sf[4] + d_em[2])) + gb[2] + mu_Gex[2];
+    mu[3]          = R*T*rlog((cs_1*sf[3] + d_em[3])) + gb[3] + mu_Gex[3];
     
     d->sum_apep = 0.0;
     for (int i = 0; i < n_em; i++){
@@ -6162,18 +7077,7 @@ double obj_mp_sp(unsigned n, const double *x, double *grad, void *SS_ref_db){
 
     double tmp = 0.0;
     double Gex = 0.0;
-    for (int i = 0; i < n_em; i++){
-        Gex = 0.0;
-        int it    = 0;
-        for (int j = 0; j < d->n_xeos; j++){
-            tmp = (d->eye[i][j] - d->p[j]);
-            for (int k = j+1; k < n_em; k++){
-                Gex -= tmp*(d->eye[i][k] - d->p[k])*(d->W[it]);
-                it += 1;
-            }
-        }
-        mu_Gex[i] = Gex;
-    }   
+    mu_Gex_sym_n2(d, mu_Gex);   
   
     sf[0]          = x[1];
     sf[1]          = -x[1] - x[2] + 1.0;
@@ -6181,10 +7085,10 @@ double obj_mp_sp(unsigned n, const double *x, double *grad, void *SS_ref_db){
     sf[3]          = 1.0 - x[0];
     sf[4]          = x[0];
     
-    mu[0]          = R*T*creal(clog(sf[0]*sf[4])) + gb[0] + mu_Gex[0];
-    mu[1]          = R*T*creal(clog(sf[0]*sf[3])) + gb[1] + mu_Gex[1];
-    mu[2]          = R*T*creal(clog(sf[4]*sf[1] + d_em[2])) + gb[2] + mu_Gex[2];
-    mu[3]          = R*T*creal(clog(sf[4]*sf[2] + d_em[3])) + gb[3] + mu_Gex[3];
+    mu[0]          = R*T*rlog((sf[0]*sf[4])) + gb[0] + mu_Gex[0];
+    mu[1]          = R*T*rlog((sf[0]*sf[3])) + gb[1] + mu_Gex[1];
+    mu[2]          = R*T*rlog((sf[4]*sf[1] + d_em[2])) + gb[2] + mu_Gex[2];
+    mu[3]          = R*T*rlog((sf[4]*sf[2] + d_em[3])) + gb[3] + mu_Gex[3];
     
     d->sum_apep = 0.0;
     for (int i = 0; i < n_em; i++){
@@ -6201,11 +7105,18 @@ double obj_mp_sp(unsigned n, const double *x, double *grad, void *SS_ref_db){
     if (grad){
         double *dfx    = d->dfx;
         double **dp_dx = d->dp_dx;
+        double dsf[5][3] = {{0.0,1.0,0.0},{0.0,-1.0,-1.0},{0.0,0.0,1.0},{-1.0,0.0,0.0},{1.0,0.0,0.0}};
+        int    ia[4]    = {0, 0, 4, 4};
+        int    ib[4]    = {4, 3, 1, 2};
+        double de[4]    = {0.0, 0.0, d_em[2], d_em[3]};
         dpdx_mp_sp(SS_ref_db,x);
         for (int i = 0; i < (d->n_xeos); i++){
             dfx[i] = 0.0;
             for (int j = 0; j < n_em; j++){
                 dfx[i] += (mu[j] - (d->ape[j]/d->sum_apep)*d->df_raw)*d->factor*dp_dx[j][i];
+            }
+            for (int j = 0; j < n_em; j++){
+                dfx[i] += d->factor*R*T*d->p[j]*(sf[ib[j]]*dsf[ia[j]][i] + sf[ia[j]]*dsf[ib[j]][i])/(sf[ia[j]]*sf[ib[j]] + de[j]);
             }
             grad[i] = creal(dfx[i]);
         }
@@ -6233,16 +7144,7 @@ double obj_mp_ilm(unsigned n, const double *x, double *grad, void *SS_ref_db){
     double *d_em      = d->d_em;
     px_mp_ilm(SS_ref_db,x);
 
-    for (int i = 0; i < n_em; i++){
-        mu_Gex[i] = 0.0;
-        int it    = 0;
-        for (int j = 0; j < d->n_xeos; j++){
-            for (int k = j+1; k < n_em; k++){
-                mu_Gex[i] -= (d->eye[i][j] - d->p[j])*(d->eye[i][k] - d->p[k])*(d->W[it]);
-                it += 1;
-            }
-        }
-    }
+    mu_Gex_sym_n2(d, mu_Gex);
     
     sf[0]          = 0.5*x[0] + 0.5*x[1];
     sf[1]          = 0.5*x[0] - 0.5*x[1];
@@ -6252,9 +7154,13 @@ double obj_mp_ilm(unsigned n, const double *x, double *grad, void *SS_ref_db){
     sf[5]          = 1.0 - x[0];
     
     
-    mu[0]          = gb[0] + R*T*creal(clog(sf[0]*sf[4])) + mu_Gex[0];
-    mu[1]          = gb[1] + R*T*creal(clog(4.0*csqrt(sf[0])*csqrt(sf[1])*csqrt(sf[3])*csqrt(sf[4]))) + mu_Gex[1];
-    mu[2]          = gb[2] + R*T*creal(clog(sf[2]*sf[5] + d_em[2])) + mu_Gex[2];
+    mu[0]          = gb[0] + R*T*rlog((sf[0]*sf[4] + d_em[0])) + mu_Gex[0];
+    double complex cs_0 = csqrt(sf[0]);
+    double complex cs_1 = csqrt(sf[1]);
+    double complex cs_3 = csqrt(sf[3]);
+    double complex cs_4 = csqrt(sf[4]);
+    mu[1]          = gb[1] + R*T*rlog((4.0*cs_0*cs_1*cs_3*cs_4 + d_em[1])) + mu_Gex[1];
+    mu[2]          = gb[2] + R*T*rlog((sf[2]*sf[5] + d_em[2])) + mu_Gex[2];
     
     d->sum_apep = 0.0;
     for (int i = 0; i < n_em; i++){
@@ -6303,16 +7209,7 @@ double obj_mp_ilmm(unsigned n, const double *x, double *grad, void *SS_ref_db){
     double *d_em      = d->d_em;
     px_mp_ilmm(SS_ref_db,x);
 
-    for (int i = 0; i < n_em; i++){
-        mu_Gex[i] = 0.0;
-        int it    = 0;
-        for (int j = 0; j < d->n_xeos; j++){
-            for (int k = j+1; k < n_em; k++){
-                mu_Gex[i] -= (d->eye[i][j] - d->p[j])*(d->eye[i][k] - d->p[k])*(d->W[it]);
-                it += 1;
-            }
-        }
-    }
+    mu_Gex_sym_n2(d, mu_Gex);
     
     sf[0]          = 0.5*x[0] - 0.5*x[1] - 0.5*x[2] + 0.5*x[3];
     sf[1]          = 0.5*x[0] - 0.5*x[1] - 0.5*x[2] - 0.5*x[3];
@@ -6323,11 +7220,16 @@ double obj_mp_ilmm(unsigned n, const double *x, double *grad, void *SS_ref_db){
     sf[6]          = 0.5*x[0] + 0.5*x[1] + 0.5*x[2] + 0.5*x[3];
     
     
-    mu[0]          = gb[0] + R*T*creal(clog(sf[0]*sf[6])) + mu_Gex[0];
-    mu[1]          = gb[1] + R*T*creal(clog(4.0*csqrt(sf[0])*csqrt(sf[1])*csqrt(sf[5])*csqrt(sf[6]))) + mu_Gex[1];
-    mu[2]          = gb[2] + R*T*creal(clog(cpow(sf[4], 2.0) + d_em[2])) + mu_Gex[2];
-    mu[3]          = gb[3] + R*T*creal(clog(sf[2]*sf[6])) + mu_Gex[3];
-    mu[4]          = gb[4] + R*T*creal(clog(sf[3]*sf[6] + d_em[4])) + mu_Gex[4];
+    mu[0]          = gb[0] + R*T*rlog((sf[0]*sf[6] + d_em[0])) + mu_Gex[0];
+    double complex cp_4_2p0 = cpow(sf[4], 2.0);
+    double complex cs_0 = csqrt(sf[0]);
+    double complex cs_1 = csqrt(sf[1]);
+    double complex cs_5 = csqrt(sf[5]);
+    double complex cs_6 = csqrt(sf[6]);
+    mu[1]          = gb[1] + R*T*rlog((4.0*cs_0*cs_1*cs_5*cs_6 + d_em[1])) + mu_Gex[1];
+    mu[2]          = gb[2] + R*T*rlog((cp_4_2p0 + d_em[2])) + mu_Gex[2];
+    mu[3]          = gb[3] + R*T*rlog((sf[2]*sf[6] + d_em[3])) + mu_Gex[3];
+    mu[4]          = gb[4] + R*T*rlog((sf[3]*sf[6] + d_em[4])) + mu_Gex[4];
     
     d->sum_apep = 0.0;
     for (int i = 0; i < n_em; i++){
@@ -6377,18 +7279,7 @@ double obj_mp_mt(unsigned n, const double *x, double *grad, void *SS_ref_db){
 
     double tmp = 0.0;
     double Gex = 0.0;
-    for (int i = 0; i < n_em; i++){
-        Gex = 0.0;
-        int it    = 0;
-        for (int j = 0; j < d->n_xeos; j++){
-            tmp = (d->eye[i][j] - d->p[j]);
-            for (int k = j+1; k < n_em; k++){
-                Gex -= tmp*(d->eye[i][k] - d->p[k])*(d->W[it]);
-                it += 1;
-            }
-        }
-        mu_Gex[i] = Gex;
-    }   
+    mu_Gex_sym_n2(d, mu_Gex);   
   
     sf[0]          = 0.5 - 0.5*x[0];
     sf[1]          = -0.5*x[1] + x[0];
@@ -6397,9 +7288,9 @@ double obj_mp_mt(unsigned n, const double *x, double *grad, void *SS_ref_db){
     sf[4]          = 1.0 - x[1];
     
     
-    mu[0]          = R*T*creal(clog(4.0*sf[1]*sf[3]*sf[2] + d_em[0])) + gb[0] + mu_Gex[0];
-    mu[1]          = R*T*creal(clog(6.75*cpow(sf[1], 4.0/3.0)*cpow(sf[3], 2.0/3.0)*cpow(sf[2], 2.0/3.0)*cpow(sf[4], 1.0/3.0) + d_em[1])) + gb[1] + mu_Gex[1];
-    mu[2]          = R*T*creal(clog(4.0*sf[2]*sf[4]*sf[0]+ d_em[2])) + gb[2] + mu_Gex[2];
+    mu[0]          = R*T*rlog((4.0*sf[1]*sf[3]*sf[2] + d_em[0])) + gb[0] + mu_Gex[0];
+    mu[1]          = R*T*rlog((6.75*cpow(sf[1], 4.0/3.0)*cpow(sf[3], 2.0/3.0)*cpow(sf[2], 2.0/3.0)*cpow(sf[4], 1.0/3.0) + d_em[1])) + gb[1] + mu_Gex[1];
+    mu[2]          = R*T*rlog((4.0*sf[2]*sf[4]*sf[0]+ d_em[2])) + gb[2] + mu_Gex[2];
     
     d->sum_apep = 0.0;
     for (int i = 0; i < n_em; i++){
@@ -6481,8 +7372,6 @@ void p2x_ig_cd(void *SS_ref_db, double eps){
 	d->iguess[0]  = d->p[1];
 	d->iguess[1]  = d->p[2];
 	
-	if (d->z_em[2]  == 0.0){ d->iguess[1]  = eps;}
-		
 	for (int i = 0; i < d->n_xeos; i++){
 		if (d->iguess[i] < d->bounds[i][0]){
 			d->iguess[i] = d->bounds[i][0];
@@ -6509,10 +7398,6 @@ void p2x_ig_cpx(void *SS_ref_db, double eps){
 	d->iguess[7]  = d->p[5]/2.0;	
 	d->iguess[8]  = d->p[9];	
 
-	if (d->z_em[3]  == 0.0){ d->iguess[6]  = eps;}
-	if (d->z_em[4]  == 0.0){ d->iguess[5]  = eps;}
-	if (d->z_em[5]  == 0.0){ d->iguess[7]  = eps;}
-		
 	for (int i = 0; i < d->n_xeos; i++){
 		if (d->iguess[i] < d->bounds[i][0]){
 			d->iguess[i] = d->bounds[i][0];
@@ -6558,9 +7443,7 @@ void p2x_ig_fl(void *SS_ref_db, double eps){
 	d->iguess[7]  = d->p[8];
 	d->iguess[8]  = d->p[9];
 	d->iguess[9]  = d->p[10];
-	
-	if (d->z_em[10] == 0.0){ d->iguess[9]  = eps;}
-		
+
 	for (int i = 0; i < d->n_xeos; i++){
 		if (d->iguess[i] < d->bounds[i][0]){
 			d->iguess[i] = d->bounds[i][0];
@@ -6626,105 +7509,44 @@ void p2x_ig_g(void *SS_ref_db, double eps){
 /**
     Endmember to xeos for amp
 */
-void p2x_ig_amp(void *SS_ref_db, double eps) {
-    SS_ref *d = (SS_ref *) SS_ref_db;
+void p2x_ig_amp(void *SS_ref_db, double eps){
+	SS_ref *d  = (SS_ref *) SS_ref_db;
+	double *p  = d->p;
 
-    // Common denominator for x, Q1, Q2
-    double denom_x_Q1 =  4.0 * d->p[3] + 3.0 * d->p[9] + 4.0 * d->p[8] + 
-                        3.0 * d->p[2] + 2.0 * d->p[0] + 4.0 * d->p[1] + 4.0 * d->p[10] - 7.0;
-    double denom_Q2 = 8.0 * pow(d->p[3], 2.0) + 10.0 * d->p[3] * d->p[9] + 
-                      16.0 * d->p[3] * d->p[8] + 10.0 * d->p[3] * d->p[2] + 4.0 * d->p[3] * d->p[0] + 
-                      16.0 * d->p[3] * d->p[1] + 16.0 * d->p[3] * d->p[10] - 22.0 * d->p[3] + 
-                      3.0 * pow(d->p[9], 2.0) + 10.0 * d->p[9] * d->p[8] + 6.0 * d->p[9] * d->p[2] + 
-                      2.0 * d->p[9] * d->p[0] + 10.0 * d->p[9] * d->p[1] + 10.0 * d->p[9] * d->p[10] - 
-                      13.0 * d->p[9] + 8.0 * pow(d->p[8], 2.0) + 10.0 * d->p[8] * d->p[2] + 
-                      4.0 * d->p[8] * d->p[0] + 16.0 * d->p[8] * d->p[1] + 16.0 * d->p[8] * d->p[10] - 
-                      22.0 * d->p[8] + 3.0 * pow(d->p[2], 2.0) + 2.0 * d->p[2] * d->p[0] + 
-                      10.0 * d->p[2] * d->p[1] + 10.0 * d->p[2] * d->p[10] - 13.0 * d->p[2] + 
-                      4.0 * d->p[0] * d->p[1] + 4.0 * d->p[0] * d->p[10] - 4.0 * d->p[0] + 
-                      8.0 * pow(d->p[1], 2.0) + 16.0 * d->p[1] * d->p[10] - 22.0 * d->p[1] + 
-                      8.0 * pow(d->p[10], 2.0) - 22.0 * d->p[10] + 14.0;
-    double denom_k = d->p[2] + d->p[9];
+	double xNaA   = p[2];
+	double xKA    = p[9];
+	double xMgM13 = p[0] + p[1] + p[2] + p[3] + p[4] + p[6] + p[8] + p[9] + p[10];
+	double xFeM13 = p[5] + p[7];
+	double xMgM2  = p[0] + 0.5*p[2] + p[4] + p[7] + 0.5*p[9];
+	double xFeM2  = p[5] + p[6];
+	double xMgM4  = p[4];
+	double xFeM4  = p[5] + p[6] + p[7];
+	double num_x  = 3.0*xFeM13 + 2.0*xFeM2 + 2.0*xFeM4;
+	double den_x  = num_x + 3.0*xMgM13 + 2.0*xMgM2 + 2.0*xMgM4;
+	double x      = (den_x != 0.0) ? num_x/den_x : d->bounds[0][0];
+	double den_a  = xKA + xNaA;
+	double den_13 = xFeM13 + xMgM13;
+	double den_2  = xFeM2 + xMgM2;
 
-    // Assignments
-    d->iguess[3]  = d->p[2] + d->p[9]; // a
-    d->iguess[5]  = d->p[0] + d->p[1] + d->p[10] + d->p[11] + d->p[2] + d->p[9]; // c
-    d->iguess[6]  = d->p[8]; // f
-    d->iguess[4]  = (denom_k != 0.0) ? d->p[9] / denom_k : d->bounds[4][0]; // k
-    d->iguess[7]  = d->p[10]; // t
-    d->iguess[1]  = d->p[1] + 0.5 * d->p[2] + d->p[3] + 0.5 * d->p[9]; // y
-    d->iguess[2]  = d->p[3] + d->p[8]; // z
-    d->iguess[0]  = (denom_x_Q1 != 0.0) ? 
-                    0.142857142857143 * (5.0 * d->p[0] + 5.0 * d->p[1] + 5.0 * d->p[10] + 
-                                        5.0 * d->p[2] + 5.0 * d->p[3] + 
-                                         5.0 * d->p[4] - 2.0 * d->p[5] + d->p[6] + 
-                                         5.0 * d->p[8] + 5.0 * d->p[9] - 5.0) / denom_x_Q1 : 
-                    d->bounds[0][0]; // x
-    d->iguess[8]  = (denom_x_Q1 != 0.0) ? 
-                    0.142857142857143 * (2.0 * d->p[0] * d->p[1] + 2.0 * d->p[0] * d->p[10] + 
-                                         5.0 * d->p[0] * d->p[2] + 
-                                         6.0 * d->p[0] * d->p[3] + 2.0 * d->p[0] * d->p[4] + 
-                                         2.0 * d->p[0] * d->p[6] + 6.0 * d->p[0] * d->p[8] + 
-                                         5.0 * d->p[0] * d->p[9] - 4.0 * d->p[0] + 2.0 * pow(d->p[0], 2.0) + 
-                                         8.0 * d->p[1] * d->p[10]  + 
-                                         7.0 * d->p[1] * d->p[2] + 8.0 * d->p[1] * d->p[3] + 
-                                         4.0 * d->p[1] * d->p[4] + 4.0 * d->p[1] * d->p[6] + 
-                                         8.0 * d->p[1] * d->p[8] + 7.0 * d->p[1] * d->p[9] - 
-                                         6.0 * d->p[1] + 4.0 * pow(d->p[1], 2.0) + 
-                                         7.0 * d->p[10] * d->p[2] + 8.0 * d->p[10] * d->p[3] + 
-                                         4.0 * d->p[10] * d->p[4] + 4.0 * d->p[10] * d->p[6] + 
-                                         8.0 * d->p[10] * d->p[8] + 7.0 * d->p[10] * d->p[9] - 
-                                         6.0 * d->p[10] + 4.0 * pow(d->p[10], 2.0) + 
-                                         7.0 * d->p[2] * d->p[3] + 3.0 * d->p[2] * d->p[4] + 
-                                         3.0 * d->p[2] * d->p[6] + 7.0 * d->p[2] * d->p[8] + 
-                                         6.0 * d->p[2] * d->p[9] - 5.0 * d->p[2] + 3.0 * pow(d->p[2], 2.0) + 
-                                         4.0 * d->p[3] * d->p[4] + 4.0 * d->p[3] * d->p[6] + 
-                                         8.0 * d->p[3] * d->p[8] + 7.0 * d->p[3] * d->p[9] - 
-                                         6.0 * d->p[3] + 4.0 * pow(d->p[3], 2.0) + 4.0 * d->p[4] * d->p[8] + 
-                                         3.0 * d->p[4] * d->p[9] - 2.0 * d->p[4] - 2.0 * d->p[5] + 
-                                         4.0 * d->p[6] * d->p[8] + 3.0 * d->p[6] * d->p[9] - 6.0 * d->p[6] + 
-                                         7.0 * d->p[8] * d->p[9] - 6.0 * d->p[8] + 4.0 * pow(d->p[8], 2.0) - 
-                                         5.0 * d->p[9] + 3.0 * pow(d->p[9], 2.0) + 2.0) / denom_x_Q1 : 
-                    d->bounds[8][0]; // Q1
-    d->iguess[9]  = (denom_Q2 != 0.0) ? 
-                    0.0454545454545455 * (10.0 * d->p[0] * d->p[1] + 10.0 * d->p[0] * d->p[10] + 
-                                          5.0 * d->p[0] * d->p[2] + 10.0 * d->p[0] * d->p[3] + 
-                                          4.0 * d->p[0] * d->p[5] + 4.0 * d->p[0] * d->p[6] + 
-                                          10.0 * d->p[0] * d->p[8] + 5.0 * d->p[0] * d->p[9] - 
-                                          10.0 * d->p[0] + 20.0 * d->p[1] * d->p[10] + 
-                                          15.0 * d->p[1] * d->p[2] + 
-                                          20.0 * d->p[1] * d->p[3] + 10.0 * d->p[1] * d->p[4] + 
-                                          4.0 * d->p[1] * d->p[5] + 10.0 * d->p[1] * d->p[6] + 
-                                          20.0 * d->p[1] * d->p[8] + 15.0 * d->p[1] * d->p[9] - 
-                                          20.0 * d->p[1] + 10.0 * pow(d->p[1], 2.0) + 
-                                          15.0 * d->p[10] * d->p[2] + 
-                                          20.0 * d->p[10] * d->p[3] + 10.0 * d->p[10] * d->p[4] + 
-                                          4.0 * d->p[10] * d->p[5] + 10.0 * d->p[10] * d->p[6] + 
-                                          20.0 * d->p[10] * d->p[8] + 15.0 * d->p[10] * d->p[9] - 
-                                          20.0 * d->p[10] + 10.0 * pow(d->p[10], 2.0) + 15.0 * d->p[2] * d->p[3] + 
-                                          5.0 * d->p[2] * d->p[4] + 4.0 * d->p[2] * d->p[5] + 
-                                          7.0 * d->p[2] * d->p[6] + 15.0 * d->p[2] * d->p[8] + 
-                                          10.0 * d->p[2] * d->p[9] - 15.0 * d->p[2] + 5.0 * pow(d->p[2], 2.0) + 
-                                          10.0 * d->p[3] * d->p[4] + 4.0 * d->p[3] * d->p[5] + 
-                                          10.0 * d->p[3] * d->p[6] + 20.0 * d->p[3] * d->p[8] + 
-                                          15.0 * d->p[3] * d->p[9] - 20.0 * d->p[3] + 10.0 * pow(d->p[3], 2.0) + 
-                                          10.0 * d->p[4] * d->p[8] + 5.0 * d->p[4] * d->p[9] - 
-                                          10.0 * d->p[4] + 4.0 * d->p[5] * d->p[8] + 4.0 * d->p[5] * d->p[9] - 
-                                          10.0 * d->p[5] + 10.0 * d->p[6] * d->p[8] + 7.0 * d->p[6] * d->p[9] - 
-                                          16.0 * d->p[6] + 15.0 * d->p[8] * d->p[9] - 20.0 * d->p[8] + 
-                                          10.0 * pow(d->p[8], 2.0) - 15.0 * d->p[9] + 5.0 * pow(d->p[9], 2.0) + 
-                                          10.0) / denom_Q2 : 
-                    d->bounds[9][0]; // Q2
+	d->iguess[0]  = x;
+	d->iguess[1]  = p[1] + 0.5*p[2] + p[3] + 0.5*p[9];
+	d->iguess[2]  = p[3] + p[8];
+	d->iguess[3]  = den_a;
+	d->iguess[4]  = (den_a != 0.0) ? xKA/den_a : d->bounds[4][0];
+	d->iguess[5]  = p[0] + p[1] + p[2] + p[9] + p[10];
+	d->iguess[6]  = p[8];
+	d->iguess[7]  = p[10];
+	d->iguess[8]  = (den_13 != 0.0) ? x - xFeM13/den_13 : 0.0;
+	d->iguess[9]  = (den_2  != 0.0) ? x - xFeM2/den_2   : 0.0;
 
-    // Bounds checking
-    for (int i = 0; i < d->n_xeos; i++) {
-        if (d->iguess[i] < d->bounds[i][0]) {
-            d->iguess[i] = d->bounds[i][0];
-        }
-        if (d->iguess[i] > d->bounds[i][1]) {
-            d->iguess[i] = d->bounds[i][1];
-        }
-    }
+	for (int i = 0; i < d->n_xeos; i++){
+		if (d->iguess[i] < d->bounds[i][0]){
+			d->iguess[i] = d->bounds[i][0];
+		}
+		if (d->iguess[i] > d->bounds[i][1]){
+			d->iguess[i] = d->bounds[i][1];
+		}
+	}
 }
 
 /** 
@@ -6765,9 +7587,33 @@ void p2x_ig_liq(void *SS_ref_db, double eps){
 	d->iguess[8]  = d->p[9]/(1.0+3./4.*d->p[10]);
 	d->iguess[9]  = d->p[10];
 	d->iguess[10] = d->p[11]/(1.0+3./4.*d->p[10]);
+
+	for (int i = 0; i < d->n_xeos; i++){
+		if (d->iguess[i] < d->bounds[i][0]){
+			d->iguess[i] = d->bounds[i][0];
+		}
+		if (d->iguess[i] > d->bounds[i][1]){
+			d->iguess[i] = d->bounds[i][1];
+		}
+	}
+}
+
+void p2x_igmn_liq(void *SS_ref_db, double eps){
+	SS_ref *d  = (SS_ref *) SS_ref_db;
 		
-	if (d->z_em[11] == 0.0){ d->iguess[10] = eps;}
-		
+	d->iguess[0]  = (d->p[2]+d->p[10])/(1.0+3./4.*d->p[10]);	
+	d->iguess[1]  = (d->p[1]+d->p[10])/(1.0+3./4.*d->p[10]);
+	d->iguess[2]  = d->p[3]/(1.0+3./4.*d->p[10]);
+	d->iguess[3]  = d->p[4]/(1.0+3./4.*d->p[10]);
+	d->iguess[4]  = d->p[5]/(1.0+3./4.*d->p[10]);
+	d->iguess[5]  = d->p[6]/(1.0+3./4.*d->p[10]);
+	d->iguess[6]  = d->p[7]/(1.0+3./4.*d->p[10]);
+	d->iguess[7]  = d->p[8]/(1.0+3./4.*d->p[10]);
+	d->iguess[8]  = d->p[9]/(1.0+3./4.*d->p[10]);
+	d->iguess[9]  = d->p[10];
+	d->iguess[10] = d->p[11]/(1.0+3./4.*d->p[10]);
+	d->iguess[11] = d->p[12]/(1.0+3./4.*d->p[10]);
+
 	for (int i = 0; i < d->n_xeos; i++){
 		if (d->iguess[i] < d->bounds[i][0]){
 			d->iguess[i] = d->bounds[i][0];
@@ -6789,9 +7635,7 @@ void p2x_ig_mu(void *SS_ref_db, double eps){
 	d->iguess[2]  = d->p[5];
 	d->iguess[3]  = d->p[3];
 	d->iguess[4]  = d->p[4];
-
-	if (d->z_em[5]  == 0.0){ d->iguess[2]  = eps;}
-		
+	
 	for (int i = 0; i < d->n_xeos; i++){
 		if (d->iguess[i] < d->bounds[i][0]){
 			d->iguess[i] = d->bounds[i][0];
@@ -6836,11 +7680,7 @@ void p2x_ig_opx(void *SS_ref_db, double eps){
 	d->iguess[5] = d->p[6]/2.0;
 	d->iguess[6] = d->p[5];
 	d->iguess[7] = d->p[8];
-	
-	if (d->z_em[5]  == 0.0){ d->iguess[6]  = eps;}
-	if (d->z_em[4]  == 0.0){ d->iguess[4]  = eps;}
-	if (d->z_em[6]  == 0.0){ d->iguess[5]  = eps;}
-		
+
 	for (int i = 0; i < d->n_xeos; i++){
 		if (d->iguess[i] < d->bounds[i][0]){
 			d->iguess[i] = d->bounds[i][0];
@@ -6875,14 +7715,26 @@ void p2x_ig_fsp(void *SS_ref_db, double eps){
 */
 void p2x_ig_spl(void *SS_ref_db, double eps){
 	SS_ref *d  = (SS_ref *) SS_ref_db;
+	double *p  = d->p;
 
-	d->iguess[0]  = (1.0 - d->p[6] - d->p[7] - d->p[0] - d->p[1])/(d->p[7] + 1.0);
-	d->iguess[1]  = (d->p[4] + d->p[5])/(1.0 - d->p[6] - d->p[7]);
-	d->iguess[2]  = d->p[6];
-	d->iguess[3]  = d->p[7];
-	d->iguess[4]  = 3./2.*d->p[0] - 1./2. + 3./2.*d->p[6] + d->p[7] + ((1.0 - d->p[6] - d->p[7] - d->p[0] - d->p[1])/(d->p[7] + 1.0))/2.*(1.0+d->p[7]);
-	d->iguess[5]  = ((1.0 - d->p[6] - d->p[7] - d->p[0] - d->p[1])/(d->p[7] + 1.0))*(d->p[7] + 1.0) - 3./2.*d->p[3] - 3./2.*d->p[5];
-	d->iguess[6]  = -3./2.*d->p[4] + ((d->p[4] + d->p[5])/(1.0 - d->p[6] - d->p[7]))*(1./2. -1./2.*d->p[6] - 1./2.*d->p[7]);
+	double xMgT  = p[0] + p[6];
+	double xFeT  = p[2] + p[4] + p[7];
+	double xAlT  = p[1] + p[3];
+	double xFe3T = p[5];
+	double xMgM  = 0.5*p[1];
+	double xFeM  = 0.5*(p[3] + p[5] + p[7]);
+	double xAlM  = p[0] + 0.5*p[1] + p[2] + 0.5*p[3];
+	double xFe3M = p[4] + 0.5*p[5];
+	double den_x = 2.0*xFeM + xFeT + 2.0*xMgM + xMgT;
+	double den_y = 2.0*xAlM + xAlT + 2.0*xFe3M + xFe3T;
+
+	d->iguess[0]  = (den_x != 0.0) ? (2.0*xFeM + xFeT)/den_x : d->bounds[0][0];
+	d->iguess[1]  = (den_y != 0.0) ? (2.0*xFe3M + xFe3T)/den_y : d->bounds[1][0];
+	d->iguess[2]  = p[6];
+	d->iguess[3]  = p[7];
+	d->iguess[4]  = xMgT - xMgM;
+	d->iguess[5]  = xFeT - xFeM;
+	d->iguess[6]  = xFe3T - xFe3M;
 
 	for (int i = 0; i < d->n_xeos; i++){
 		if (d->iguess[i] < d->bounds[i][0]){
@@ -7277,27 +8129,6 @@ void p2x_mp_st(void *SS_ref_db, double eps){
 }
 
 /**
-    Endmember to xeos for mt_mp
-*/
-void p2x_aq17(void *SS_ref_db, double eps){
-    SS_ref *d  = (SS_ref *) SS_ref_db;
-    int n_em = d->n_em;
-
-    for (int i = 0; i < n_em; i++){
-      d->iguess[i]  = d->p[i];
-    }
-
-    for (int i = 0; i < d->n_xeos; i++){
-        if (d->iguess[i] < d->bounds[i][0]){
-            d->iguess[i] = d->bounds[i][0];
-        }
-        if (d->iguess[i] > d->bounds[i][1]){
-            d->iguess[i] = d->bounds[i][1];
-        }
-    }
-}
-  
-/**
     Update dpdx matrix of fper_S11
 */
 void dpdx_ig_fper(void *SS_ref_db, const double *x){
@@ -7433,11 +8264,11 @@ void dpdx_ig_ilm(void *SS_ref_db, const double *x){
     SS_ref *d  = (SS_ref *) SS_ref_db;
     double **dp_dx = d->dp_dx;
 
-    dp_dx[0][0] = 0.0;      dp_dx[0][1] = 0.0;      dp_dx[0][2] = 1.00000000000000;      dp_dx[0][3] = 0.0;      
-    dp_dx[1][0] = 1.0 -x[1];      dp_dx[1][1] = -x[0];      dp_dx[1][2] = -1.00000000000000;      dp_dx[1][3] = 0.0;      
-    dp_dx[2][0] = -1.00000000000000;      dp_dx[2][1] = 0.0;      dp_dx[2][2] = 0.0;      dp_dx[2][3] = 0.0;      
-    dp_dx[3][0] = 0.0;      dp_dx[3][1] = 0.0;      dp_dx[3][2] = -1.00000000000000;      dp_dx[3][3] = 1.00000000000000;      
-    dp_dx[4][0] = x[1];      dp_dx[4][1] = x[0];      dp_dx[4][2] = 1.00000000000000;      dp_dx[4][3] = -1.00000000000000;      
+    dp_dx[0][0] = 0.0;      dp_dx[0][1] = 0.0;      dp_dx[0][2] = 1.0;      dp_dx[0][3] = 0.0;      
+    dp_dx[1][0] = 1.0 -x[1];      dp_dx[1][1] = -x[0];      dp_dx[1][2] = -1.0;      dp_dx[1][3] = 0.0;      
+    dp_dx[2][0] = -1.0;      dp_dx[2][1] = 0.0;      dp_dx[2][2] = 0.0;      dp_dx[2][3] = 0.0;      
+    dp_dx[3][0] = 0.0;      dp_dx[3][1] = 0.0;      dp_dx[3][2] = -1.0;      dp_dx[3][3] = 1.0;      
+    dp_dx[4][0] = x[1];      dp_dx[4][1] = x[0];      dp_dx[4][2] = 1.0;      dp_dx[4][3] = -1.0;      
 }
 
 
@@ -7461,6 +8292,25 @@ void dpdx_ig_liq(void *SS_ref_db, const double *x){
     dp_dx[9][0] = 0.0;      dp_dx[9][1] = 0.0;      dp_dx[9][2] = 0.0;      dp_dx[9][3] = 0.0;      dp_dx[9][4] = 0.0;      dp_dx[9][5] = 0.0;      dp_dx[9][6] = 0.0;      dp_dx[9][7] = 0.0;      dp_dx[9][8] = 0.75*x[9] + 1.0;      dp_dx[9][9] = 0.75*x[8];      dp_dx[9][10] = 0.0;      
     dp_dx[10][0] = 0.0;      dp_dx[10][1] = 0.0;      dp_dx[10][2] = 0.0;      dp_dx[10][3] = 0.0;      dp_dx[10][4] = 0.0;      dp_dx[10][5] = 0.0;      dp_dx[10][6] = 0.0;      dp_dx[10][7] = 0.0;      dp_dx[10][8] = 0.0;      dp_dx[10][9] = 1.0;      dp_dx[10][10] = 0.0;      
     dp_dx[11][0] = 0.0;      dp_dx[11][1] = 0.0;      dp_dx[11][2] = 0.0;      dp_dx[11][3] = 0.0;      dp_dx[11][4] = 0.0;      dp_dx[11][5] = 0.0;      dp_dx[11][6] = 0.0;      dp_dx[11][7] = 0.0;      dp_dx[11][8] = 0.0;      dp_dx[11][9] = 0.75*x[10];      dp_dx[11][10] = 0.75*x[9] + 1.0;      
+}
+
+void dpdx_igmn_liq(void *SS_ref_db, const double *x){
+    SS_ref *d  = (SS_ref *) SS_ref_db;
+    double **dp_dx = d->dp_dx;
+
+    dp_dx[0][0] = -0.75*x[9] - 1.0;      dp_dx[0][1] = -0.75*x[9] - 1.0;      dp_dx[0][2] = -0.75*x[9] - 1.0;      dp_dx[0][3] = -0.75*x[9] - 1.0;      dp_dx[0][4] = -0.75*x[9] - 1.0;      dp_dx[0][5] = -0.75*x[9] - 1.0;      dp_dx[0][6] = -0.75*x[9] - 1.0;      dp_dx[0][7] = -0.75*x[9] - 1.0;      dp_dx[0][8] = -0.75*x[9] - 1.0;      dp_dx[0][9] = -0.75*x[0] - 0.75*x[10] - 0.75*x[11] - 0.75*x[1] - 0.75*x[2] - 0.75*x[3] - 0.75*x[4] - 0.75*x[5] - 0.75*x[6] - 0.75*x[7] - 0.75*x[8] + 1.0;      dp_dx[0][10] = -0.75*x[9] - 1.0;      dp_dx[0][11] = -0.75*x[9] - 1.0;      
+    dp_dx[1][0] = 0;      dp_dx[1][1] = 0.75*x[9] + 1.0;      dp_dx[1][2] = 0;      dp_dx[1][3] = 0;      dp_dx[1][4] = 0;      dp_dx[1][5] = 0;      dp_dx[1][6] = 0;      dp_dx[1][7] = 0;      dp_dx[1][8] = 0;      dp_dx[1][9] = 0.75*x[1] - 1.0;      dp_dx[1][10] = 0;      dp_dx[1][11] = 0;      
+    dp_dx[2][0] = 0.75*x[9] + 1.0;      dp_dx[2][1] = 0;      dp_dx[2][2] = 0;      dp_dx[2][3] = 0;      dp_dx[2][4] = 0;      dp_dx[2][5] = 0;      dp_dx[2][6] = 0;      dp_dx[2][7] = 0;      dp_dx[2][8] = 0;      dp_dx[2][9] = 0.75*x[0] - 1.0;      dp_dx[2][10] = 0;      dp_dx[2][11] = 0;      
+    dp_dx[3][0] = 0;      dp_dx[3][1] = 0;      dp_dx[3][2] = 0.75*x[9] + 1.0;      dp_dx[3][3] = 0;      dp_dx[3][4] = 0;      dp_dx[3][5] = 0;      dp_dx[3][6] = 0;      dp_dx[3][7] = 0;      dp_dx[3][8] = 0;      dp_dx[3][9] = 0.75*x[2];      dp_dx[3][10] = 0;      dp_dx[3][11] = 0;      
+    dp_dx[4][0] = 0;      dp_dx[4][1] = 0;      dp_dx[4][2] = 0;      dp_dx[4][3] = 0.75*x[9] + 1.0;      dp_dx[4][4] = 0;      dp_dx[4][5] = 0;      dp_dx[4][6] = 0;      dp_dx[4][7] = 0;      dp_dx[4][8] = 0;      dp_dx[4][9] = 0.75*x[3];      dp_dx[4][10] = 0;      dp_dx[4][11] = 0;      
+    dp_dx[5][0] = 0;      dp_dx[5][1] = 0;      dp_dx[5][2] = 0;      dp_dx[5][3] = 0;      dp_dx[5][4] = 0.75*x[9] + 1.0;      dp_dx[5][5] = 0;      dp_dx[5][6] = 0;      dp_dx[5][7] = 0;      dp_dx[5][8] = 0;      dp_dx[5][9] = 0.75*x[4];      dp_dx[5][10] = 0;      dp_dx[5][11] = 0;      
+    dp_dx[6][0] = 0;      dp_dx[6][1] = 0;      dp_dx[6][2] = 0;      dp_dx[6][3] = 0;      dp_dx[6][4] = 0;      dp_dx[6][5] = 0.75*x[9] + 1.0;      dp_dx[6][6] = 0;      dp_dx[6][7] = 0;      dp_dx[6][8] = 0;      dp_dx[6][9] = 0.75*x[5];      dp_dx[6][10] = 0;      dp_dx[6][11] = 0;      
+    dp_dx[7][0] = 0;      dp_dx[7][1] = 0;      dp_dx[7][2] = 0;      dp_dx[7][3] = 0;      dp_dx[7][4] = 0;      dp_dx[7][5] = 0;      dp_dx[7][6] = 0.75*x[9] + 1.0;      dp_dx[7][7] = 0;      dp_dx[7][8] = 0;      dp_dx[7][9] = 0.75*x[6];      dp_dx[7][10] = 0;      dp_dx[7][11] = 0;      
+    dp_dx[8][0] = 0;      dp_dx[8][1] = 0;      dp_dx[8][2] = 0;      dp_dx[8][3] = 0;      dp_dx[8][4] = 0;      dp_dx[8][5] = 0;      dp_dx[8][6] = 0;      dp_dx[8][7] = 0.75*x[9] + 1.0;      dp_dx[8][8] = 0;      dp_dx[8][9] = 0.75*x[7];      dp_dx[8][10] = 0;      dp_dx[8][11] = 0;      
+    dp_dx[9][0] = 0;      dp_dx[9][1] = 0;      dp_dx[9][2] = 0;      dp_dx[9][3] = 0;      dp_dx[9][4] = 0;      dp_dx[9][5] = 0;      dp_dx[9][6] = 0;      dp_dx[9][7] = 0;      dp_dx[9][8] = 0.75*x[9] + 1.0;      dp_dx[9][9] = 0.75*x[8];      dp_dx[9][10] = 0;      dp_dx[9][11] = 0;      
+    dp_dx[10][0] = 0;      dp_dx[10][1] = 0;      dp_dx[10][2] = 0;      dp_dx[10][3] = 0;      dp_dx[10][4] = 0;      dp_dx[10][5] = 0;      dp_dx[10][6] = 0;      dp_dx[10][7] = 0;      dp_dx[10][8] = 0;      dp_dx[10][9] = 1.0;      dp_dx[10][10] = 0;      dp_dx[10][11] = 0;      
+    dp_dx[11][0] = 0;      dp_dx[11][1] = 0;      dp_dx[11][2] = 0;      dp_dx[11][3] = 0;      dp_dx[11][4] = 0;      dp_dx[11][5] = 0;      dp_dx[11][6] = 0;      dp_dx[11][7] = 0;      dp_dx[11][8] = 0;      dp_dx[11][9] = 0.75*x[10];      dp_dx[11][10] = 0.75*x[9] + 1.0;      dp_dx[11][11] = 0;      
+    dp_dx[12][0] = 0;      dp_dx[12][1] = 0;      dp_dx[12][2] = 0;      dp_dx[12][3] = 0;      dp_dx[12][4] = 0;      dp_dx[12][5] = 0;      dp_dx[12][6] = 0;      dp_dx[12][7] = 0;      dp_dx[12][8] = 0;      dp_dx[12][9] = 0.75*x[11];      dp_dx[12][10] = 0;      dp_dx[12][11] = 0.75*x[9] + 1.0;      
 }
 /** 
   update dpdpx matrix (muscovite)
@@ -7707,6 +8557,24 @@ void px_ig_liq(void *SS_ref_db, const double *x){
         p[10]           = x[9];
         p[11]           = 0.75*x[10]*x[9] + x[10];
 }
+
+void px_igmn_liq(void *SS_ref_db, const double *x){
+    SS_ref *d  = (SS_ref *) SS_ref_db;
+    double *p = d->p;
+        p[0]           = -0.75*x[0]*x[9] - 1.0*x[0] - 0.75*x[10]*x[9] - 1.0*x[10] - 0.75*x[11]*x[9] - 1.0*x[11] - 0.75*x[1]*x[9] - 1.0*x[1] - 0.75*x[2]*x[9] - 1.0*x[2] - 0.75*x[3]*x[9] - 1.0*x[3] - 0.75*x[4]*x[9] - 1.0*x[4] - 0.75*x[5]*x[9] - 1.0*x[5] - 0.75*x[6]*x[9] - 1.0*x[6] - 0.75*x[7]*x[9] - 1.0*x[7] - 0.75*x[8]*x[9] - 1.0*x[8] + 1.0*x[9] + 1.0;
+        p[1]           = 0.75*x[1]*x[9] + 1.0*x[1] - 1.0*x[9];
+        p[2]           = 0.75*x[0]*x[9] + 1.0*x[0] - 1.0*x[9];
+        p[3]           = 0.75*x[2]*x[9] + 1.0*x[2];
+        p[4]           = 0.75*x[3]*x[9] + 1.0*x[3];
+        p[5]           = 0.75*x[4]*x[9] + 1.0*x[4];
+        p[6]           = 0.75*x[5]*x[9] + 1.0*x[5];
+        p[7]           = 0.75*x[6]*x[9] + 1.0*x[6];
+        p[8]           = 0.75*x[7]*x[9] + 1.0*x[7];
+        p[9]           = 0.75*x[8]*x[9] + 1.0*x[8];
+        p[10]           = 1.0*x[9];
+        p[11]           = 0.75*x[10]*x[9] + 1.0*x[10];
+        p[12]           = 0.75*x[11]*x[9] + 1.0*x[11];
+}
 /** 
   update px matrix (muscovite)
 */
@@ -7815,25 +8683,14 @@ double obj_ig_fper(unsigned n, const double *x, double *grad, void *SS_ref_db){
 
     double tmp = 0.0;
     double Gex = 0.0;
-    for (int i = 0; i < n_em; i++){
-        Gex = 0.0;
-        int it    = 0;
-        for (int j = 0; j < d->n_xeos; j++){
-            tmp = (d->eye[i][j] - d->p[j]);
-            for (int k = j+1; k < n_em; k++){
-                Gex -= tmp*(d->eye[i][k] - d->p[k])*(d->W[it]);
-                it += 1;
-            }
-        }
-        mu_Gex[i] = Gex;
-    }   
-  
+    mu_Gex_sym_n2(d, mu_Gex);
+
     sf[0]          =x[0];
     sf[1]          = 1.0 - x[0];
-    
-    mu[0]          = gb[0] + R*T*creal(clog(sf[1])) + mu_Gex[0];
-    mu[1]          = gb[1] + R*T*creal(clog(sf[0])) + mu_Gex[1];
-    
+
+    mu[0]          = gb[0] + R*T*rlog((sf[1])) + mu_Gex[0];
+    mu[1]          = gb[1] + R*T*rlog((sf[0])) + mu_Gex[1];
+
     d->sum_apep = 0.0;
     for (int i = 0; i < n_em; i++){
         d->sum_apep += d->ape[i]*d->p[i];
@@ -7882,18 +8739,7 @@ double obj_ig_bi(unsigned  n, const double *x, double *grad, void *SS_ref_db) {
 
     double tmp = 0.0;
     double Gex = 0.0;
-    for (int i = 0; i < n_em; i++){
-        Gex = 0.0;
-        int it    = 0;
-        for (int j = 0; j < d->n_xeos; j++){
-            tmp = (d->eye[i][j] - d->p[j]);
-            for (int k = j+1; k < n_em; k++){
-                Gex -= tmp*(d->eye[i][k] - d->p[k])*(d->W[it]);
-                it += 1;
-            }
-        }
-        mu_Gex[i] = Gex;
-    }   
+    mu_Gex_sym_n2(d, mu_Gex);   
   
     sf[0]          = x[0]*x[1] + x[0]*x[2] + x[0]*x[3] - x[0] - x[1] - x[2] - x[3] - 2.0/3.0*x[4] + 1.0;
     sf[1]          = -x[0]*x[1] - x[0]*x[2] - x[0]*x[3] + x[0] + 2.0/3.0*x[4];
@@ -7908,12 +8754,17 @@ double obj_ig_bi(unsigned  n, const double *x, double *grad, void *SS_ref_db) {
     sf[10]          = x[3];
     
     
-    mu[0]          = gb[0] + R*T*creal(clog(4.0*sf[0]*cpow(sf[5], 2.0)*sf[7]*sf[8]*cpow(sf[9], 2.0))) + mu_Gex[0];
-    mu[1]          = gb[1] + R*T*creal(clog(4.0*sf[1]*cpow(sf[6], 2.0)*sf[7]*sf[8]*cpow(sf[9], 2.0))) + mu_Gex[1];
-    mu[2]          = gb[2] + R*T*creal(clog(4.0*sf[1]*cpow(sf[5], 2.0)*sf[7]*sf[8]*cpow(sf[9], 2.0))) + mu_Gex[2];
-    mu[3]          = gb[3] + R*T*creal(clog(sf[4]*cpow(sf[5], 2.0)*cpow(sf[8], 2.0)*cpow(sf[9], 2.0))) + mu_Gex[3];
-    mu[4]          = gb[4] + R*T*creal(clog(4.0*cpow(sf[10], 2.0)*sf[3]*cpow(sf[5], 2.0)*sf[7]*sf[8] + d_em[4])) + mu_Gex[4];
-    mu[5]          = gb[5] + R*T*creal(clog(sf[2]*cpow(sf[5], 2.0)*cpow(sf[8], 2.0)*cpow(sf[9], 2.0) + d_em[5])) + mu_Gex[5];
+    double complex cp_5_2p0 = cpow(sf[5], 2.0);
+    double complex cp_9_2p0 = cpow(sf[9], 2.0);
+    double complex cp_6_2p0 = cpow(sf[6], 2.0);
+    double complex cp_8_2p0 = cpow(sf[8], 2.0);
+    double complex cp_10_2p0 = cpow(sf[10], 2.0);
+    mu[0]          = gb[0] + R*T*rlog((4.0*sf[0]*cp_5_2p0*sf[7]*sf[8]*cp_9_2p0)) + mu_Gex[0];
+    mu[1]          = gb[1] + R*T*rlog((4.0*sf[1]*cp_6_2p0*sf[7]*sf[8]*cp_9_2p0)) + mu_Gex[1];
+    mu[2]          = gb[2] + R*T*rlog((4.0*sf[1]*cp_5_2p0*sf[7]*sf[8]*cp_9_2p0)) + mu_Gex[2];
+    mu[3]          = gb[3] + R*T*rlog((sf[4]*cp_5_2p0*cp_8_2p0*cp_9_2p0)) + mu_Gex[3];
+    mu[4]          = gb[4] + R*T*rlog((4.0*cp_10_2p0*sf[3]*cp_5_2p0*sf[7]*sf[8] + d_em[4])) + mu_Gex[4];
+    mu[5]          = gb[5] + R*T*rlog((sf[2]*cp_5_2p0*cp_8_2p0*cp_9_2p0 + d_em[5])) + mu_Gex[5];
     
     d->sum_apep = 0.0;
     for (int i = 0; i < n_em; i++){
@@ -7963,25 +8814,16 @@ double obj_ig_cd(unsigned  n, const double *x, double *grad, void *SS_ref_db) {
 
 	px_ig_cd(SS_ref_db,x);
 
-	for (int i = 0; i < d->n_em; i++){
-		mu_Gex[i] = 0.0;
-		int it = 0;
-		for (int j = 0; j < d->n_xeos; j++){
-			for (int k = j+1; k < d->n_em; k++){
-				mu_Gex[i] -= (d->eye[i][j] - d->p[j])*(d->eye[i][k] - d->p[k])*(d->W[it]);
-				it += 1;
-			}
-		}
-	}
+    mu_Gex_sym_n2(d, mu_Gex);
 	
     sf[0]           = x[0];
     sf[1]           = 1.0 - x[0];
     sf[2]           = x[1];
     sf[3]           = 1.0 - x[1];
     
-	mu[0]            = R*T*creal(clog( pow(sf[1], 2.0)*sf[3])) + gb[0]  + mu_Gex[0];
-	mu[1]            = R*T*creal(clog( pow(sf[0], 2.0)*sf[3])) + gb[1]  + mu_Gex[1];
-	mu[2]            = R*T*creal(clog( pow(sf[1], 2.0)*sf[2])) + gb[2]  + mu_Gex[2];
+	mu[0]            = R*T*rlog(( pow(sf[1], 2.0)*sf[3])) + gb[0]  + mu_Gex[0];
+	mu[1]            = R*T*rlog(( pow(sf[0], 2.0)*sf[3])) + gb[1]  + mu_Gex[1];
+	mu[2]            = R*T*rlog(( pow(sf[1], 2.0)*sf[2])) + gb[2]  + mu_Gex[2];
 
 	d->sum_apep = 0.0;
 	for (int i = 0; i < n_em; i++){
@@ -7994,7 +8836,7 @@ double obj_ig_cd(unsigned  n, const double *x, double *grad, void *SS_ref_db) {
 		d->df_raw += mu[i]*d->p[i];
 	}
 	d->df = d->df_raw * d->factor;
-	
+
 	if (grad){
 	double *dfx    = d->dfx;
 	double **dp_dx = d->dp_dx;
@@ -8040,18 +8882,7 @@ double obj_ig_cpx(unsigned n, const double *x, double *grad, void *SS_ref_db) {
     
     double tmp = 0.0;
     double Gex = 0.0;
-    for (int i = 0; i < d->n_em; i++){
-        Gex = 0.0;
-        int it = 0;
-        for (int j = 0; j < d->n_xeos; j++){
-            tmp = (d->eye[i][j] - d->mat_phi[j]);
-            for (int k = j+1; k < d->n_em; k++){
-                Gex -= tmp*(d->eye[i][k] - d->mat_phi[k])*(d->W[it]*2.0*d->v[i]/(d->v[j]+d->v[k]));
-                it += 1;
-            }
-        }
-        mu_Gex[i] = Gex;
-    }
+    mu_Gex_asym_n2(d, mu_Gex);
     
     sf[0]          = x[0]*x[1] + x[0]*x[3] - x[0]*x[7] + x[0]*x[8] - x[0] + x[1]*x[4] - x[1] + x[3]*x[4] - x[3] - x[4]*x[7] + x[4]*x[8] - x[4] + x[7] - x[8] + 1.0;
     sf[1]          = -x[0]*x[1] - x[0]*x[3] + x[0]*x[7] - x[0]*x[8] + x[0] - x[1]*x[4] - x[3]*x[4] + x[4]*x[7] - x[4]*x[8] + x[4];
@@ -8068,16 +8899,21 @@ double obj_ig_cpx(unsigned n, const double *x, double *grad, void *SS_ref_db) {
     sf[12]          = 0.5*x[1];
     
     
-    mu[0]          = gb[0] + R*T*creal(clog(sf[0]*csqrt(sf[11])*sf[8])) + mu_Gex[0];
-    mu[1]          = gb[1] + R*T*creal(clog(csqrt(sf[11])*sf[1]*sf[7])) + mu_Gex[1];
-    mu[2]          = gb[2] + R*T*creal(clog(1.4142*cpow(sf[11], 0.25)*cpow(sf[12], 0.25)*sf[2]*sf[8])) + mu_Gex[2];
-    mu[3]          = gb[3] + R*T*creal(clog(1.4142*cpow(sf[11], 0.25)*cpow(sf[12], 0.25)*sf[4]*sf[8] + d_em[3])) + mu_Gex[3];
-    mu[4]          = gb[4] + R*T*creal(clog(1.4142*cpow(sf[11], 0.25)*cpow(sf[12], 0.25)*sf[3]*sf[8] + d_em[4])) + mu_Gex[4];
-    mu[5]          = gb[5] + R*T*creal(clog(2.8284*csqrt(sf[0])*cpow(sf[11], 0.25)*cpow(sf[12], 0.25)*csqrt(sf[5])*sf[8] + d_em[5])) + mu_Gex[5];
-    mu[6]          = gb[6] + R*T*creal(clog(csqrt(sf[11])*sf[2]*sf[9])) + mu_Gex[6];
-    mu[7]          = gb[7] + R*T*creal(clog(sf[0]*csqrt(sf[11])*sf[6])) + mu_Gex[7];
-    mu[8]          = gb[8] + R*T*creal(clog(sf[0]*csqrt(sf[11])*sf[7])) + mu_Gex[8];
-    mu[9]          = gb[9] + R*T*creal(clog(sf[10]*csqrt(sf[11])*sf[2] + d_em[9])) + mu_Gex[9];
+    double complex cp_11_0p25 = cpow(sf[11], 0.25);
+    double complex cp_12_0p25 = cpow(sf[12], 0.25);
+    double complex cs_11 = csqrt(sf[11]);
+    double complex cs_0 = csqrt(sf[0]);
+    double complex cs_5 = csqrt(sf[5]);
+    mu[0]          = gb[0] + R*T*rlog((sf[0]*cs_11*sf[8])) + mu_Gex[0];
+    mu[1]          = gb[1] + R*T*rlog((cs_11*sf[1]*sf[7])) + mu_Gex[1];
+    mu[2]          = gb[2] + R*T*rlog((1.4142*cp_11_0p25*cp_12_0p25*sf[2]*sf[8])) + mu_Gex[2];
+    mu[3]          = gb[3] + R*T*rlog((1.4142*cp_11_0p25*cp_12_0p25*sf[4]*sf[8] + d_em[3])) + mu_Gex[3];
+    mu[4]          = gb[4] + R*T*rlog((1.4142*cp_11_0p25*cp_12_0p25*sf[3]*sf[8] + d_em[4])) + mu_Gex[4];
+    mu[5]          = gb[5] + R*T*rlog((2.8284*cs_0*cp_11_0p25*cp_12_0p25*cs_5*sf[8] + d_em[5])) + mu_Gex[5];
+    mu[6]          = gb[6] + R*T*rlog((cs_11*sf[2]*sf[9] + d_em[6])) + mu_Gex[6];
+    mu[7]          = gb[7] + R*T*rlog((sf[0]*cs_11*sf[6])) + mu_Gex[7];
+    mu[8]          = gb[8] + R*T*rlog((sf[0]*cs_11*sf[7])) + mu_Gex[8];
+    mu[9]          = gb[9] + R*T*rlog((sf[10]*cs_11*sf[2] + d_em[9])) + mu_Gex[9];
     
     d->sum_apep = 0.0;
     for (int i = 0; i < n_em; i++){
@@ -8091,6 +8927,10 @@ double obj_ig_cpx(unsigned n, const double *x, double *grad, void *SS_ref_db) {
     }
     d->df = d->df_raw * d->factor;
 
+	for (int k = 0; k < n_em; k++){
+		d->df += d->ox_penalty[k] * d->p[k] * d->p[k];
+	}
+
     if (grad){
         double *dfx    = d->dfx;
         double **dp_dx = d->dp_dx;
@@ -8099,6 +8939,7 @@ double obj_ig_cpx(unsigned n, const double *x, double *grad, void *SS_ref_db) {
             dfx[i] = 0.0;
             for (int j = 0; j < n_em; j++){
                 dfx[i] += (mu[j] - (d->ape[j]/d->sum_apep)*d->df_raw)*d->factor*dp_dx[j][i];
+				dfx[i] += d->ox_penalty[j]*2.0*d->p[j]*dp_dx[j][i];
             }
             grad[i] = creal(dfx[i]);
         }
@@ -8127,27 +8968,16 @@ double obj_ig_ep(unsigned  n, const double *x, double *grad, void *SS_ref_db) {
 
     double tmp = 0.0;
     double Gex = 0.0;
-    for (int i = 0; i < n_em; i++){
-        Gex = 0.0;
-        int it    = 0;
-        for (int j = 0; j < d->n_xeos; j++){
-            tmp = (d->eye[i][j] - d->p[j]);
-            for (int k = j+1; k < n_em; k++){
-                Gex -= tmp*(d->eye[i][k] - d->p[k])*(d->W[it]);
-                it += 1;
-            }
-        }
-        mu_Gex[i] = Gex;
-    }   
+    mu_Gex_sym_n2(d, mu_Gex);   
   
     sf[0]          = x[0] - x[1];
     sf[1]          = -x[0] + x[1] + 1.0;
     sf[2]          = x[0] + x[1];
     sf[3]          = -x[0] - x[1] + 1.0;
     
-    mu[0]          = gb[0] + R*T*creal(clog(sf[1]*sf[3])) + mu_Gex[0];
-    mu[1]          = gb[1] + R*T*creal(clog(sf[1]*sf[2] + d_em[1])) + mu_Gex[1];
-    mu[2]          = gb[2] + R*T*creal(clog(sf[0]*sf[2] + d_em[2])) + mu_Gex[2];
+    mu[0]          = gb[0] + R*T*rlog((sf[1]*sf[3])) + mu_Gex[0];
+    mu[1]          = gb[1] + R*T*rlog((sf[1]*sf[2] + d_em[1])) + mu_Gex[1];
+    mu[2]          = gb[2] + R*T*rlog((sf[0]*sf[2] + d_em[2])) + mu_Gex[2];
     
     d->sum_apep = 0.0;
     for (int i = 0; i < n_em; i++){
@@ -8197,18 +9027,7 @@ double obj_ig_fl(unsigned  n, const double *x, double *grad, void *SS_ref_db) {
 
     double tmp = 0.0;
     double Gex = 0.0;
-    for (int i = 0; i < n_em; i++){
-        Gex = 0.0;
-        int it    = 0;
-        for (int j = 0; j < d->n_xeos; j++){
-            tmp = (d->eye[i][j] - d->p[j]);
-            for (int k = j+1; k < n_em; k++){
-                Gex -= tmp*(d->eye[i][k] - d->p[k])*(d->W[it]);
-                it += 1;
-            }
-        }
-        mu_Gex[i] = Gex;
-    }   
+    mu_Gex_sym_n2(d, mu_Gex);   
   
     sf[0]          = -x[0] - x[1] - x[2] - x[3] - x[4] - x[5] - x[6] - x[7] - x[8] - x[9] + 1.0;
     sf[1]          = x[1];
@@ -8223,17 +9042,18 @@ double obj_ig_fl(unsigned  n, const double *x, double *grad, void *SS_ref_db) {
     sf[10]          = x[9];
     sf[11]          = 1.0 - x[9];
     
-    mu[0]          = gb[0] + R*T*creal(clog(sf[0]*sf[11])) + mu_Gex[0];
-    mu[1]          = gb[1] + R*T*creal(clog(sf[11]*sf[1])) + mu_Gex[1];
-    mu[2]          = gb[2] + R*T*creal(clog(sf[11]*sf[2])) + mu_Gex[2];
-    mu[3]          = gb[3] + R*T*creal(clog(sf[11]*sf[3])) + mu_Gex[3];
-    mu[4]          = gb[4] + R*T*creal(clog(sf[11]*sf[4])) + mu_Gex[4];
-    mu[5]          = gb[5] + R*T*creal(clog(sf[11]*sf[5])) + mu_Gex[5];
-    mu[6]          = gb[6] + R*T*creal(clog(sf[11]*sf[6]+d_em[6])) + mu_Gex[6];
-    mu[7]          = gb[7] + R*T*creal(clog(sf[11]*sf[7]+d_em[7])) + mu_Gex[7];
-    mu[8]          = gb[8] + R*T*creal(clog(sf[11]*sf[8]+d_em[8])) + mu_Gex[8];
-    mu[9]          = gb[9] + R*T*creal(clog(sf[11]*sf[9]+d_em[9])) + mu_Gex[9];
-    mu[10]          = gb[10] + R*T*creal(clog(cpow(sf[10], 2.0))) + mu_Gex[10];
+    mu[0]          = gb[0] + R*T*rlog((sf[0]*sf[11])) + mu_Gex[0];
+    mu[1]          = gb[1] + R*T*rlog((sf[11]*sf[1])) + mu_Gex[1];
+    mu[2]          = gb[2] + R*T*rlog((sf[11]*sf[2] + d_em[2])) + mu_Gex[2];
+    mu[3]          = gb[3] + R*T*rlog((sf[11]*sf[3])) + mu_Gex[3];
+    mu[4]          = gb[4] + R*T*rlog((sf[11]*sf[4])) + mu_Gex[4];
+    mu[5]          = gb[5] + R*T*rlog((sf[11]*sf[5] + d_em[5])) + mu_Gex[5];
+    mu[6]          = gb[6] + R*T*rlog((sf[11]*sf[6]+d_em[6])) + mu_Gex[6];
+    mu[7]          = gb[7] + R*T*rlog((sf[11]*sf[7]+d_em[7])) + mu_Gex[7];
+    mu[8]          = gb[8] + R*T*rlog((sf[11]*sf[8]+d_em[8])) + mu_Gex[8];
+    mu[9]          = gb[9] + R*T*rlog((sf[11]*sf[9]+d_em[9])) + mu_Gex[9];
+    double complex cp_10_2p0 = cpow(sf[10], 2.0);
+    mu[10]          = gb[10] + R*T*rlog((cp_10_2p0)) + mu_Gex[10];
     
     d->sum_apep = 0.0;
     for (int i = 0; i < n_em; i++){
@@ -8292,18 +9112,7 @@ double obj_ig_g(unsigned   n, const double *x, double *grad, void *SS_ref_db) {
     
     double tmp = 0.0;
     double Gex = 0.0;
-    for (int i = 0; i < d->n_em; i++){
-        Gex = 0.0;
-        int it = 0;
-        for (int j = 0; j < d->n_xeos; j++){
-            tmp = (d->eye[i][j] - d->mat_phi[j]);
-            for (int k = j+1; k < d->n_em; k++){
-                Gex -= tmp*(d->eye[i][k] - d->mat_phi[k])*(d->W[it]*2.0*d->v[i]/(d->v[j]+d->v[k]));
-                it += 1;
-            }
-        }
-        mu_Gex[i] = Gex;
-    }
+    mu_Gex_asym_n2(d, mu_Gex);
     
     sf[0]          = x[0]*x[1] - x[0] - x[1] + 1.0;
     sf[1]          = -x[0]*x[1] + x[0];
@@ -8315,12 +9124,20 @@ double obj_ig_g(unsigned   n, const double *x, double *grad, void *SS_ref_db) {
     sf[7]          = x[4];
     
     
-    mu[0]          = gb[0] + R*T*creal(clog(cpow(sf[0], 3.0)*cpow(sf[3], 2.0))) + mu_Gex[0];
-    mu[1]          = gb[1] + R*T*creal(clog(cpow(sf[1], 3.0)*cpow(sf[3], 2.0))) + mu_Gex[1];
-    mu[2]          = gb[2] + R*T*creal(clog(cpow(sf[2], 3.0)*cpow(sf[3], 2.0))) + mu_Gex[2];
-    mu[3]          = gb[3] + R*T*creal(clog(cpow(sf[2], 3.0)*cpow(sf[5], 2.0) + d_em[3])) + mu_Gex[3];
-    mu[4]          = gb[4] + R*T*creal(clog(cpow(sf[0], 3.0)*cpow(sf[4], 2.0) + d_em[4])) + mu_Gex[4];
-    mu[5]          = gb[5] + R*T*creal(clog(8.0*cpow(sf[0], 3.0)*sf[3]*csqrt(sf[6])*csqrt(sf[7]) + d_em[5])) + mu_Gex[5];
+    double complex cp_0_3p0 = cpow(sf[0], 3.0);
+    double complex cp_3_2p0 = cpow(sf[3], 2.0);
+    double complex cp_1_3p0 = cpow(sf[1], 3.0);
+    double complex cp_2_3p0 = cpow(sf[2], 3.0);
+    double complex cp_5_2p0 = cpow(sf[5], 2.0);
+    double complex cp_4_2p0 = cpow(sf[4], 2.0);
+    double complex cs_6 = csqrt(sf[6]);
+    double complex cs_7 = csqrt(sf[7]);
+    mu[0]          = gb[0] + R*T*rlog((cp_0_3p0*cp_3_2p0)) + mu_Gex[0];
+    mu[1]          = gb[1] + R*T*rlog((cp_1_3p0*cp_3_2p0)) + mu_Gex[1];
+    mu[2]          = gb[2] + R*T*rlog((cp_2_3p0*cp_3_2p0 + d_em[2])) + mu_Gex[2];
+    mu[3]          = gb[3] + R*T*rlog((cp_2_3p0*cp_5_2p0 + d_em[3])) + mu_Gex[3];
+    mu[4]          = gb[4] + R*T*rlog((cp_0_3p0*cp_4_2p0 + d_em[4])) + mu_Gex[4];
+    mu[5]          = gb[5] + R*T*rlog((8.0*cp_0_3p0*sf[3]*cs_6*cs_7 + d_em[5])) + mu_Gex[5];
     
     d->sum_apep = 0.0;
     for (int i = 0; i < n_em; i++){
@@ -8379,18 +9196,7 @@ double obj_ig_amp(unsigned  n, const double *x, double *grad, void *SS_ref_db) {
     
     double tmp = 0.0;
     double Gex = 0.0;
-    for (int i = 0; i < d->n_em; i++){
-        Gex = 0.0;
-        int it = 0;
-        for (int j = 0; j < d->n_xeos; j++){
-            tmp = (d->eye[i][j] - d->mat_phi[j]);
-            for (int k = j+1; k < d->n_em; k++){
-                Gex -= tmp*(d->eye[i][k] - d->mat_phi[k])*(d->W[it]*2.0*d->v[i]/(d->v[j]+d->v[k]));
-                it += 1;
-            }
-        }
-        mu_Gex[i] = Gex;
-    }
+    mu_Gex_asym_n2(d, mu_Gex);
     
     sf[0]          = 1.0 - x[3];
     sf[1]          = -x[3]*x[4] + x[3];
@@ -8412,17 +9218,32 @@ double obj_ig_amp(unsigned  n, const double *x, double *grad, void *SS_ref_db) {
     sf[17]          = x[7];
     
     
-    mu[0]          = gb[0] + R*T*creal(clog(sf[0]*cpow(sf[10], 2.0)*sf[14]*cpow(sf[16], 2.0)*cpow(sf[3], 3.0)*cpow(sf[5], 2.0))) + mu_Gex[0];
-    mu[1]          = gb[1] + R*T*creal(clog(2.0*sf[0]*cpow(sf[10], 2.0)*csqrt(sf[14])*csqrt(sf[15])*cpow(sf[16], 2.0)*cpow(sf[3], 3.0)*cpow(sf[7], 2.0))) + mu_Gex[1];
-    mu[2]          = gb[2] + R*T*creal(clog(8.0*cpow(sf[10], 2.0)*csqrt(sf[14])*csqrt(sf[15])*cpow(sf[16], 2.0)*sf[1]*cpow(sf[3], 3.0)*sf[5]*sf[7])) + mu_Gex[2];
-    mu[3]          = gb[3] + R*T*creal(clog(sf[0]*cpow(sf[13], 2.0)*sf[14]*cpow(sf[16], 2.0)*cpow(sf[3], 3.0)*cpow(sf[7], 2.0))) + mu_Gex[3];
-    mu[4]          = gb[4] + R*T*creal(clog(sf[0]*cpow(sf[11], 2.0)*sf[14]*cpow(sf[16], 2.0)*cpow(sf[3], 3.0)*cpow(sf[5], 2.0))) + mu_Gex[4];
-    mu[5]          = gb[5] + R*T*creal(clog(sf[0]*cpow(sf[12], 2.0)*sf[14]*cpow(sf[16], 2.0)*cpow(sf[4], 3.0)*cpow(sf[6], 2.0))) + mu_Gex[5];
-    mu[6]          = gb[6] + R*T*creal(clog(sf[0]*cpow(sf[12], 2.0)*sf[14]*cpow(sf[16], 2.0)*cpow(sf[3], 3.0)*cpow(sf[6], 2.0))) + mu_Gex[6];
-    mu[7]          = gb[7] + R*T*creal(clog(sf[0]*cpow(sf[12], 2.0)*sf[14]*cpow(sf[16], 2.0)*cpow(sf[4], 3.0)*cpow(sf[5], 2.0))) + mu_Gex[7];
-    mu[8]          = gb[8] + R*T*creal(clog(sf[0]*cpow(sf[13], 2.0)*sf[14]*cpow(sf[16], 2.0)*cpow(sf[3], 3.0)*cpow(sf[8], 2.0) + d_em[8])) + mu_Gex[8];
-    mu[9]          = gb[9] + R*T*creal(clog(8.0*cpow(sf[10], 2.0)*csqrt(sf[14])*csqrt(sf[15])*cpow(sf[16], 2.0)*sf[2]*cpow(sf[3], 3.0)*sf[5]*sf[7] + d_em[9])) + mu_Gex[9];
-    mu[10]         = gb[10] + R*T*creal(clog(2.0*sf[0]*cpow(sf[10], 2.0)*csqrt(sf[14])*csqrt(sf[15])*cpow(sf[17], 2.0)*cpow(sf[3], 3.0)*cpow(sf[9], 2.0) + d_em[10])) + mu_Gex[10];
+    double complex cp_10_2p0 = cpow(sf[10], 2.0);
+    double complex cp_16_2p0 = cpow(sf[16], 2.0);
+    double complex cp_3_3p0 = cpow(sf[3], 3.0);
+    double complex cp_5_2p0 = cpow(sf[5], 2.0);
+    double complex cp_7_2p0 = cpow(sf[7], 2.0);
+    double complex cp_13_2p0 = cpow(sf[13], 2.0);
+    double complex cp_11_2p0 = cpow(sf[11], 2.0);
+    double complex cp_12_2p0 = cpow(sf[12], 2.0);
+    double complex cp_4_3p0 = cpow(sf[4], 3.0);
+    double complex cp_6_2p0 = cpow(sf[6], 2.0);
+    double complex cp_8_2p0 = cpow(sf[8], 2.0);
+    double complex cp_17_2p0 = cpow(sf[17], 2.0);
+    double complex cp_9_2p0 = cpow(sf[9], 2.0);
+    double complex cs_14 = csqrt(sf[14]);
+    double complex cs_15 = csqrt(sf[15]);
+    mu[0]          = gb[0] + R*T*rlog((sf[0]*cp_10_2p0*sf[14]*cp_16_2p0*cp_3_3p0*cp_5_2p0)) + mu_Gex[0];
+    mu[1]          = gb[1] + R*T*rlog((2.0*sf[0]*cp_10_2p0*cs_14*cs_15*cp_16_2p0*cp_3_3p0*cp_7_2p0)) + mu_Gex[1];
+    mu[2]          = gb[2] + R*T*rlog((8.0*cp_10_2p0*cs_14*cs_15*cp_16_2p0*sf[1]*cp_3_3p0*sf[5]*sf[7])) + mu_Gex[2];
+    mu[3]          = gb[3] + R*T*rlog((sf[0]*cp_13_2p0*sf[14]*cp_16_2p0*cp_3_3p0*cp_7_2p0 + d_em[3])) + mu_Gex[3];
+    mu[4]          = gb[4] + R*T*rlog((sf[0]*cp_11_2p0*sf[14]*cp_16_2p0*cp_3_3p0*cp_5_2p0)) + mu_Gex[4];
+    mu[5]          = gb[5] + R*T*rlog((sf[0]*cp_12_2p0*sf[14]*cp_16_2p0*cp_4_3p0*cp_6_2p0)) + mu_Gex[5];
+    mu[6]          = gb[6] + R*T*rlog((sf[0]*cp_12_2p0*sf[14]*cp_16_2p0*cp_3_3p0*cp_6_2p0)) + mu_Gex[6];
+    mu[7]          = gb[7] + R*T*rlog((sf[0]*cp_12_2p0*sf[14]*cp_16_2p0*cp_4_3p0*cp_5_2p0)) + mu_Gex[7];
+    mu[8]          = gb[8] + R*T*rlog((sf[0]*cp_13_2p0*sf[14]*cp_16_2p0*cp_3_3p0*cp_8_2p0 + d_em[8])) + mu_Gex[8];
+    mu[9]          = gb[9] + R*T*rlog((8.0*cp_10_2p0*cs_14*cs_15*cp_16_2p0*sf[2]*cp_3_3p0*sf[5]*sf[7] + d_em[9])) + mu_Gex[9];
+    mu[10]         = gb[10] + R*T*rlog((2.0*sf[0]*cp_10_2p0*cs_14*cs_15*cp_17_2p0*cp_3_3p0*cp_9_2p0 + d_em[10])) + mu_Gex[10];
     
     d->sum_apep = 0.0;
     for (int i = 0; i < n_em; i++){
@@ -8436,6 +9257,10 @@ double obj_ig_amp(unsigned  n, const double *x, double *grad, void *SS_ref_db) {
     }
     d->df = d->df_raw * d->factor;
 
+	for (int k = 0; k < n_em; k++){
+		d->df += d->ox_penalty[k] * d->p[k] * d->p[k];
+	}
+
     if (grad){
         double *dfx    = d->dfx;
         double **dp_dx = d->dp_dx;
@@ -8444,6 +9269,7 @@ double obj_ig_amp(unsigned  n, const double *x, double *grad, void *SS_ref_db) {
             dfx[i] = 0.0;
             for (int j = 0; j < n_em; j++){
                 dfx[i] += (mu[j] - (d->ape[j]/d->sum_apep)*d->df_raw)*d->factor*dp_dx[j][i];
+				dfx[i] += d->ox_penalty[j]*2.0*d->p[j]*dp_dx[j][i];
             }
             grad[i] = creal(dfx[i]);
         }
@@ -8474,18 +9300,7 @@ double obj_ig_ilm(unsigned n, const double *x, double *grad, void *SS_ref_db) {
 
     double tmp = 0.0;
     double Gex = 0.0;
-    for (int i = 0; i < n_em; i++){
-        Gex = 0.0;
-        int it    = 0;
-        for (int j = 0; j < d->n_xeos; j++){
-            tmp = (d->eye[i][j] - d->p[j]);
-            for (int k = j+1; k < n_em; k++){
-                Gex -= tmp*(d->eye[i][k] - d->p[k])*(d->W[it]);
-                it += 1;
-            }
-        }
-        mu_Gex[i] = Gex;
-    }   
+    mu_Gex_sym_n2(d, mu_Gex);   
   
     sf[0]          = -0.5*x[0]*x[1] + 0.5*x[0] + 0.5*x[2];
     sf[1]          = 0.5*x[0] - 0.5*x[3];
@@ -8496,11 +9311,22 @@ double obj_ig_ilm(unsigned n, const double *x, double *grad, void *SS_ref_db) {
     sf[6]          = 1.0 - x[0];
     sf[7]          = 0.5*x[0]*x[1] + 0.5*x[2] - 0.5*x[3];
     
-    mu[0]          = gb[0] + R*T*creal(clog(csqrt(sf[0])*csqrt(sf[5]))) + mu_Gex[0];
-    mu[1]          = gb[1] + R*T*creal(clog(2.0*cpow(sf[0], 0.25)*cpow(sf[1], 0.25)*cpow(sf[4], 0.25)*cpow(sf[5], 0.25))) + mu_Gex[1];
-    mu[2]          = gb[2] + R*T*creal(clog(csqrt(sf[2])*csqrt(sf[6]) + d_em[2])) + mu_Gex[2];
-    mu[3]          = gb[3] + R*T*creal(clog(csqrt(sf[3])*csqrt(sf[5]))) + mu_Gex[3];
-    mu[4]          = gb[4] + R*T*creal(clog(2.0*cpow(sf[1], 0.25)*cpow(sf[3], 0.25)*cpow(sf[5], 0.25)*cpow(sf[7], 0.25))) + mu_Gex[4];
+    double complex cp_0_0p25 = cpow(sf[0], 0.25);
+    double complex cp_1_0p25 = cpow(sf[1], 0.25);
+    double complex cp_4_0p25 = cpow(sf[4], 0.25);
+    double complex cp_5_0p25 = cpow(sf[5], 0.25);
+    double complex cp_3_0p25 = cpow(sf[3], 0.25);
+    double complex cp_7_0p25 = cpow(sf[7], 0.25);
+    double complex cs_0 = csqrt(sf[0]);
+    double complex cs_5 = csqrt(sf[5]);
+    double complex cs_2 = csqrt(sf[2]);
+    double complex cs_6 = csqrt(sf[6]);
+    double complex cs_3 = csqrt(sf[3]);
+    mu[0]          = gb[0] + R*T*rlog((cs_0*cs_5 + d_em[0])) + mu_Gex[0];
+    mu[1]          = gb[1] + R*T*rlog((2.0*cp_0_0p25*cp_1_0p25*cp_4_0p25*cp_5_0p25 + d_em[1])) + mu_Gex[1];
+    mu[2]          = gb[2] + R*T*rlog((cs_2*cs_6 + d_em[2])) + mu_Gex[2];
+    mu[3]          = gb[3] + R*T*rlog((cs_3*cs_5 + d_em[3])) + mu_Gex[3];
+    mu[4]          = gb[4] + R*T*rlog((2.0*cp_1_0p25*cp_3_0p25*cp_5_0p25*cp_7_0p25 + d_em[4])) + mu_Gex[4];
     
     d->sum_apep = 0.0;
     for (int i = 0; i < n_em; i++){
@@ -8561,18 +9387,7 @@ double obj_ig_liq(unsigned n, const double *x, double *grad, void *SS_ref_db){
     
     double tmp = 0.0;
     double Gex = 0.0;
-    for (int i = 0; i < d->n_em; i++){
-        Gex = 0.0;
-        int it = 0;
-        for (int j = 0; j < d->n_xeos; j++){
-            tmp = (d->eye[i][j] - d->mat_phi[j]);
-            for (int k = j+1; k < d->n_em; k++){
-                Gex -= tmp*(d->eye[i][k] - d->mat_phi[k])*(d->W[it]*2.0*d->v[i]/(d->v[j]+d->v[k]));
-                it += 1;
-            }
-        }
-        mu_Gex[i] = Gex;
-    }
+    mu_Gex_asym_n2(d, mu_Gex);
     
     sf[0]          = - x[6] - x[3] - x[2] - x[10] - x[5] - x[4] - x[8] - x[1] - x[7] - x[0] + 0.25*x[9]*(-3.0*x[6] - 3.0*x[3] - 3.0*x[2] - 3.0*x[10] - 3.0*x[5] - 3.0*x[4] - 3.0*x[8] - 3.0*x[1] - 3.0*x[7] - 3.0*x[0] + 4.0) + 1.0;
     sf[1]          = 0.75*x[1]*x[9] + x[1] - x[9];
@@ -8594,18 +9409,23 @@ double obj_ig_liq(unsigned n, const double *x, double *grad, void *SS_ref_db){
     sf[17]          = -0.75*x[10]*x[9] - x[10] + 1.0;
 
     
-    mu[0]          = R*T*creal(clog(sf[0]*1.0/sf[10]*cpow(sf[17], 2.0))) + gb[0] + mu_Gex[0];
-    mu[1]          = R*T*creal(clog(sf[14]*sf[1]*1.0/sf[15]*1.0/sf[10]*cpow(sf[17], 2.0))) + gb[1] + mu_Gex[1];
-    mu[2]          = R*T*creal(clog(sf[13]*sf[2]*1.0/sf[15]*1.0/sf[10]*cpow(sf[17], 2.0))) + gb[2] + mu_Gex[2];
-    mu[3]          = R*T*creal(clog(cpow(sf[11], 4.0)*sf[9]*cpow(sf[15], -4.0)*1.0/sf[10]*cpow(sf[17], 2.0))) + gb[3] + mu_Gex[3];
-    mu[4]          = R*T*creal(clog(cpow(sf[12], 4.0)*sf[9]*cpow(sf[15], -4.0)*1.0/sf[10]*cpow(sf[17], 2.0))) + gb[4] + mu_Gex[4];
-    mu[5]          = R*T*creal(clog(sf[3]*1.0/sf[10]*cpow(sf[17], 2.0))) + gb[5] + mu_Gex[5];
-    mu[6]          = R*T*creal(clog(sf[4]*1.0/sf[10]*cpow(sf[17], 2.0) + d_em[6])) + gb[6] + mu_Gex[6];
-    mu[7]          = R*T*creal(clog(sf[5]*1.0/sf[10]*cpow(sf[17], 2.0) + d_em[7])) + gb[7] + mu_Gex[7];
-    mu[8]          = R*T*creal(clog(sf[6]*1.0/sf[10]*cpow(sf[17], 2.0) + d_em[8])) + gb[8] + mu_Gex[8];
-    mu[9]          = R*T*creal(clog(sf[7]*1.0/sf[10]*cpow(sf[17], 2.0) + d_em[9])) + gb[9] + mu_Gex[9];
-    mu[10]          = R*T*creal(clog(sf[8]*1.0/sf[10]*cpow(sf[17], 2.0))) + gb[10] + mu_Gex[10];
-    mu[11]          = R*T*creal(clog(cpow(sf[16], 2.0) +  d_em[11])) + gb[11] + mu_Gex[11];
+    double complex cp_17_2p0 = cpow(sf[17], 2.0);
+    double complex cp_11_4p0 = cpow(sf[11], 4.0);
+    double complex cp_15_m4p0 = cpow(sf[15], -4.0);
+    double complex cp_12_4p0 = cpow(sf[12], 4.0);
+    double complex cp_16_2p0 = cpow(sf[16], 2.0);
+    mu[0]          = R*T*rlog((sf[0]*1.0/sf[10]*cp_17_2p0)) + gb[0] + mu_Gex[0];
+    mu[1]          = R*T*rlog((sf[14]*sf[1]*1.0/sf[15]*1.0/sf[10]*cp_17_2p0)) + gb[1] + mu_Gex[1];
+    mu[2]          = R*T*rlog((sf[13]*sf[2]*1.0/sf[15]*1.0/sf[10]*cp_17_2p0 + d_em[2])) + gb[2] + mu_Gex[2];
+    mu[3]          = R*T*rlog((cp_11_4p0*sf[9]*cp_15_m4p0*1.0/sf[10]*cp_17_2p0)) + gb[3] + mu_Gex[3];
+    mu[4]          = R*T*rlog((cp_12_4p0*sf[9]*cp_15_m4p0*1.0/sf[10]*cp_17_2p0)) + gb[4] + mu_Gex[4];
+    mu[5]          = R*T*rlog((sf[3]*1.0/sf[10]*cp_17_2p0 + d_em[5])) + gb[5] + mu_Gex[5];
+    mu[6]          = R*T*rlog((sf[4]*1.0/sf[10]*cp_17_2p0 + d_em[6])) + gb[6] + mu_Gex[6];
+    mu[7]          = R*T*rlog((sf[5]*1.0/sf[10]*cp_17_2p0 + d_em[7])) + gb[7] + mu_Gex[7];
+    mu[8]          = R*T*rlog((sf[6]*1.0/sf[10]*cp_17_2p0 + d_em[8])) + gb[8] + mu_Gex[8];
+    mu[9]          = R*T*rlog((sf[7]*1.0/sf[10]*cp_17_2p0 + d_em[9])) + gb[9] + mu_Gex[9];
+    mu[10]          = R*T*rlog((sf[8]*1.0/sf[10]*cp_17_2p0 + d_em[10])) + gb[10] + mu_Gex[10];
+    mu[11]          = R*T*rlog((cp_16_2p0 +  d_em[11])) + gb[11] + mu_Gex[11];
     
     d->sum_apep = 0.0;
     for (int i = 0; i < n_em; i++){
@@ -8633,7 +9453,104 @@ double obj_ig_liq(unsigned n, const double *x, double *grad, void *SS_ref_db){
     }
 
     return d->df;
-}   
+}
+
+double obj_igmn_liq(unsigned n, const double *x, double *grad, void *SS_ref_db){
+    SS_ref *d         = (SS_ref *) SS_ref_db;
+
+    int n_em          = d->n_em;
+    double P          = d->P;
+    double T          = d->T;
+    double R          = d->R;
+
+    double *gb        = d->gb_lvl;
+    double *mat_phi   = d->mat_phi;
+    double *mu_Gex    = d->mu_Gex;
+    double *sf        = d->sf;
+    double *mu        = d->mu;
+    double *d_em      = d->d_em;
+    px_igmn_liq(SS_ref_db,x);
+
+    d->sum_v = 0.0;
+    for (int i = 0; i < n_em; i++){
+        d->sum_v += d->p[i]*d->v[i];
+    }
+    for (int i = 0; i < n_em; i++){
+        d->mat_phi[i] = (d->p[i]*d->v[i])/d->sum_v;
+    }
+    
+    double tmp = 0.0;
+    double Gex = 0.0;
+    mu_Gex_asym_n2(d, mu_Gex);
+    
+    sf[0]          = -0.75*x[0]*x[9] - 1.0*x[0] - 0.75*x[10]*x[9] - 1.0*x[10] - 0.75*x[11]*x[9] - 1.0*x[11] - 0.75*x[1]*x[9] - 1.0*x[1] - 0.75*x[2]*x[9] - 1.0*x[2] - 0.75*x[3]*x[9] - 1.0*x[3] - 0.75*x[4]*x[9] - 1.0*x[4] - 0.75*x[5]*x[9] - 1.0*x[5] - 0.75*x[6]*x[9] - 1.0*x[6] - 0.75*x[7]*x[9] - 1.0*x[7] - 0.75*x[8]*x[9] - 1.0*x[8] + 1.0*x[9] + 1.0;
+    sf[1]          = 0.75*x[1]*x[9] + 1.0*x[1] - 1.0*x[9];
+    sf[2]          = 0.75*x[0]*x[9] + 1.0*x[0] - 1.0*x[9];
+    sf[3]          = 0.75*x[4]*x[9] + 1.0*x[4];
+    sf[4]          = 0.75*x[5]*x[9] + 1.0*x[5];
+    sf[5]          = 0.75*x[6]*x[9] + 1.0*x[6];
+    sf[6]          = 0.75*x[7]*x[9] + 1.0*x[7];
+    sf[7]          = 0.75*x[8]*x[9] + 1.0*x[8];
+    sf[8]          = 1.0*x[9];
+    sf[9]          = 0.75*x[11]*x[9] + 1.0*x[11] + 0.75*x[2]*x[9] + 1.0*x[2] + 0.75*x[3]*x[9] + 1.0*x[3];
+    sf[10]          = -0.75*x[10]*x[9] - 1.0*x[10] + 1.0;
+    sf[11]          = 3.0*x[2]*x[9] + 4.0*x[2];
+    sf[12]          = 3.0*x[3]*x[9] + 4.0*x[3];
+    sf[13]          = 0.75*x[0]*x[9] + 1.0*x[0] - 1.0*x[9];
+    sf[14]          = 0.75*x[1]*x[9] + 1.0*x[1] - 1.0*x[9];
+    sf[15]          = 0.75*x[0]*x[9] + 1.0*x[0] + 3.0*x[11]*x[9] + 4.0*x[11] + 0.75*x[1]*x[9] + 1.0*x[1] + 3.0*x[2]*x[9] + 4.0*x[2] + 3.0*x[3]*x[9] + 4.0*x[3] - 2.0*x[9];
+    sf[16]          = 0.75*x[10]*x[9] + 1.0*x[10];
+    sf[17]          = -0.75*x[10]*x[9] - 1.0*x[10] + 1.0;
+    sf[18]          = 3.0*x[11]*x[9] + 4.0*x[11];
+
+    
+    double complex cp_17_2p0 = cpow(sf[17], 2.0);
+    double complex cp_11_4p0 = cpow(sf[11], 4.0);
+    double complex cp_15_m4p0 = cpow(sf[15], -4.0);
+    double complex cp_12_4p0 = cpow(sf[12], 4.0);
+    double complex cp_16_2p0 = cpow(sf[16], 2.0);
+    double complex cp_18_4p0 = cpow(sf[18], 4.0);
+    mu[0]          = R*T*rlog((sf[0]*1.0/sf[10]*cp_17_2p0)) + gb[0] + mu_Gex[0];
+    mu[1]          = R*T*rlog((sf[14]*sf[1]*1.0/sf[15]*1.0/sf[10]*cp_17_2p0)) + gb[1] + mu_Gex[1];
+    mu[2]          = R*T*rlog((sf[13]*sf[2]*1.0/sf[15]*1.0/sf[10]*cp_17_2p0 + d_em[2])) + gb[2] + mu_Gex[2];
+    mu[3]          = R*T*rlog((cp_11_4p0*sf[9]*cp_15_m4p0*1.0/sf[10]*cp_17_2p0)) + gb[3] + mu_Gex[3];
+    mu[4]          = R*T*rlog((cp_12_4p0*sf[9]*cp_15_m4p0*1.0/sf[10]*cp_17_2p0)) + gb[4] + mu_Gex[4];
+    mu[5]          = R*T*rlog((sf[3]*1.0/sf[10]*cp_17_2p0 + d_em[5])) + gb[5] + mu_Gex[5];
+    mu[6]          = R*T*rlog((sf[4]*1.0/sf[10]*cp_17_2p0 + d_em[6])) + gb[6] + mu_Gex[6];
+    mu[7]          = R*T*rlog((sf[5]*1.0/sf[10]*cp_17_2p0 + d_em[7])) + gb[7] + mu_Gex[7];
+    mu[8]          = R*T*rlog((sf[6]*1.0/sf[10]*cp_17_2p0 + d_em[8])) + gb[8] + mu_Gex[8];
+    mu[9]          = R*T*rlog((sf[7]*1.0/sf[10]*cp_17_2p0 + d_em[9])) + gb[9] + mu_Gex[9];
+    mu[10]          = R*T*rlog((sf[8]*1.0/sf[10]*cp_17_2p0 + d_em[10])) + gb[10] + mu_Gex[10];
+    mu[11]          = R*T*rlog((cp_16_2p0 +  d_em[11])) + gb[11] + mu_Gex[11];
+    mu[12]          = R*T*rlog((cp_18_4p0*sf[9]*cp_15_m4p0*1.0/sf[10]*cp_17_2p0 + d_em[12])) + gb[12] + mu_Gex[12];
+    
+    d->sum_apep = 0.0;
+    for (int i = 0; i < n_em; i++){
+        d->sum_apep += d->ape[i]*d->p[i];
+    }
+    d->factor = d->fbc/d->sum_apep;
+
+    d->df_raw = 0.0;
+    for (int i = 0; i < n_em; i++){
+        d->df_raw += mu[i]*d->p[i];
+    }
+    d->df = d->df_raw * d->factor;
+
+    if (grad){
+        double *dfx    = d->dfx;
+        double **dp_dx = d->dp_dx;
+        dpdx_igmn_liq(SS_ref_db,x);
+        for (int i = 0; i < (d->n_xeos); i++){
+            dfx[i] = 0.0;
+            for (int j = 0; j < n_em; j++){
+                dfx[i] += (mu[j] - (d->ape[j]/d->sum_apep)*d->df_raw)*d->factor*dp_dx[j][i];
+            }
+            grad[i] = creal(dfx[i]);
+        }
+    }
+
+    return d->df;
+}
 
 
 /** 
@@ -8654,6 +9571,7 @@ double obj_ig_mu(unsigned  n, const double *x, double *grad, void *SS_ref_db) {
 	double *mu_Gex = d->mu_Gex;
 	double *sf     = d->sf;
 	double *mu     = d->mu;
+	double *d_em   = d->d_em;
 
 	px_ig_mu(SS_ref_db,x);
 
@@ -8665,16 +9583,7 @@ double obj_ig_mu(unsigned  n, const double *x, double *grad, void *SS_ref_db) {
 		d->mat_phi[i] = (d->p[i]*d->v[i])/d->sum_v;
 	}
 
-	for (int i = 0; i < d->n_em; i++){
-		mu_Gex[i] = 0.0;
-		int it = 0;
-		for (int j = 0; j < d->n_xeos; j++){
-			for (int k = j+1; k < d->n_em; k++){
-				mu_Gex[i] -= (d->eye[i][j] - d->mat_phi[j])*(d->eye[i][k] - d->mat_phi[k])*(d->W[it]*2.0*d->v[i]/(d->v[j]+d->v[k]));
-				it += 1;
-			}
-		}
-	}
+    mu_Gex_asym_n2(d, mu_Gex);
 	
     sf[0]           = -x[4] - x[3] + 1.0;
     sf[1]           = x[3];
@@ -8687,12 +9596,12 @@ double obj_ig_mu(unsigned  n, const double *x, double *grad, void *SS_ref_db) {
     sf[8]           = -0.5*x[4] - 0.5*x[1] + 1.0;
     sf[9]           = 0.5*x[4] + 0.5*x[1];
 	
-	mu[0]          = R*T*creal(clog(4.0*sf[0]*sf[5]*sf[6]*sf[8]*sf[9]))  + gb[0] + mu_Gex[0];
-	mu[1]          = R*T*creal(clog(sf[0]*sf[3]*sf[6]*cpow(sf[8], 2.0))) + gb[1] + mu_Gex[1];
-	mu[2]          = R*T*creal(clog(sf[0]*sf[4]*sf[6]*cpow(sf[8], 2.0))) + gb[2] + mu_Gex[2];
-	mu[3]          = R*T*creal(clog(4.0*sf[1]*sf[5]*sf[6]*sf[8]*sf[9]))  + gb[3] + mu_Gex[3];
-	mu[4]          = R*T*creal(clog(sf[2]*sf[5]*sf[6]*cpow(sf[9], 2.0))) + gb[4] + mu_Gex[4];
-	mu[5]          = R*T*creal(clog(4.0*sf[0]*sf[5]*sf[7]*sf[8]*sf[9]))  + gb[5] + mu_Gex[5];
+	mu[0]          = R*T*rlog((4.0*sf[0]*sf[5]*sf[6]*sf[8]*sf[9]))  + gb[0] + mu_Gex[0];
+	mu[1]          = R*T*rlog((sf[0]*sf[3]*sf[6]*cpow(sf[8], 2.0))) + gb[1] + mu_Gex[1];
+	mu[2]          = R*T*rlog((sf[0]*sf[4]*sf[6]*cpow(sf[8], 2.0))) + gb[2] + mu_Gex[2];
+	mu[3]          = R*T*rlog((4.0*sf[1]*sf[5]*sf[6]*sf[8]*sf[9] + d_em[3]))  + gb[3] + mu_Gex[3];
+	mu[4]          = R*T*rlog((sf[2]*sf[5]*sf[6]*cpow(sf[9], 2.0) + d_em[4])) + gb[4] + mu_Gex[4];
+	mu[5]          = R*T*rlog((4.0*sf[0]*sf[5]*sf[7]*sf[8]*sf[9]))  + gb[5] + mu_Gex[5];
 
 	d->sum_apep = 0.0;
 	for (int i = 0; i < n_em; i++){
@@ -8705,7 +9614,7 @@ double obj_ig_mu(unsigned  n, const double *x, double *grad, void *SS_ref_db) {
 		d->df_raw += mu[i]*d->p[i];
 	}
 	d->df = d->df_raw * d->factor;
-	
+
 	if (grad){
 	double *dfx    = d->dfx;
 	double **dp_dx = d->dp_dx;
@@ -8740,19 +9649,11 @@ double obj_ig_ol(unsigned  n, const double *x, double *grad, void *SS_ref_db) {
 	double *mu_Gex = d->mu_Gex;
 	double *sf     = d->sf;
 	double *mu     = d->mu;
+	double *d_em   = d->d_em;
 
 	px_ig_ol(SS_ref_db,x);
 
-	for (int i = 0; i < d->n_em; i++){
-		mu_Gex[i] = 0.0;
-		int it = 0;
-		for (int j = 0; j < d->n_xeos; j++){
-			for (int k = j+1; k < d->n_em; k++){
-				mu_Gex[i] -= (d->eye[i][j] - d->p[j])*(d->eye[i][k] - d->p[k])*(d->W[it]);
-				it += 1;
-			}
-		}
-	}
+    mu_Gex_sym_n2(d, mu_Gex);
 
     sf[0]          =  x[2] - x[0] + 1.0;
     sf[1]          = -x[2] + x[0];
@@ -8760,10 +9661,10 @@ double obj_ig_ol(unsigned  n, const double *x, double *grad, void *SS_ref_db) {
     sf[3]          = -x[1]*x[0] + x[2] + x[0];
     sf[4]          =  x[1];
     
-	mu[0]          = R*T*creal(clog(sf[0]*sf[4])) + gb[0] + mu_Gex[0];
-	mu[1]          = R*T*creal(clog(sf[1]*sf[3])) + gb[1] + mu_Gex[1];
-	mu[2]          = R*T*creal(clog(sf[0]*sf[2])) + gb[2] + mu_Gex[2];
-	mu[3]          = R*T*creal(clog(sf[0]*sf[3])) + gb[3] + mu_Gex[3];
+	mu[0]          = R*T*rlog((sf[0]*sf[4] + d_em[0])) + gb[0] + mu_Gex[0];
+	mu[1]          = R*T*rlog((sf[1]*sf[3])) + gb[1] + mu_Gex[1];
+	mu[2]          = R*T*rlog((sf[0]*sf[2])) + gb[2] + mu_Gex[2];
+	mu[3]          = R*T*rlog((sf[0]*sf[3])) + gb[3] + mu_Gex[3];
 
 	d->sum_apep = 0.0;
 	for (int i = 0; i < n_em; i++){
@@ -8776,7 +9677,7 @@ double obj_ig_ol(unsigned  n, const double *x, double *grad, void *SS_ref_db) {
 		d->df_raw += mu[i]*d->p[i];
 	}
 	d->df = d->df_raw * d->factor;
-	
+
 	if (grad){
 	double *dfx    = d->dfx;
 	double **dp_dx = d->dp_dx;
@@ -8793,7 +9694,7 @@ double obj_ig_ol(unsigned  n, const double *x, double *grad, void *SS_ref_db) {
 	return d->df;
 };
 
-/** 
+/**
   objective function of orthopyroxene
 */
 double obj_ig_opx(unsigned n, const double *x, double *grad, void *SS_ref_db) {
@@ -8822,18 +9723,7 @@ double obj_ig_opx(unsigned n, const double *x, double *grad, void *SS_ref_db) {
     
     double tmp = 0.0;
     double Gex = 0.0;
-    for (int i = 0; i < d->n_em; i++){
-        Gex = 0.0;
-        int it = 0;
-        for (int j = 0; j < d->n_xeos; j++){
-            tmp = (d->eye[i][j] - d->mat_phi[j]);
-            for (int k = j+1; k < d->n_em; k++){
-                Gex -= tmp*(d->eye[i][k] - d->mat_phi[k])*(d->W[it]*2.0*d->v[i]/(d->v[j]+d->v[k]));
-                it += 1;
-            }
-        }
-        mu_Gex[i] = Gex;
-    }
+    mu_Gex_asym_n2(d, mu_Gex);
     
     sf[0]          = x[0]*x[1] - x[0]*x[5] + x[0]*x[7] - x[0] + x[1]*x[3] - x[1] - x[3]*x[5] + x[3]*x[7] - x[3] + x[5] - x[7] + 1.0;
     sf[1]          = -x[0]*x[1] + x[0]*x[5] - x[0]*x[7] + x[0] - x[1]*x[3] + x[3]*x[5] - x[3]*x[7] + x[3];
@@ -8849,15 +9739,20 @@ double obj_ig_opx(unsigned n, const double *x, double *grad, void *SS_ref_db) {
     sf[11]          = 0.5*x[1];
     
     
-    mu[0]          = gb[0] + R*T*creal(clog(sf[0]*csqrt(sf[10])*sf[6])) + mu_Gex[0];
-    mu[1]          = gb[1] + R*T*creal(clog(csqrt(sf[10])*sf[1]*sf[7])) + mu_Gex[1];
-    mu[2]          = gb[2] + R*T*creal(clog(sf[0]*csqrt(sf[10])*sf[7])) + mu_Gex[2];
-    mu[3]          = gb[3] + R*T*creal(clog(sf[0]*csqrt(sf[10])*sf[8])) + mu_Gex[3];
-    mu[4]          = gb[4] + R*T*creal(clog(1.4142*cpow(sf[10], 0.25)*cpow(sf[11], 0.25)*sf[2]*sf[6])) + mu_Gex[4];
-    mu[5]          = gb[5] + R*T*creal(clog(1.4142*cpow(sf[10], 0.25)*cpow(sf[11], 0.25)*sf[4]*sf[6] + d_em[5])) + mu_Gex[5];
-    mu[6]          = gb[6] + R*T*creal(clog(2.8284*csqrt(sf[0])*cpow(sf[10], 0.25)*cpow(sf[11], 0.25)*csqrt(sf[5])*sf[6] + d_em[6])) + mu_Gex[6];
-    mu[7]          = gb[7] + R*T*creal(clog(1.4142*cpow(sf[10], 0.25)*cpow(sf[11], 0.25)*sf[3]*sf[6] + d_em[7])) + mu_Gex[7];
-    mu[8]          = gb[8] + R*T*creal(clog(csqrt(sf[10])*sf[2]*sf[9])) + mu_Gex[8];
+    double complex cp_10_0p25 = cpow(sf[10], 0.25);
+    double complex cp_11_0p25 = cpow(sf[11], 0.25);
+    double complex cs_10 = csqrt(sf[10]);
+    double complex cs_0 = csqrt(sf[0]);
+    double complex cs_5 = csqrt(sf[5]);
+    mu[0]          = gb[0] + R*T*rlog((sf[0]*cs_10*sf[6])) + mu_Gex[0];
+    mu[1]          = gb[1] + R*T*rlog((cs_10*sf[1]*sf[7])) + mu_Gex[1];
+    mu[2]          = gb[2] + R*T*rlog((sf[0]*cs_10*sf[7])) + mu_Gex[2];
+    mu[3]          = gb[3] + R*T*rlog((sf[0]*cs_10*sf[8] + d_em[3])) + mu_Gex[3];
+    mu[4]          = gb[4] + R*T*rlog((1.4142*cp_10_0p25*cp_11_0p25*sf[2]*sf[6])) + mu_Gex[4];
+    mu[5]          = gb[5] + R*T*rlog((1.4142*cp_10_0p25*cp_11_0p25*sf[4]*sf[6] + d_em[5])) + mu_Gex[5];
+    mu[6]          = gb[6] + R*T*rlog((2.8284*cs_0*cp_10_0p25*cp_11_0p25*cs_5*sf[6] + d_em[6])) + mu_Gex[6];
+    mu[7]          = gb[7] + R*T*rlog((1.4142*cp_10_0p25*cp_11_0p25*sf[3]*sf[6] + d_em[7])) + mu_Gex[7];
+    mu[8]          = gb[8] + R*T*rlog((cs_10*sf[2]*sf[9] + d_em[8])) + mu_Gex[8];
     
     d->sum_apep = 0.0;
     for (int i = 0; i < n_em; i++){
@@ -8916,16 +9811,7 @@ double obj_ig_fsp(unsigned  n, const double *x, double *grad, void *SS_ref_db) {
 		d->mat_phi[i] = (d->p[i]*d->v[i])/d->sum_v;
 	}
 
-	for (int i = 0; i < d->n_em; i++){
-		mu_Gex[i] = 0.0;
-		int it = 0;
-		for (int j = 0; j < d->n_xeos; j++){
-			for (int k = j+1; k < d->n_em; k++){
-				mu_Gex[i] -= (d->eye[i][j] - d->mat_phi[j])*(d->eye[i][k] - d->mat_phi[k])*(d->W[it]*2.0*d->v[i]/(d->v[j]+d->v[k]));
-				it += 1;
-			}
-		}
-	}
+    mu_Gex_asym_n2(d, mu_Gex);
 	
     sf[0]           = -x[0] - x[1] + 1.0;
     sf[1]           = x[0];
@@ -8933,9 +9819,9 @@ double obj_ig_fsp(unsigned  n, const double *x, double *grad, void *SS_ref_db) {
     sf[3]           = 0.25*x[0] + 0.25;
     sf[4]           = 0.75 - 0.25*x[0];
 
-	mu[0]          = R*T*creal(clog(1.7548*sf[0]*cpow(sf[3], 0.25)*cpow(sf[4], 0.75))) 	+ gb[0] + mu_Gex[0];
-	mu[1]          = R*T*creal(clog(2.0*sf[1]*csqrt(sf[3])*csqrt(sf[4]))) 				+ gb[1] + mu_Gex[1];
-	mu[2]          = R*T*creal(clog(1.7548*sf[2]*cpow(sf[3], 0.25)*cpow(sf[4], 0.75) + d_em[2])) 	+ gb[2] + mu_Gex[2];
+	mu[0]          = R*T*rlog((1.7548*sf[0]*cpow(sf[3], 0.25)*cpow(sf[4], 0.75) + d_em[0])) 	+ gb[0] + mu_Gex[0];
+	mu[1]          = R*T*rlog((2.0*sf[1]*csqrt(sf[3])*csqrt(sf[4]) + d_em[1])) 	+ gb[1] + mu_Gex[1];
+	mu[2]          = R*T*rlog((1.7548*sf[2]*cpow(sf[3], 0.25)*cpow(sf[4], 0.75) + d_em[2])) 	+ gb[2] + mu_Gex[2];
 
 	d->sum_apep = 0.0;
 	for (int i = 0; i < n_em; i++){
@@ -8948,6 +9834,10 @@ double obj_ig_fsp(unsigned  n, const double *x, double *grad, void *SS_ref_db) {
 		d->df_raw += mu[i]*d->p[i];
 	}
 	d->df = d->df_raw * d->factor;
+
+	for (int k = 0; k < n_em; k++){
+		d->df += d->ox_penalty[k] * d->p[k] * d->p[k];
+	}
 	
 	if (grad){
 	double *dfx    = d->dfx;
@@ -8957,6 +9847,7 @@ double obj_ig_fsp(unsigned  n, const double *x, double *grad, void *SS_ref_db) {
 		   dfx[i] = 0.0;
 		   for (int j = 0; j < n_em; j++){
 			   dfx[i] += (mu[j] - (d->ape[j]/d->sum_apep)*d->df_raw)*d->factor*dp_dx[j][i];
+				dfx[i] += d->ox_penalty[j]*2.0*d->p[j]*dp_dx[j][i];
 		   }
 		   grad[i] = creal(dfx[i]);
 		}
@@ -8992,18 +9883,7 @@ double obj_ig_spl(unsigned n, const double *x, double *grad, void *SS_ref_db) {
     
     double tmp = 0.0;
     double Gex = 0.0;
-    for (int i = 0; i < d->n_em; i++){
-        Gex = 0.0;
-        int it = 0;
-        for (int j = 0; j < d->n_xeos; j++){
-            tmp = (d->eye[i][j] - d->mat_phi[j]);
-            for (int k = j+1; k < d->n_em; k++){
-                Gex -= tmp*(d->eye[i][k] - d->mat_phi[k])*(d->W[it]*2.0*d->v[i]/(d->v[j]+d->v[k]));
-                it += 1;
-            }
-        }
-        mu_Gex[i] = Gex;
-    }
+    mu_Gex_asym_n2(d, mu_Gex);
     
     sf[0]          = -1.0/3.0*x[0]*x[3] - 1.0/3.0*x[0] + 1.0/3.0*x[3] + 2.0/3.0*x[4] + 1.0/3.0;
     sf[1]          = 1.0/3.0*x[0]*x[3] + 1.0/3.0*x[0] + 2.0/3.0*x[5];
@@ -9016,14 +9896,19 @@ double obj_ig_spl(unsigned n, const double *x, double *grad, void *SS_ref_db) {
     sf[8]          = x[2];
     sf[9]          = 0.5*x[3];
 
-    mu[0]          = gb[0] + R*T*creal(clog(sf[0]*sf[6])) + mu_Gex[0];
-    mu[1]          = gb[1] + R*T*creal(clog(2.0*sf[2]*csqrt(sf[4])*csqrt(sf[6]))) + mu_Gex[1];
-    mu[2]          = gb[2] + R*T*creal(clog(sf[1]*sf[6])) + mu_Gex[2];
-    mu[3]          = gb[3] + R*T*creal(clog(2.0*sf[2]*csqrt(sf[5])*csqrt(sf[6]))) + mu_Gex[3];
-    mu[4]          = gb[4] + R*T*creal(clog(sf[1]*sf[7] + d_em[4])) + mu_Gex[4];
-    mu[5]          = gb[5] + R*T*creal(clog(2.0*sf[3]*csqrt(sf[5])*csqrt(sf[7]) + d_em[5])) + mu_Gex[5];
-    mu[6]          = gb[6] + R*T*creal(clog(sf[0]*sf[8] + d_em[6])) + mu_Gex[6];
-    mu[7]          = gb[7] + R*T*creal(clog(2.0*sf[1]*csqrt(sf[5])*csqrt(sf[9]))) + mu_Gex[7];
+    mu[0]          = gb[0] + R*T*rlog((sf[0]*sf[6])) + mu_Gex[0];
+    double complex cs_4 = csqrt(sf[4]);
+    double complex cs_6 = csqrt(sf[6]);
+    double complex cs_5 = csqrt(sf[5]);
+    double complex cs_7 = csqrt(sf[7]);
+    double complex cs_9 = csqrt(sf[9]);
+    mu[1]          = gb[1] + R*T*rlog((2.0*sf[2]*cs_4*cs_6)) + mu_Gex[1];
+    mu[2]          = gb[2] + R*T*rlog((sf[1]*sf[6])) + mu_Gex[2];
+    mu[3]          = gb[3] + R*T*rlog((2.0*sf[2]*cs_5*cs_6)) + mu_Gex[3];
+    mu[4]          = gb[4] + R*T*rlog((sf[1]*sf[7] + d_em[4])) + mu_Gex[4];
+    mu[5]          = gb[5] + R*T*rlog((2.0*sf[3]*cs_5*cs_7 + d_em[5])) + mu_Gex[5];
+    mu[6]          = gb[6] + R*T*rlog((sf[0]*sf[8] + d_em[6])) + mu_Gex[6];
+    mu[7]          = gb[7] + R*T*rlog((2.0*sf[1]*cs_5*cs_9 + d_em[7])) + mu_Gex[7];
   
     d->sum_apep = 0.0;
     for (int i = 0; i < n_em; i++){
@@ -9072,16 +9957,7 @@ double obj_ig_chl(unsigned n, const double *x, double *grad, void *SS_ref_db){
     double *d_em      = d->d_em;
     px_ig_chl(SS_ref_db,x);
 
-    for (int i = 0; i < n_em; i++){
-        mu_Gex[i] = 0.0;
-        int it    = 0;
-        for (int j = 0; j < d->n_xeos; j++){
-            for (int k = j+1; k < n_em; k++){
-                mu_Gex[i] -= (d->eye[i][j] - d->p[j])*(d->eye[i][k] - d->p[k])*(d->W[it]);
-                it += 1;
-            }
-        }
-    }
+    mu_Gex_sym_n2(d, mu_Gex);
     
     sf[0]          =x[0]*x[1] - x[0]*x[3] - x[0] - x[1]*x[4] - x[1] +x[3]*x[4] +x[3] +x[4] + 1.0;
     sf[1]          = -x[0]*x[1] +x[0]*x[3] +x[0] +x[1]*x[4] - x[3]*x[4] - x[4];
@@ -9096,13 +9972,17 @@ double obj_ig_chl(unsigned n, const double *x, double *grad, void *SS_ref_db){
     sf[10]          =x[1] + 0.5*x[2];
     
     
-    mu[0]          = gb[0] + R*T*creal(clog(4.0*sf[0]*sf[10]*cpow(sf[3], 4.0)*sf[8]*sf[9])) + mu_Gex[0];
-    mu[1]          = gb[1] + R*T*creal(clog(sf[0]*cpow(sf[3], 4.0)*sf[5]*cpow(sf[9], 2.0))) + mu_Gex[1];
-    mu[2]          = gb[2] + R*T*creal(clog(cpow(sf[10], 2.0)*sf[2]*cpow(sf[3], 4.0)*sf[8])) + mu_Gex[2];
-    mu[3]          = gb[3] + R*T*creal(clog(4.0*sf[10]*sf[1]*cpow(sf[4], 4.0)*sf[8]*sf[9])) + mu_Gex[3];
-    mu[4]          = gb[4] + R*T*creal(clog(sf[0]*cpow(sf[4], 4.0)*sf[6]*cpow(sf[9], 2.0))) + mu_Gex[4];
-    mu[5]          = gb[5] + R*T*creal(clog(sf[1]*cpow(sf[3], 4.0)*sf[5]*cpow(sf[9], 2.0))) + mu_Gex[5];
-    mu[6]          = gb[6] + R*T*creal(clog(4.0*sf[0]*sf[10]*cpow(sf[3], 4.0)*sf[7]*sf[9] + d_em[6])) + mu_Gex[6];
+    double complex cp_3_4p0 = cpow(sf[3], 4.0);
+    double complex cp_9_2p0 = cpow(sf[9], 2.0);
+    double complex cp_10_2p0 = cpow(sf[10], 2.0);
+    double complex cp_4_4p0 = cpow(sf[4], 4.0);
+    mu[0]          = gb[0] + R*T*rlog((4.0*sf[0]*sf[10]*cp_3_4p0*sf[8]*sf[9])) + mu_Gex[0];
+    mu[1]          = gb[1] + R*T*rlog((sf[0]*cp_3_4p0*sf[5]*cp_9_2p0)) + mu_Gex[1];
+    mu[2]          = gb[2] + R*T*rlog((cp_10_2p0*sf[2]*cp_3_4p0*sf[8])) + mu_Gex[2];
+    mu[3]          = gb[3] + R*T*rlog((4.0*sf[10]*sf[1]*cp_4_4p0*sf[8]*sf[9])) + mu_Gex[3];
+    mu[4]          = gb[4] + R*T*rlog((sf[0]*cp_4_4p0*sf[6]*cp_9_2p0)) + mu_Gex[4];
+    mu[5]          = gb[5] + R*T*rlog((sf[1]*cp_3_4p0*sf[5]*cp_9_2p0)) + mu_Gex[5];
+    mu[6]          = gb[6] + R*T*rlog((4.0*sf[0]*sf[10]*cp_3_4p0*sf[7]*sf[9] + d_em[6])) + mu_Gex[6];
     
     d->sum_apep = 0.0;
     for (int i = 0; i < n_em; i++){
@@ -9230,15 +10110,15 @@ void p2x_igad_liq(void *SS_ref_db, double eps){
     d->iguess[10]  = d->p[11];
     d->iguess[11]  = d->p[12];
     d->iguess[12]  = d->p[13];
-    d->iguess[8]  = (6.0*d->p[9] + 6.0*d->iguess[13])/(7.0*d->iguess[11] + 6.0*d->iguess[10] - d->iguess[12] + 7.0*d->iguess[13] + 6.0);
-    d->iguess[7]  = 6.0*d->p[8]/(7.0*d->iguess[11] + 6.0*d->iguess[10] - d->iguess[12] + 7.0*d->iguess[13] + 6.0);
-    d->iguess[6]  = 6.0*d->p[7]/(7.0*d->iguess[11] + 6.0*d->iguess[10] - d->iguess[12] + 7.0*d->iguess[13] + 6.0);
-    d->iguess[5]  = 6.0*d->p[6]/(7.0*d->iguess[11] + 6.0*d->iguess[10] - d->iguess[12] + 7.0*d->iguess[13] + 6.0);
-    d->iguess[4]  = (6.0*d->p[5] + 6.0*d->iguess[11])/(7.0*d->iguess[11] + 6.0*d->iguess[10] - d->iguess[12] + 7.0*d->iguess[13] + 6.0);
-    d->iguess[3]  = 6.0*d->p[4]/(7.0*d->iguess[11] + 6.0*d->iguess[10] - d->iguess[12] + 7.0*d->iguess[13] + 6.0);
-    d->iguess[2]  = (6.0*d->p[3] + 3.0*d->iguess[12])/(7.0*d->iguess[11] + 6.0*d->iguess[10] - d->iguess[12] + 7.0*d->iguess[13] + 6.0);
-    d->iguess[0]  = (6.0*d->p[2] + 6.0*d->iguess[10])/(7.0*d->iguess[11] + 6.0*d->iguess[10] - d->iguess[12] + 7.0*d->iguess[13] + 6.0);
-    d->iguess[1]  = (6.0*d->p[1] + 3.0*d->iguess[11] + 6.0*d->iguess[10] + 3.0*d->iguess[13])/(7.0*d->iguess[11] + 6.0*d->iguess[10] - d->iguess[12] + 7.0*d->iguess[13] + 6.0);
+    d->iguess[8]  = (6.0*d->p[9] + 6.0*d->iguess[12])/(6.0*d->iguess[9] + 7.0*d->iguess[10] - d->iguess[11] + 7.0*d->iguess[12] + 6.0);
+    d->iguess[7]  = 6.0*d->p[8]/(6.0*d->iguess[9] + 7.0*d->iguess[10] - d->iguess[11] + 7.0*d->iguess[12] + 6.0);
+    d->iguess[6]  = 6.0*d->p[7]/(6.0*d->iguess[9] + 7.0*d->iguess[10] - d->iguess[11] + 7.0*d->iguess[12] + 6.0);
+    d->iguess[5]  = 6.0*d->p[6]/(6.0*d->iguess[9] + 7.0*d->iguess[10] - d->iguess[11] + 7.0*d->iguess[12] + 6.0);
+    d->iguess[4]  = (6.0*d->p[5] + 6.0*d->iguess[10])/(6.0*d->iguess[9] + 7.0*d->iguess[10] - d->iguess[11] + 7.0*d->iguess[12] + 6.0);
+    d->iguess[3]  = 6.0*d->p[4]/(6.0*d->iguess[9] + 7.0*d->iguess[10] - d->iguess[11] + 7.0*d->iguess[12] + 6.0);
+    d->iguess[2]  = (6.0*d->p[3] + 3.0*d->iguess[11])/(6.0*d->iguess[9] + 7.0*d->iguess[10] - d->iguess[11] + 7.0*d->iguess[12] + 6.0);
+    d->iguess[0]  = (6.0*d->p[2] + 6.0*d->iguess[9])/(6.0*d->iguess[9] + 7.0*d->iguess[10] - d->iguess[11] + 7.0*d->iguess[12] + 6.0);
+    d->iguess[1]  = (6.0*d->p[1] + 6.0*d->iguess[9] + 3.0*d->iguess[10] + 3.0*d->iguess[12])/(6.0*d->iguess[9] + 7.0*d->iguess[10] - d->iguess[11] + 7.0*d->iguess[12] + 6.0);
     
     for (int i = 0; i < d->n_xeos; i++){
         if (d->iguess[i] < d->bounds[i][0]){
@@ -9266,10 +10146,6 @@ void p2x_igad_cpx(void *SS_ref_db, double eps){
 	d->iguess[7]  = d->p[5]/2.0;	
 	d->iguess[8]  = d->p[9];	
 
-	if (d->z_em[3]  == 0.0){ d->iguess[6]  = eps;}
-	if (d->z_em[4]  == 0.0){ d->iguess[5]  = eps;}
-	if (d->z_em[5]  == 0.0){ d->iguess[7]  = eps;}
-		
 	for (int i = 0; i < d->n_xeos; i++){
 		if (d->iguess[i] < d->bounds[i][0]){
 			d->iguess[i] = d->bounds[i][0];
@@ -9357,11 +10233,7 @@ void p2x_igad_opx(void *SS_ref_db, double eps){
 	d->iguess[5] = d->p[6]/2.0;
 	d->iguess[6] = d->p[5];
 	d->iguess[7] = d->p[8];
-	
-	if (d->z_em[5]  == 0.0){ d->iguess[6]  = eps;}
-	if (d->z_em[4]  == 0.0){ d->iguess[4]  = eps;}
-	if (d->z_em[6]  == 0.0){ d->iguess[5]  = eps;}
-		
+
 	for (int i = 0; i < d->n_xeos; i++){
 		if (d->iguess[i] < d->bounds[i][0]){
 			d->iguess[i] = d->bounds[i][0];
@@ -9818,16 +10690,7 @@ double obj_igad_liq(unsigned n, const double *x, double *grad, void *SS_ref_db){
         d->mat_phi[i] = (d->p[i]*d->v[i])/d->sum_v;
     }
     
-    for (int i = 0; i < d->n_em; i++){
-        mu_Gex[i] = 0.0;
-        int it = 0;
-        for (int j = 0; j < d->n_xeos; j++){
-            for (int k = j+1; k < d->n_em; k++){
-                mu_Gex[i] -= (d->eye[i][j] - d->mat_phi[j])*(d->eye[i][k] - d->mat_phi[k])*(d->W[it]*2.0*d->v[i]/(d->v[j]+d->v[k]));
-                it += 1;
-            }
-        }
-    }
+    mu_Gex_asym_n2(d, mu_Gex);
     
     sf[0]          = -x[0] + 1.0/6.0*x[10]*(-7.0*x[0] - 7.0*x[1] - 7.0*x[2] - 7.0*x[3] - 7.0*x[4] - 7.0*x[5] - 7.0*x[6] - 7.0*x[7] - 7.0*x[8] + 3.0) + 1.0/6.0*x[11]*(x[0] + x[1] + x[2] + x[3] + x[4] + x[5] + x[6] + x[7] + x[8] - 3.0) + 1.0/6.0*x[12]*(-7.0*x[0] - 7.0*x[1] - 7.0*x[2] - 7.0*x[3] - 7.0*x[4] - 7.0*x[5] - 7.0*x[6] - 7.0*x[7] - 7.0*x[8] + 3.0) - x[1] - x[2] - x[3] - x[4] - x[5] - x[6] - x[7] - x[8] + x[9]*(-x[0] - x[1] - x[2] - x[3] - x[4] - x[5] - x[6] - x[7] - x[8] + 1.0) + 1.0;
     sf[1]          = 7.0/6.0*x[10]*x[1] - 0.5*x[10] - 1.0/6.0*x[11]*x[1] + 7.0/6.0*x[12]*x[1] - 0.5*x[12] + x[1]*x[9] + x[1] - x[9];
@@ -9848,20 +10711,23 @@ double obj_igad_liq(unsigned n, const double *x, double *grad, void *SS_ref_db){
     sf[16]          = -0.5*x[10] - 0.5*x[12] + x[1]*(7.0/6.0*x[10] - 1.0/6.0*x[11] + 7.0/6.0*x[12] + x[9] + 1.0) - x[9];
     sf[17]          = -0.5*x[10] - 2.0*x[11] - 0.5*x[12] - 2.0*x[9] + (x[0] + x[1] + 4.0*x[2] + 4.0*x[3])*(7.0/6.0*x[10] - 1.0/6.0*x[11] + 7.0/6.0*x[12] + x[9] + 1.0);
     
-    mu[0]          = gb[0] + R*T*creal(clog(sf[0])) + mu_Gex[0];
-    mu[1]          = gb[1] + R*T*creal(clog(sf[16]*1.0/sf[17]*sf[1])) + mu_Gex[1];
-    mu[2]          = gb[2] + R*T*creal(clog(sf[15]*1.0/sf[17]*sf[2])) + mu_Gex[2];
-    mu[3]          = gb[3] + R*T*creal(clog(sf[12]*cpow(sf[13], 4.0)*cpow(sf[17], -4.0))) + mu_Gex[3];
-    mu[4]          = gb[4] + R*T*creal(clog(sf[12]*cpow(sf[14], 4.0)*cpow(sf[17], -4.0))) + mu_Gex[4];
-    mu[5]          = gb[5] + R*T*creal(clog(sf[3])) + mu_Gex[5];
-    mu[6]          = gb[6] + R*T*creal(clog(sf[4]  + d_em[6])) + mu_Gex[6];
-    mu[7]          = gb[7] + R*T*creal(clog(sf[5]  + d_em[7])) + mu_Gex[7];
-    mu[8]          = gb[8] + R*T*creal(clog(sf[6])) + mu_Gex[8];
-    mu[9]          = gb[9] + R*T*creal(clog(sf[7])) + mu_Gex[9];
-    mu[10]          = gb[10] + R*T*creal(clog(sf[9])) + mu_Gex[10];
-    mu[11]          = gb[11] + R*T*creal(clog(sf[8])) + mu_Gex[11];
-    mu[12]          = gb[12] + R*T*creal(clog(sf[10])) + mu_Gex[12];
-    mu[13]          = gb[13] + R*T*creal(clog(sf[11])) + mu_Gex[13];
+    mu[0]          = gb[0] + R*T*rlog((sf[0])) + mu_Gex[0];
+    mu[1]          = gb[1] + R*T*rlog((sf[16]*1.0/sf[17]*sf[1])) + mu_Gex[1];
+    mu[2]          = gb[2] + R*T*rlog((sf[15]*1.0/sf[17]*sf[2] + d_em[2])) + mu_Gex[2];
+    double complex cp_13_4p0 = cpow(sf[13], 4.0);
+    double complex cp_17_m4p0 = cpow(sf[17], -4.0);
+    double complex cp_14_4p0 = cpow(sf[14], 4.0);
+    mu[3]          = gb[3] + R*T*rlog((sf[12]*cp_13_4p0*cp_17_m4p0)) + mu_Gex[3];
+    mu[4]          = gb[4] + R*T*rlog((sf[12]*cp_14_4p0*cp_17_m4p0)) + mu_Gex[4];
+    mu[5]          = gb[5] + R*T*rlog((sf[3]  + d_em[5])) + mu_Gex[5];
+    mu[6]          = gb[6] + R*T*rlog((sf[4]  + d_em[6])) + mu_Gex[6];
+    mu[7]          = gb[7] + R*T*rlog((sf[5]  + d_em[7])) + mu_Gex[7];
+    mu[8]          = gb[8] + R*T*rlog((sf[6]  + d_em[8])) + mu_Gex[8];
+    mu[9]          = gb[9] + R*T*rlog((sf[7]  + d_em[9])) + mu_Gex[9];
+    mu[10]          = gb[10] + R*T*rlog((sf[9]  + d_em[10])) + mu_Gex[10];
+    mu[11]          = gb[11] + R*T*rlog((sf[8]  + d_em[11])) + mu_Gex[11];
+    mu[12]          = gb[12] + R*T*rlog((sf[10])) + mu_Gex[12];
+    mu[13]          = gb[13] + R*T*rlog((sf[11]  + d_em[13])) + mu_Gex[13];
     
     d->sum_apep = 0.0;
     for (int i = 0; i < n_em; i++){
@@ -9907,6 +10773,7 @@ double obj_igad_fsp(unsigned n, const double *x, double *grad, void *SS_ref_db){
     double *mu_Gex    = d->mu_Gex;
     double *sf        = d->sf;
     double *mu        = d->mu;
+    double *d_em      = d->d_em;
     px_igad_fsp(SS_ref_db,x);
 
     d->sum_v = 0.0;
@@ -9919,18 +10786,7 @@ double obj_igad_fsp(unsigned n, const double *x, double *grad, void *SS_ref_db){
     
     double tmp = 0.0;
     double Gex = 0.0;
-    for (int i = 0; i < d->n_em; i++){
-        Gex = 0.0;
-        int it = 0;
-        for (int j = 0; j < d->n_xeos; j++){
-            tmp = (d->eye[i][j] - d->mat_phi[j]);
-            for (int k = j+1; k < d->n_em; k++){
-                Gex -= tmp*(d->eye[i][k] - d->mat_phi[k])*(d->W[it]*2.0*d->v[i]/(d->v[j]+d->v[k]));
-                it += 1;
-            }
-        }
-        mu_Gex[i] = Gex;
-    }
+    mu_Gex_asym_n2(d, mu_Gex);
     
     sf[0]          = -x[0] - x[1] + 1.0;
     sf[1]          = x[0];
@@ -9939,10 +10795,14 @@ double obj_igad_fsp(unsigned n, const double *x, double *grad, void *SS_ref_db){
     sf[4]          = 0.75 - 0.25*x[0];
     
     
-    mu[0]          = gb[0] + R*T*creal(clog(1.7548*sf[0]*cpow(sf[3], 0.25)*cpow(sf[4], 0.75))) + mu_Gex[0];
-    mu[1]          = gb[1] + R*T*creal(clog(2.0*sf[1]*csqrt(sf[3])*csqrt(sf[4]))) + mu_Gex[1];
-    mu[2]          = gb[2] + R*T*creal(clog(1.7548*sf[2]*cpow(sf[3], 0.25)*cpow(sf[4], 0.75))) + mu_Gex[2];
-    
+    double complex cp_3_0p25 = cpow(sf[3], 0.25);
+    double complex cp_4_0p75 = cpow(sf[4], 0.75);
+    double complex cs_3 = csqrt(sf[3]);
+    double complex cs_4 = csqrt(sf[4]);
+    mu[0]          = gb[0] + R*T*rlog((1.7548*sf[0]*cp_3_0p25*cp_4_0p75 + d_em[0])) + mu_Gex[0];
+    mu[1]          = gb[1] + R*T*rlog((2.0*sf[1]*cs_3*cs_4 + d_em[1])) + mu_Gex[1];
+    mu[2]          = gb[2] + R*T*rlog((1.7548*sf[2]*cp_3_0p25*cp_4_0p75 + d_em[2])) + mu_Gex[2];
+
     d->sum_apep = 0.0;
     for (int i = 0; i < n_em; i++){
         d->sum_apep += d->ape[i]*d->p[i];
@@ -9955,6 +10815,10 @@ double obj_igad_fsp(unsigned n, const double *x, double *grad, void *SS_ref_db){
     }
     d->df = d->df_raw * d->factor;
 
+    for (int k = 0; k < n_em; k++){
+        d->df += d->ox_penalty[k] * d->p[k] * d->p[k];
+    }
+
     if (grad){
         double *dfx    = d->dfx;
         double **dp_dx = d->dp_dx;
@@ -9963,6 +10827,7 @@ double obj_igad_fsp(unsigned n, const double *x, double *grad, void *SS_ref_db){
             dfx[i] = 0.0;
             for (int j = 0; j < n_em; j++){
                 dfx[i] += (mu[j] - (d->ape[j]/d->sum_apep)*d->df_raw)*d->factor*dp_dx[j][i];
+                dfx[i] += d->ox_penalty[j]*2.0*d->p[j]*dp_dx[j][i];
             }
             grad[i] = creal(dfx[i]);
         }
@@ -9970,7 +10835,7 @@ double obj_igad_fsp(unsigned n, const double *x, double *grad, void *SS_ref_db){
 
     return d->df;
 }
-    
+
 /**
     Objective function of spl
 */
@@ -10000,18 +10865,7 @@ double obj_igad_spl(unsigned n, const double *x, double *grad, void *SS_ref_db){
     
     double tmp = 0.0;
     double Gex = 0.0;
-    for (int i = 0; i < d->n_em; i++){
-        Gex = 0.0;
-        int it = 0;
-        for (int j = 0; j < d->n_xeos; j++){
-            tmp = (d->eye[i][j] - d->mat_phi[j]);
-            for (int k = j+1; k < d->n_em; k++){
-                Gex -= tmp*(d->eye[i][k] - d->mat_phi[k])*(d->W[it]*2.0*d->v[i]/(d->v[j]+d->v[k]));
-                it += 1;
-            }
-        }
-        mu_Gex[i] = Gex;
-    }
+    mu_Gex_asym_n2(d, mu_Gex);
     
     sf[0]          = -1.0/3.0*x[0]*x[3] - 1.0/3.0*x[0] + 1.0/3.0*x[3] + 2.0/3.0*x[4] + 1.0/3.0;
     sf[1]          = 1.0/3.0*x[0]*x[3] + 1.0/3.0*x[0] + 2.0/3.0*x[5];
@@ -10025,14 +10879,19 @@ double obj_igad_spl(unsigned n, const double *x, double *grad, void *SS_ref_db){
     sf[9]          = 0.5*x[3];
     
     
-    mu[0]          = gb[0] + R*T*creal(clog(sf[0]*sf[6])) + mu_Gex[0];
-    mu[1]          = gb[1] + R*T*creal(clog(2.0*sf[2]*csqrt(sf[4])*csqrt(sf[6]))) + mu_Gex[1];
-    mu[2]          = gb[2] + R*T*creal(clog(sf[1]*sf[6])) + mu_Gex[2];
-    mu[3]          = gb[3] + R*T*creal(clog(2.0*sf[2]*csqrt(sf[5])*csqrt(sf[6]))) + mu_Gex[3];
-    mu[4]          = gb[4] + R*T*creal(clog(sf[1]*sf[7] + d_em[4])) + mu_Gex[4];
-    mu[5]          = gb[5] + R*T*creal(clog(2.0*sf[3]*csqrt(sf[5])*csqrt(sf[7]) + d_em[5])) + mu_Gex[5];
-    mu[6]          = gb[6] + R*T*creal(clog(sf[0]*sf[8] + d_em[6])) + mu_Gex[6];
-    mu[7]          = gb[7] + R*T*creal(clog(2.0*sf[1]*csqrt(sf[5])*csqrt(sf[9]))) + mu_Gex[7];
+    mu[0]          = gb[0] + R*T*rlog((sf[0]*sf[6])) + mu_Gex[0];
+    double complex cs_4 = csqrt(sf[4]);
+    double complex cs_6 = csqrt(sf[6]);
+    double complex cs_5 = csqrt(sf[5]);
+    double complex cs_7 = csqrt(sf[7]);
+    double complex cs_9 = csqrt(sf[9]);
+    mu[1]          = gb[1] + R*T*rlog((2.0*sf[2]*cs_4*cs_6)) + mu_Gex[1];
+    mu[2]          = gb[2] + R*T*rlog((sf[1]*sf[6])) + mu_Gex[2];
+    mu[3]          = gb[3] + R*T*rlog((2.0*sf[2]*cs_5*cs_6)) + mu_Gex[3];
+    mu[4]          = gb[4] + R*T*rlog((sf[1]*sf[7] + d_em[4])) + mu_Gex[4];
+    mu[5]          = gb[5] + R*T*rlog((2.0*sf[3]*cs_5*cs_7 + d_em[5])) + mu_Gex[5];
+    mu[6]          = gb[6] + R*T*rlog((sf[0]*sf[8] + d_em[6])) + mu_Gex[6];
+    mu[7]          = gb[7] + R*T*rlog((2.0*sf[1]*cs_5*cs_9 + d_em[7])) + mu_Gex[7];
     
     d->sum_apep = 0.0;
     for (int i = 0; i < n_em; i++){
@@ -10088,22 +10947,11 @@ double obj_igad_g(unsigned n, const double *x, double *grad, void *SS_ref_db){
     for (int i = 0; i < n_em; i++){
         d->mat_phi[i] = (d->p[i]*d->v[i])/d->sum_v;
     }
-    
+
     double tmp = 0.0;
     double Gex = 0.0;
-    for (int i = 0; i < d->n_em; i++){
-        Gex = 0.0;
-        int it = 0;
-        for (int j = 0; j < d->n_xeos; j++){
-            tmp = (d->eye[i][j] - d->mat_phi[j]);
-            for (int k = j+1; k < d->n_em; k++){
-                Gex -= tmp*(d->eye[i][k] - d->mat_phi[k])*(d->W[it]*2.0*d->v[i]/(d->v[j]+d->v[k]));
-                it += 1;
-            }
-        }
-        mu_Gex[i] = Gex;
-    }
-    
+    mu_Gex_asym_n2(d, mu_Gex);
+
     sf[0]          = x[0]*x[1] - x[0] - x[1] + 1.0;
     sf[1]          = -x[0]*x[1] + x[0];
     sf[2]          = x[1];
@@ -10112,14 +10960,22 @@ double obj_igad_g(unsigned n, const double *x, double *grad, void *SS_ref_db){
     sf[5]          = x[2];
     sf[6]          = x[4];
     sf[7]          = x[4];
-    
-    
-    mu[0]          = gb[0] + R*T*creal(clog(cpow(sf[0], 3.0)*cpow(sf[3], 2.0))) + mu_Gex[0];
-    mu[1]          = gb[1] + R*T*creal(clog(cpow(sf[1], 3.0)*cpow(sf[3], 2.0))) + mu_Gex[1];
-    mu[2]          = gb[2] + R*T*creal(clog(cpow(sf[2], 3.0)*cpow(sf[3], 2.0))) + mu_Gex[2];
-    mu[3]          = gb[3] + R*T*creal(clog(cpow(sf[2], 3.0)*cpow(sf[5], 2.0) + d_em[3])) + mu_Gex[3];
-    mu[4]          = gb[4] + R*T*creal(clog(cpow(sf[0], 3.0)*cpow(sf[4], 2.0) + d_em[4])) + mu_Gex[4];
-    mu[5]          = gb[5] + R*T*creal(clog(8.0*cpow(sf[0], 3.0)*sf[3]*csqrt(sf[6])*csqrt(sf[7]))) + mu_Gex[5];
+
+
+    double complex cp_0_3p0 = cpow(sf[0], 3.0);
+    double complex cp_3_2p0 = cpow(sf[3], 2.0);
+    double complex cp_1_3p0 = cpow(sf[1], 3.0);
+    double complex cp_2_3p0 = cpow(sf[2], 3.0);
+    double complex cp_5_2p0 = cpow(sf[5], 2.0);
+    double complex cp_4_2p0 = cpow(sf[4], 2.0);
+    double complex cs_6 = csqrt(sf[6]);
+    double complex cs_7 = csqrt(sf[7]);
+    mu[0]          = gb[0] + R*T*rlog((cp_0_3p0*cp_3_2p0)) + mu_Gex[0];
+    mu[1]          = gb[1] + R*T*rlog((cp_1_3p0*cp_3_2p0)) + mu_Gex[1];
+    mu[2]          = gb[2] + R*T*rlog((cp_2_3p0*cp_3_2p0 + d_em[2])) + mu_Gex[2];
+    mu[3]          = gb[3] + R*T*rlog((cp_2_3p0*cp_5_2p0 + d_em[3])) + mu_Gex[3];
+    mu[4]          = gb[4] + R*T*rlog((cp_0_3p0*cp_4_2p0 + d_em[4])) + mu_Gex[4];
+    mu[5]          = gb[5] + R*T*rlog((8.0*cp_0_3p0*sf[3]*cs_6*cs_7 + d_em[5])) + mu_Gex[5];
     
     d->sum_apep = 0.0;
     for (int i = 0; i < n_em; i++){
@@ -10164,34 +11020,24 @@ double obj_igad_ol(unsigned n, const double *x, double *grad, void *SS_ref_db){
     double *mu_Gex    = d->mu_Gex;
     double *sf        = d->sf;
     double *mu        = d->mu;
+    double *d_em      = d->d_em;
     px_igad_ol(SS_ref_db,x);
 
     double tmp = 0.0;
     double Gex = 0.0;
-    for (int i = 0; i < n_em; i++){
-        Gex = 0.0;
-        int it    = 0;
-        for (int j = 0; j < d->n_xeos; j++){
-            tmp = (d->eye[i][j] - d->p[j]);
-            for (int k = j+1; k < n_em; k++){
-                Gex -= tmp*(d->eye[i][k] - d->p[k])*(d->W[it]);
-                it += 1;
-            }
-        }
-        mu_Gex[i] = Gex;
-    }   
-  
+    mu_Gex_sym_n2(d, mu_Gex);
+
     sf[0]          = -x[0] + x[2] + 1.0;
     sf[1]          = x[0] - x[2];
     sf[2]          = x[0]*x[1] - x[0] - x[1] - x[2] + 1.0;
     sf[3]          = -x[0]*x[1] + x[0] + x[2];
     sf[4]          = x[1];
-    
-    
-    mu[0]          = gb[0] + R*T*creal(clog(sf[0]*sf[4])) + mu_Gex[0];
-    mu[1]          = gb[1] + R*T*creal(clog(sf[1]*sf[3])) + mu_Gex[1];
-    mu[2]          = gb[2] + R*T*creal(clog(sf[0]*sf[2])) + mu_Gex[2];
-    mu[3]          = gb[3] + R*T*creal(clog(sf[0]*sf[3])) + mu_Gex[3];
+
+
+    mu[0]          = gb[0] + R*T*rlog((sf[0]*sf[4] + d_em[0])) + mu_Gex[0];
+    mu[1]          = gb[1] + R*T*rlog((sf[1]*sf[3])) + mu_Gex[1];
+    mu[2]          = gb[2] + R*T*rlog((sf[0]*sf[2])) + mu_Gex[2];
+    mu[3]          = gb[3] + R*T*rlog((sf[0]*sf[3])) + mu_Gex[3];
     
     d->sum_apep = 0.0;
     for (int i = 0; i < n_em; i++){
@@ -10250,18 +11096,7 @@ double obj_igad_opx(unsigned n, const double *x, double *grad, void *SS_ref_db){
     
     double tmp = 0.0;
     double Gex = 0.0;
-    for (int i = 0; i < d->n_em; i++){
-        Gex = 0.0;
-        int it = 0;
-        for (int j = 0; j < d->n_xeos; j++){
-            tmp = (d->eye[i][j] - d->mat_phi[j]);
-            for (int k = j+1; k < d->n_em; k++){
-                Gex -= tmp*(d->eye[i][k] - d->mat_phi[k])*(d->W[it]*2.0*d->v[i]/(d->v[j]+d->v[k]));
-                it += 1;
-            }
-        }
-        mu_Gex[i] = Gex;
-    }
+    mu_Gex_asym_n2(d, mu_Gex);
     
 
     sf[0]          =x[0]*x[1] - x[0]*x[5] +x[0]*x[7] - x[0] +x[1]*x[3] - x[1] - x[3]*x[5] +x[3]*x[7] - x[3] +x[5] - x[7] + 1.0;
@@ -10277,15 +11112,20 @@ double obj_igad_opx(unsigned n, const double *x, double *grad, void *SS_ref_db){
     sf[10]          = 1.0 - 0.5*x[1];
     sf[11]          = 0.5*x[1];
     
-    mu[0]          = gb[0] + R*T*creal(clog(sf[0]*csqrt(sf[10])*sf[6])) + mu_Gex[0];
-    mu[1]          = gb[1] + R*T*creal(clog(csqrt(sf[10])*sf[1]*sf[7])) + mu_Gex[1];
-    mu[2]          = gb[2] + R*T*creal(clog(sf[0]*csqrt(sf[10])*sf[7])) + mu_Gex[2];
-    mu[3]          = gb[3] + R*T*creal(clog(sf[0]*csqrt(sf[10])*sf[8])) + mu_Gex[3];
-    mu[4]          = gb[4] + R*T*creal(clog(1.4142*cpow(sf[10], 0.25)*cpow(sf[11], 0.25)*sf[2]*sf[6])) + mu_Gex[4];
-    mu[5]          = gb[5] + R*T*creal(clog(1.4142*cpow(sf[10], 0.25)*cpow(sf[11], 0.25)*sf[4]*sf[6] + d_em[5])) + mu_Gex[5];
-    mu[6]          = gb[6] + R*T*creal(clog(2.8284*csqrt(sf[0])*cpow(sf[10], 0.25)*cpow(sf[11], 0.25)*csqrt(sf[5])*sf[6] + d_em[7])) + mu_Gex[6];
-    mu[7]          = gb[7] + R*T*creal(clog(1.4142*cpow(sf[10], 0.25)*cpow(sf[11], 0.25)*sf[3]*sf[6] + d_em[7])) + mu_Gex[7];
-    mu[8]          = gb[8] + R*T*creal(clog(csqrt(sf[10])*sf[2]*sf[9])) + mu_Gex[8];
+    double complex cp_10_0p25 = cpow(sf[10], 0.25);
+    double complex cp_11_0p25 = cpow(sf[11], 0.25);
+    double complex cs_10 = csqrt(sf[10]);
+    double complex cs_0 = csqrt(sf[0]);
+    double complex cs_5 = csqrt(sf[5]);
+    mu[0]          = gb[0] + R*T*rlog((sf[0]*cs_10*sf[6])) + mu_Gex[0];
+    mu[1]          = gb[1] + R*T*rlog((cs_10*sf[1]*sf[7])) + mu_Gex[1];
+    mu[2]          = gb[2] + R*T*rlog((sf[0]*cs_10*sf[7])) + mu_Gex[2];
+    mu[3]          = gb[3] + R*T*rlog((sf[0]*cs_10*sf[8] + d_em[3])) + mu_Gex[3];
+    mu[4]          = gb[4] + R*T*rlog((1.4142*cp_10_0p25*cp_11_0p25*sf[2]*sf[6])) + mu_Gex[4];
+    mu[5]          = gb[5] + R*T*rlog((1.4142*cp_10_0p25*cp_11_0p25*sf[4]*sf[6] + d_em[5])) + mu_Gex[5];
+    mu[6]          = gb[6] + R*T*rlog((2.8284*cs_0*cp_10_0p25*cp_11_0p25*cs_5*sf[6] + d_em[6])) + mu_Gex[6];
+    mu[7]          = gb[7] + R*T*rlog((1.4142*cp_10_0p25*cp_11_0p25*sf[3]*sf[6] + d_em[7])) + mu_Gex[7];
+    mu[8]          = gb[8] + R*T*rlog((cs_10*sf[2]*sf[9] + d_em[8])) + mu_Gex[8];
     
     d->sum_apep = 0.0;
     for (int i = 0; i < n_em; i++){
@@ -10344,18 +11184,7 @@ double obj_igad_cpx(unsigned n, const double *x, double *grad, void *SS_ref_db){
     
     double tmp = 0.0;
     double Gex = 0.0;
-    for (int i = 0; i < d->n_em; i++){
-        Gex = 0.0;
-        int it = 0;
-        for (int j = 0; j < d->n_xeos; j++){
-            tmp = (d->eye[i][j] - d->mat_phi[j]);
-            for (int k = j+1; k < d->n_em; k++){
-                Gex -= tmp*(d->eye[i][k] - d->mat_phi[k])*(d->W[it]*2.0*d->v[i]/(d->v[j]+d->v[k]));
-                it += 1;
-            }
-        }
-        mu_Gex[i] = Gex;
-    }
+    mu_Gex_asym_n2(d, mu_Gex);
     
     sf[0]          =x[0]*x[1] +x[0]*x[3] - x[0]*x[7] +x[0]*x[8] - x[0] +x[1]*x[4] - x[1] +x[3]*x[4] - x[3] - x[4]*x[7] +x[4]*x[8] - x[4] +x[7] - x[8] + 1.0;
     sf[1]          = -x[0]*x[1] - x[0]*x[3] +x[0]*x[7] - x[0]*x[8] +x[0] - x[1]*x[4] - x[3]*x[4] +x[4]*x[7] - x[4]*x[8] +x[4];
@@ -10371,16 +11200,21 @@ double obj_igad_cpx(unsigned n, const double *x, double *grad, void *SS_ref_db){
     sf[11]          = 1.0 - 0.5*x[1];
     sf[12]          = 0.5*x[1];
     
-    mu[0]          = gb[0] + R*T*creal(clog(sf[0]*csqrt(sf[11])*sf[8])) + mu_Gex[0];
-    mu[1]          = gb[1] + R*T*creal(clog(csqrt(sf[11])*sf[1]*sf[7])) + mu_Gex[1];
-    mu[2]          = gb[2] + R*T*creal(clog(1.4142*cpow(sf[11], 0.25)*cpow(sf[12], 0.25)*sf[2]*sf[8])) + mu_Gex[2];
-    mu[3]          = gb[3] + R*T*creal(clog(1.4142*cpow(sf[11], 0.25)*cpow(sf[12], 0.25)*sf[4]*sf[8] + d_em[3])) + mu_Gex[3];
-    mu[4]          = gb[4] + R*T*creal(clog(1.4142*cpow(sf[11], 0.25)*cpow(sf[12], 0.25)*sf[3]*sf[8] + d_em[4])) + mu_Gex[4];
-    mu[5]          = gb[5] + R*T*creal(clog(2.8284*csqrt(sf[0])*cpow(sf[11], 0.25)*cpow(sf[12], 0.25)*csqrt(sf[5])*sf[8] + d_em[5])) + mu_Gex[5];
-    mu[6]          = gb[6] + R*T*creal(clog(csqrt(sf[11])*sf[2]*sf[9])) + mu_Gex[6];
-    mu[7]          = gb[7] + R*T*creal(clog(sf[0]*csqrt(sf[11])*sf[6])) + mu_Gex[7];
-    mu[8]          = gb[8] + R*T*creal(clog(sf[0]*csqrt(sf[11])*sf[7])) + mu_Gex[8];
-    mu[9]          = gb[9] + R*T*creal(clog(sf[10]*csqrt(sf[11])*sf[2] + d_em[9])) + mu_Gex[9];
+    double complex cp_11_0p25 = cpow(sf[11], 0.25);
+    double complex cp_12_0p25 = cpow(sf[12], 0.25);
+    double complex cs_11 = csqrt(sf[11]);
+    double complex cs_0 = csqrt(sf[0]);
+    double complex cs_5 = csqrt(sf[5]);
+    mu[0]          = gb[0] + R*T*rlog((sf[0]*cs_11*sf[8])) + mu_Gex[0];
+    mu[1]          = gb[1] + R*T*rlog((cs_11*sf[1]*sf[7])) + mu_Gex[1];
+    mu[2]          = gb[2] + R*T*rlog((1.4142*cp_11_0p25*cp_12_0p25*sf[2]*sf[8])) + mu_Gex[2];
+    mu[3]          = gb[3] + R*T*rlog((1.4142*cp_11_0p25*cp_12_0p25*sf[4]*sf[8] + d_em[3])) + mu_Gex[3];
+    mu[4]          = gb[4] + R*T*rlog((1.4142*cp_11_0p25*cp_12_0p25*sf[3]*sf[8] + d_em[4])) + mu_Gex[4];
+    mu[5]          = gb[5] + R*T*rlog((2.8284*cs_0*cp_11_0p25*cp_12_0p25*cs_5*sf[8] + d_em[5])) + mu_Gex[5];
+    mu[6]          = gb[6] + R*T*rlog((cs_11*sf[2]*sf[9] + d_em[6])) + mu_Gex[6];
+    mu[7]          = gb[7] + R*T*rlog((sf[0]*cs_11*sf[6])) + mu_Gex[7];
+    mu[8]          = gb[8] + R*T*rlog((sf[0]*cs_11*sf[7])) + mu_Gex[8];
+    mu[9]          = gb[9] + R*T*rlog((sf[10]*cs_11*sf[2] + d_em[9])) + mu_Gex[9];
     
     d->sum_apep = 0.0;
     for (int i = 0; i < n_em; i++){
@@ -10393,6 +11227,9 @@ double obj_igad_cpx(unsigned n, const double *x, double *grad, void *SS_ref_db){
         d->df_raw += mu[i]*d->p[i];
     }
     d->df = d->df_raw * d->factor;
+    for (int k = 0; k < n_em; k++){
+        d->df += d->ox_penalty[k] * d->p[k] * d->p[k];
+    }
 
     if (grad){
         double *dfx    = d->dfx;
@@ -10402,6 +11239,7 @@ double obj_igad_cpx(unsigned n, const double *x, double *grad, void *SS_ref_db){
             dfx[i] = 0.0;
             for (int j = 0; j < n_em; j++){
                 dfx[i] += (mu[j] - (d->ape[j]/d->sum_apep)*d->df_raw)*d->factor*dp_dx[j][i];
+                dfx[i] += d->ox_penalty[j]*2.0*d->p[j]*dp_dx[j][i];
             }
             grad[i] = creal(dfx[i]);
         }
@@ -10430,18 +11268,7 @@ double obj_igad_ilm(unsigned n, const double *x, double *grad, void *SS_ref_db){
 
     double tmp = 0.0;
     double Gex = 0.0;
-    for (int i = 0; i < n_em; i++){
-        Gex = 0.0;
-        int it    = 0;
-        for (int j = 0; j < d->n_xeos; j++){
-            tmp = (d->eye[i][j] - d->p[j]);
-            for (int k = j+1; k < n_em; k++){
-                Gex -= tmp*(d->eye[i][k] - d->p[k])*(d->W[it]);
-                it += 1;
-            }
-        }
-        mu_Gex[i] = Gex;
-    }   
+    mu_Gex_sym_n2(d, mu_Gex);   
   
     sf[0]          = -0.5*x[0]*x[1] + 0.5*x[0] + 0.5*x[2];
     sf[1]          = 0.5*x[0] - 0.5*x[3];
@@ -10453,11 +11280,22 @@ double obj_igad_ilm(unsigned n, const double *x, double *grad, void *SS_ref_db){
     sf[7]          = 0.5*x[0]*x[1] + 0.5*x[2] - 0.5*x[3];
     
     
-    mu[0]          = gb[0] + R*T*creal(clog(csqrt(sf[0])*csqrt(sf[5]))) + mu_Gex[0];
-    mu[1]          = gb[1] + R*T*creal(clog(2.0*cpow(sf[0], 0.25)*cpow(sf[1], 0.25)*cpow(sf[4], 0.25)*cpow(sf[5], 0.25))) + mu_Gex[1];
-    mu[2]          = gb[2] + R*T*creal(clog(csqrt(sf[2])*csqrt(sf[6]) + d_em[2])) + mu_Gex[2];
-    mu[3]          = gb[3] + R*T*creal(clog(csqrt(sf[3])*csqrt(sf[5]))) + mu_Gex[3];
-    mu[4]          = gb[4] + R*T*creal(clog(2.0*cpow(sf[1], 0.25)*cpow(sf[3], 0.25)*cpow(sf[5], 0.25)*cpow(sf[7], 0.25))) + mu_Gex[4];
+    double complex cp_0_0p25 = cpow(sf[0], 0.25);
+    double complex cp_1_0p25 = cpow(sf[1], 0.25);
+    double complex cp_4_0p25 = cpow(sf[4], 0.25);
+    double complex cp_5_0p25 = cpow(sf[5], 0.25);
+    double complex cp_3_0p25 = cpow(sf[3], 0.25);
+    double complex cp_7_0p25 = cpow(sf[7], 0.25);
+    double complex cs_0 = csqrt(sf[0]);
+    double complex cs_5 = csqrt(sf[5]);
+    double complex cs_2 = csqrt(sf[2]);
+    double complex cs_6 = csqrt(sf[6]);
+    double complex cs_3 = csqrt(sf[3]);
+    mu[0]          = gb[0] + R*T*rlog((cs_0*cs_5 + d_em[0])) + mu_Gex[0];
+    mu[1]          = gb[1] + R*T*rlog((2.0*cp_0_0p25*cp_1_0p25*cp_4_0p25*cp_5_0p25 + d_em[1])) + mu_Gex[1];
+    mu[2]          = gb[2] + R*T*rlog((cs_2*cs_6 + d_em[2])) + mu_Gex[2];
+    mu[3]          = gb[3] + R*T*rlog((cs_3*cs_5 + d_em[3])) + mu_Gex[3];
+    mu[4]          = gb[4] + R*T*rlog((2.0*cp_1_0p25*cp_3_0p25*cp_5_0p25*cp_7_0p25 + d_em[4])) + mu_Gex[4];
     
     d->sum_apep = 0.0;
     for (int i = 0; i < n_em; i++){
@@ -10516,18 +11354,7 @@ double obj_igad_nph(unsigned n, const double *x, double *grad, void *SS_ref_db){
     
     double tmp = 0.0;
     double Gex = 0.0;
-    for (int i = 0; i < d->n_em; i++){
-        Gex = 0.0;
-        int it = 0;
-        for (int j = 0; j < d->n_xeos; j++){
-            tmp = (d->eye[i][j] - d->mat_phi[j]);
-            for (int k = j+1; k < d->n_em; k++){
-                Gex -= tmp*(d->eye[i][k] - d->mat_phi[k])*(d->W[it]*2.0*d->v[i]/(d->v[j]+d->v[k]));
-                it += 1;
-            }
-        }
-        mu_Gex[i] = Gex;
-    }
+    mu_Gex_asym_n2(d, mu_Gex);
     
     sf[0]          = 0.25*x[0]*x[1] + 0.75*x[1]*x[4] - x[1] + 0.25*x[2] - x[4] + 1.0;
     sf[1]          = -0.25*x[0]*x[1] - 0.75*x[1]*x[4] + x[1] - 0.25*x[2];
@@ -10540,12 +11367,19 @@ double obj_igad_nph(unsigned n, const double *x, double *grad, void *SS_ref_db){
     sf[8]          = x[3];
     
     
-    mu[0]          = gb[0] + R*T*creal(clog(cpow(sf[0], 3.0)*sf[3]*cpow(sf[6], 2.0))) + mu_Gex[0];
-    mu[1]          = gb[1] + R*T*creal(clog(3.0792*cpow(sf[0], 3.0)*sf[5]*cpow(sf[6], 1.5)*csqrt(sf[7]))) + mu_Gex[1];
-    mu[2]          = gb[2] + R*T*creal(clog(cpow(sf[1], 3.0)*sf[4]*cpow(sf[6], 2.0))) + mu_Gex[2];
-    mu[3]          = gb[3] + R*T*creal(clog(cpow(sf[0], 3.0)*sf[4]*cpow(sf[6], 2.0))) + mu_Gex[3];
-    mu[4]          = gb[4] + R*T*creal(clog(6.75*cpow(sf[0], 2.0)*sf[2]*sf[5]*cpow(sf[6], 2.0))) + mu_Gex[4];
-    mu[5]          = gb[5] + R*T*creal(clog(cpow(sf[0], 3.0)*sf[3]*cpow(sf[8], 2.0) + d_em[5])) + mu_Gex[5];
+    double complex cp_0_3p0 = cpow(sf[0], 3.0);
+    double complex cp_6_2p0 = cpow(sf[6], 2.0);
+    double complex cp_6_1p5 = cpow(sf[6], 1.5);
+    double complex cp_1_3p0 = cpow(sf[1], 3.0);
+    double complex cp_0_2p0 = cpow(sf[0], 2.0);
+    double complex cp_8_2p0 = cpow(sf[8], 2.0);
+    double complex cs_7 = csqrt(sf[7]);
+    mu[0]          = gb[0] + R*T*rlog((cp_0_3p0*sf[3]*cp_6_2p0)) + mu_Gex[0];
+    mu[1]          = gb[1] + R*T*rlog((3.0792*cp_0_3p0*sf[5]*cp_6_1p5*cs_7)) + mu_Gex[1];
+    mu[2]          = gb[2] + R*T*rlog((cp_1_3p0*sf[4]*cp_6_2p0)) + mu_Gex[2];
+    mu[3]          = gb[3] + R*T*rlog((cp_0_3p0*sf[4]*cp_6_2p0)) + mu_Gex[3];
+    mu[4]          = gb[4] + R*T*rlog((6.75*cp_0_2p0*sf[2]*sf[5]*cp_6_2p0 + d_em[4])) + mu_Gex[4];
+    mu[5]          = gb[5] + R*T*rlog((cp_0_3p0*sf[3]*cp_8_2p0 + d_em[5])) + mu_Gex[5];
     
     d->sum_apep = 0.0;
     for (int i = 0; i < n_em; i++){
@@ -10558,6 +11392,9 @@ double obj_igad_nph(unsigned n, const double *x, double *grad, void *SS_ref_db){
         d->df_raw += mu[i]*d->p[i];
     }
     d->df = d->df_raw * d->factor;
+    for (int k = 0; k < n_em; k++){
+        d->df += d->ox_penalty[k] * d->p[k] * d->p[k];
+    }
 
     if (grad){
         double *dfx    = d->dfx;
@@ -10567,6 +11404,7 @@ double obj_igad_nph(unsigned n, const double *x, double *grad, void *SS_ref_db){
             dfx[i] = 0.0;
             for (int j = 0; j < n_em; j++){
                 dfx[i] += (mu[j] - (d->ape[j]/d->sum_apep)*d->df_raw)*d->factor*dp_dx[j][i];
+                dfx[i] += d->ox_penalty[j]*2.0*d->p[j]*dp_dx[j][i];
             }
             grad[i] = creal(dfx[i]);
         }
@@ -10591,6 +11429,7 @@ double obj_igad_lct(unsigned n, const double *x, double *grad, void *SS_ref_db){
     double *mu_Gex    = d->mu_Gex;
     double *sf        = d->sf;
     double *mu        = d->mu;
+    double *d_em      = d->d_em;
     px_igad_lct(SS_ref_db,x);
 
     d->sum_v = 0.0;
@@ -10603,25 +11442,14 @@ double obj_igad_lct(unsigned n, const double *x, double *grad, void *SS_ref_db){
     
     double tmp = 0.0;
     double Gex = 0.0;
-    for (int i = 0; i < d->n_em; i++){
-        Gex = 0.0;
-        int it = 0;
-        for (int j = 0; j < d->n_xeos; j++){
-            tmp = (d->eye[i][j] - d->mat_phi[j]);
-            for (int k = j+1; k < d->n_em; k++){
-                Gex -= tmp*(d->eye[i][k] - d->mat_phi[k])*(d->W[it]*2.0*d->v[i]/(d->v[j]+d->v[k]));
-                it += 1;
-            }
-        }
-        mu_Gex[i] = Gex;
-    }
+    mu_Gex_asym_n2(d, mu_Gex);
     
     sf[0]          = x[0];
     sf[1]          = 1.0 - x[0];
     
     
-    mu[0]          = gb[0] + R*T*creal(clog(sf[0])) + mu_Gex[0];
-    mu[1]          = gb[1] + R*T*creal(clog(sf[1])) + mu_Gex[1];
+    mu[0]          = gb[0] + R*T*rlog((sf[0] + d_em[0])) + mu_Gex[0];
+    mu[1]          = gb[1] + R*T*rlog((sf[1] + d_em[1])) + mu_Gex[1];
     
     d->sum_apep = 0.0;
     for (int i = 0; i < n_em; i++){
@@ -10667,6 +11495,7 @@ double obj_igad_kals(unsigned n, const double *x, double *grad, void *SS_ref_db)
     double *mu_Gex    = d->mu_Gex;
     double *sf        = d->sf;
     double *mu        = d->mu;
+    double *d_em      = d->d_em;
     px_igad_kals(SS_ref_db,x);
 
     d->sum_v = 0.0;
@@ -10679,25 +11508,14 @@ double obj_igad_kals(unsigned n, const double *x, double *grad, void *SS_ref_db)
     
     double tmp = 0.0;
     double Gex = 0.0;
-    for (int i = 0; i < d->n_em; i++){
-        Gex = 0.0;
-        int it = 0;
-        for (int j = 0; j < d->n_xeos; j++){
-            tmp = (d->eye[i][j] - d->mat_phi[j]);
-            for (int k = j+1; k < d->n_em; k++){
-                Gex -= tmp*(d->eye[i][k] - d->mat_phi[k])*(d->W[it]*2.0*d->v[i]/(d->v[j]+d->v[k]));
-                it += 1;
-            }
-        }
-        mu_Gex[i] = Gex;
-    }
+    mu_Gex_asym_n2(d, mu_Gex);
     
     sf[0]          = x[0];
     sf[1]          = 1.0 - x[0];
     
     
-    mu[0]          = gb[0] + R*T*creal(clog(sf[1])) + mu_Gex[0];
-    mu[1]          = gb[1] + R*T*creal(clog(sf[0])) + mu_Gex[1];
+    mu[0]          = gb[0] + R*T*rlog((sf[1] + d_em[0])) + mu_Gex[0];
+    mu[1]          = gb[1] + R*T*rlog((sf[0] + d_em[1])) + mu_Gex[1];
     
     d->sum_apep = 0.0;
     for (int i = 0; i < n_em; i++){
@@ -10747,18 +11565,7 @@ double obj_igad_mel(unsigned n, const double *x, double *grad, void *SS_ref_db){
 
     double tmp = 0.0;
     double Gex = 0.0;
-    for (int i = 0; i < n_em; i++){
-        Gex = 0.0;
-        int it    = 0;
-        for (int j = 0; j < d->n_xeos; j++){
-            tmp = (d->eye[i][j] - d->p[j]);
-            for (int k = j+1; k < n_em; k++){
-                Gex -= tmp*(d->eye[i][k] - d->p[k])*(d->W[it]);
-                it += 1;
-            }
-        }
-        mu_Gex[i] = Gex;
-    }   
+    mu_Gex_sym_n2(d, mu_Gex);   
   
     sf[0]          = x[1];
     sf[1]          = 1.0 - x[1];
@@ -10770,11 +11577,14 @@ double obj_igad_mel(unsigned n, const double *x, double *grad, void *SS_ref_db){
     sf[7]          = x[1] - 0.5*x[2] - 0.5*x[3] + 1.0;
     
     
-    mu[0]          = gb[0] + R*T*creal(clog(2.0*cpow(sf[1], 2.0)*sf[4]*csqrt(sf[6])*csqrt(sf[7]))) + mu_Gex[0];
-    mu[1]          = gb[1] + R*T*creal(clog(cpow(sf[1], 2.0)*sf[2]*sf[7])) + mu_Gex[1];
-    mu[2]          = gb[2] + R*T*creal(clog(cpow(sf[1], 2.0)*sf[3]*sf[7])) + mu_Gex[2];
-    mu[3]          = gb[3] + R*T*creal(clog(4.0*sf[0]*sf[1]*sf[4]*sf[7])) + mu_Gex[3];
-    mu[4]          = gb[4] + R*T*creal(clog(2.0*cpow(sf[1], 2.0)*sf[5]*csqrt(sf[6])*csqrt(sf[7]) + d_em[4])) + mu_Gex[4];
+    double complex cp_1_2p0 = cpow(sf[1], 2.0);
+    double complex cs_6 = csqrt(sf[6]);
+    double complex cs_7 = csqrt(sf[7]);
+    mu[0]          = gb[0] + R*T*rlog((2.0*cp_1_2p0*sf[4]*cs_6*cs_7)) + mu_Gex[0];
+    mu[1]          = gb[1] + R*T*rlog((cp_1_2p0*sf[2]*sf[7])) + mu_Gex[1];
+    mu[2]          = gb[2] + R*T*rlog((cp_1_2p0*sf[3]*sf[7])) + mu_Gex[2];
+    mu[3]          = gb[3] + R*T*rlog((4.0*sf[0]*sf[1]*sf[4]*sf[7] + d_em[3])) + mu_Gex[3];
+    mu[4]          = gb[4] + R*T*rlog((2.0*cp_1_2p0*sf[5]*cs_6*cs_7 + d_em[4])) + mu_Gex[4];
     
     d->sum_apep = 0.0;
     for (int i = 0; i < n_em; i++){
@@ -10897,10 +11707,10 @@ void px_mtl_nal(void *SS_ref_db, const double *x){
         p[0]           = x[5];
         p[1]           = x[4];
         p[2]           = x[0] -x[4] - 0.833333333333333*x[5];
-        p[3]           = -x[0] + x[1]*x[4] + x[1]*x[5] -x[1] -x[2]*x[4] -x[2]*x[5] + x[2] - 0.166666666666667*x[5] + 1.0;
-        p[4]           = -x[0]*x[1] - 0.166666666666667*x[1]*x[5] + x[1] - 1.0/3.0*x[2]*x[4] - 1.0/3.0*x[2]*x[5] + 1.0/3.0*x[2] + 0.666666666666667*x[3];
+        p[3]           = -x[0] + x[1]*x[4] + x[1]*x[5] -x[1] -x[2]*x[4] -x[2]*x[5] + x[2] - 1.0/6.0*x[5] + 1.0;
+        p[4]           = -x[0]*x[1] - 1.0/6.0*x[1]*x[5] + x[1] - 1.0/3.0*x[2]*x[4] - 1.0/3.0*x[2]*x[5] + 1.0/3.0*x[2] + 2.0/3.0*x[3];
         p[5]           = -x[1]*x[4] -x[1]*x[5] + x[2]*x[4] + x[2]*x[5] -x[2] + x[3];
-        p[6]           = x[0]*x[1] + 0.166666666666667*x[1]*x[5] + 1.0/3.0*x[2]*x[4] + 1.0/3.0*x[2]*x[5] - 1.0/3.0*x[2] - 1.66666666666667*x[3];
+        p[6]           = x[0]*x[1] + 1.0/6.0*x[1]*x[5] + 1.0/3.0*x[2]*x[4] + 1.0/3.0*x[2]*x[5] - 1.0/3.0*x[2] - 1.66666666666667*x[3];
 }
 
     
@@ -11087,10 +11897,10 @@ void dpdx_mtl_nal(void *SS_ref_db, const double *x){
     dp_dx[0][0] = 0.0;      dp_dx[0][1] = 0.0;      dp_dx[0][2] = 0.0;      dp_dx[0][3] = 0.0;      dp_dx[0][4] = 0.0;      dp_dx[0][5] = 1.00;      
     dp_dx[1][0] = 0.0;      dp_dx[1][1] = 0.0;      dp_dx[1][2] = 0.0;      dp_dx[1][3] = 0.0;      dp_dx[1][4] = 1.00;      dp_dx[1][5] = 0.0;      
     dp_dx[2][0] = 1.00;      dp_dx[2][1] = 0.0;      dp_dx[2][2] = 0.0;      dp_dx[2][3] = 0.0;      dp_dx[2][4] = -1.00;      dp_dx[2][5] = -0.833333333333333;      
-    dp_dx[3][0] = -1.00;      dp_dx[3][1] = x[4] + x[5] - 1.0;      dp_dx[3][2] = -x[4] -x[5] + 1.0;      dp_dx[3][3] = 0.0;      dp_dx[3][4] = x[1] -x[2];      dp_dx[3][5] = x[1] -x[2] - 0.166666666666667;      
-    dp_dx[4][0] = -x[1];      dp_dx[4][1] = -x[0] - 0.166666666666667*x[5] + 1.0;      dp_dx[4][2] = -1.0/3.0*x[4] - 1.0/3.0*x[5] + 1.0/3.0;      dp_dx[4][3] = 0.666666666666667;      dp_dx[4][4] = -1.0/3.0*x[2];      dp_dx[4][5] = -0.166666666666667*x[1] - 1.0/3.0*x[2];      
+    dp_dx[3][0] = -1.00;      dp_dx[3][1] = x[4] + x[5] - 1.0;      dp_dx[3][2] = -x[4] -x[5] + 1.0;      dp_dx[3][3] = 0.0;      dp_dx[3][4] = x[1] -x[2];      dp_dx[3][5] = x[1] -x[2] - 1.0/6.0;      
+    dp_dx[4][0] = -x[1];      dp_dx[4][1] = -x[0] - 1.0/6.0*x[5] + 1.0;      dp_dx[4][2] = -1.0/3.0*x[4] - 1.0/3.0*x[5] + 1.0/3.0;      dp_dx[4][3] = 2.0/3.0;      dp_dx[4][4] = -1.0/3.0*x[2];      dp_dx[4][5] = -1.0/6.0*x[1] - 1.0/3.0*x[2];      
     dp_dx[5][0] = 0.0;      dp_dx[5][1] = -x[4] -x[5];      dp_dx[5][2] = x[4] + x[5] - 1.0;      dp_dx[5][3] = 1.00;      dp_dx[5][4] = -x[1] + x[2];      dp_dx[5][5] = -x[1] + x[2];      
-    dp_dx[6][0] = x[1];      dp_dx[6][1] = x[0] + 0.166666666666667*x[5];      dp_dx[6][2] = 1.0/3.0*x[4] + 1.0/3.0*x[5] - 1.0/3.0;      dp_dx[6][3] = -1.66666666666667;      dp_dx[6][4] = 1.0/3.0*x[2];      dp_dx[6][5] = 0.166666666666667*x[1] + 1.0/3.0*x[2];      
+    dp_dx[6][0] = x[1];      dp_dx[6][1] = x[0] + 1.0/6.0*x[5];      dp_dx[6][2] = 1.0/3.0*x[4] + 1.0/3.0*x[5] - 1.0/3.0;      dp_dx[6][3] = -1.66666666666667;      dp_dx[6][4] = 1.0/3.0*x[2];      dp_dx[6][5] = 1.0/6.0*x[1] + 1.0/3.0*x[2];      
 }
 
 
@@ -11204,18 +12014,10 @@ double obj_mtl_g(unsigned n, const double *x, double *grad, void *SS_ref_db){
     double *mu_Gex    = d->mu_Gex;
     double *sf        = d->sf;
     double *mu        = d->mu;
+    double *d_em      = d->d_em;
     px_mtl_g(SS_ref_db,x);
 
-    for (int i = 0; i < n_em; i++){
-        mu_Gex[i] = 0.0;
-        int it    = 0;
-        for (int j = 0; j < d->n_xeos; j++){
-            for (int k = j+1; k < n_em; k++){
-                mu_Gex[i] -= (d->eye[i][j] - d->p[j])*(d->eye[i][k] - d->p[k])*(d->W[it]);
-                it += 1;
-            }
-        }
-    }
+    mu_Gex_sym_n2(d, mu_Gex);
     
     sf[0]          = x[0]*x[1] + 1.0/3.0*x[0]*x[4] - x[0] - x[1]*x[3] - x[1] - 1.0/3.0*x[3]*x[4] + x[3] - 1.0/3.0*x[4] + 1.0;
     sf[1]          = -x[0]*x[1] - 1.0/3.0*x[0]*x[4] + x[0] + x[1]*x[3] + 1.0/3.0*x[3]*x[4] - x[3];
@@ -11227,12 +12029,17 @@ double obj_mtl_g(unsigned n, const double *x, double *grad, void *SS_ref_db){
     sf[7]          = 0.5*x[2] + 0.5*x[4];
     
     
-    mu[0]          = gb[0] + R*T*creal(clog(cpow(sf[0], 3.0)*cpow(sf[4], 2.0))) + mu_Gex[0];
-    mu[1]          = gb[1] + R*T*creal(clog(cpow(sf[1], 3.0)*cpow(sf[4], 2.0))) + mu_Gex[1];
-    mu[2]          = gb[2] + R*T*creal(clog(cpow(sf[2], 3.0)*cpow(sf[4], 2.0))) + mu_Gex[2];
-    mu[3]          = gb[3] + R*T*creal(clog(4.0*cpow(sf[0], 3.0)*sf[5]*sf[7])) + mu_Gex[3];
-    mu[4]          = gb[4] + R*T*creal(clog(4.0*cpow(sf[0], 3.0)*sf[6]*sf[7])) + mu_Gex[4];
-    mu[5]          = gb[5] + R*T*creal(clog(27.0*cpow(sf[0], 2.0)*sf[3]*sf[4]*sf[7])) + mu_Gex[5];
+    double complex cp_0_3p0 = cpow(sf[0], 3.0);
+    double complex cp_4_2p0 = cpow(sf[4], 2.0);
+    double complex cp_1_3p0 = cpow(sf[1], 3.0);
+    double complex cp_2_3p0 = cpow(sf[2], 3.0);
+    double complex cp_0_2p0 = cpow(sf[0], 2.0);
+    mu[0]          = gb[0] + R*T*rlog((cp_0_3p0*cp_4_2p0)) + mu_Gex[0];
+    mu[1]          = gb[1] + R*T*rlog((cp_1_3p0*cp_4_2p0)) + mu_Gex[1];
+    mu[2]          = gb[2] + R*T*rlog((cp_2_3p0*cp_4_2p0 + d_em[2])) + mu_Gex[2];
+    mu[3]          = gb[3] + R*T*rlog((4.0*cp_0_3p0*sf[5]*sf[7])) + mu_Gex[3];
+    mu[4]          = gb[4] + R*T*rlog((4.0*cp_0_3p0*sf[6]*sf[7])) + mu_Gex[4];
+    mu[5]          = gb[5] + R*T*rlog((27.0*cp_0_2p0*sf[3]*sf[4]*sf[7] + d_em[5])) + mu_Gex[5];
     
     d->sum_apep = 0.0;
     for (int i = 0; i < n_em; i++){
@@ -11279,23 +12086,14 @@ double obj_mtl_fp(unsigned n, const double *x, double *grad, void *SS_ref_db){
     double *mu        = d->mu;
     px_mtl_fp(SS_ref_db,x);
 
-    for (int i = 0; i < n_em; i++){
-        mu_Gex[i] = 0.0;
-        int it    = 0;
-        for (int j = 0; j < d->n_xeos; j++){
-            for (int k = j+1; k < n_em; k++){
-                mu_Gex[i] -= (d->eye[i][j] - d->p[j])*(d->eye[i][k] - d->p[k])*(d->W[it]);
-                it += 1;
-            }
-        }
-    }
+    mu_Gex_sym_n2(d, mu_Gex);
     
     sf[0]          = 1.0 - x[0];
     sf[1]          = x[0];
     
     
-    mu[0]          = gb[0] + R*T*creal(clog(sf[0])) + mu_Gex[0];
-    mu[1]          = gb[1] + R*T*creal(clog(sf[1])) + mu_Gex[1];
+    mu[0]          = gb[0] + R*T*rlog((sf[0])) + mu_Gex[0];
+    mu[1]          = gb[1] + R*T*rlog((sf[1])) + mu_Gex[1];
     
     d->sum_apep = 0.0;
     for (int i = 0; i < n_em; i++){
@@ -11340,18 +12138,10 @@ double obj_mtl_mpv(unsigned n, const double *x, double *grad, void *SS_ref_db){
     double *mu_Gex    = d->mu_Gex;
     double *sf        = d->sf;
     double *mu        = d->mu;
+    double *d_em      = d->d_em;
     px_mtl_mpv(SS_ref_db,x);
 
-    for (int i = 0; i < n_em; i++){
-        mu_Gex[i] = 0.0;
-        int it    = 0;
-        for (int j = 0; j < d->n_xeos; j++){
-            for (int k = j+1; k < n_em; k++){
-                mu_Gex[i] -= (d->eye[i][j] - d->p[j])*(d->eye[i][k] - d->p[k])*(d->W[it]);
-                it += 1;
-            }
-        }
-    }
+    mu_Gex_sym_n2(d, mu_Gex);
     
     sf[0]          = x[2];
     sf[1]          = x[0]*x[1] + x[0]*x[2] + x[0]*x[3] - x[0] - x[1] - x[2] - x[3] + 1.0;
@@ -11362,11 +12152,13 @@ double obj_mtl_mpv(unsigned n, const double *x, double *grad, void *SS_ref_db){
     sf[6]          = 1.0 - x[1];
     
     
-    mu[0]          = gb[0] + R*T*creal(clog(sf[1]*sf[6])) + mu_Gex[0];
-    mu[1]          = gb[1] + R*T*creal(clog(sf[2]*sf[6])) + mu_Gex[1];
-    mu[2]          = gb[2] + R*T*creal(clog(sf[0]*sf[6])) + mu_Gex[2];
-    mu[3]          = gb[3] + R*T*creal(clog(sf[4]*sf[5])) + mu_Gex[3];
-    mu[4]          = gb[4] + R*T*creal(clog(2.0*csqrt(sf[3])*csqrt(sf[4])*sf[6])) + mu_Gex[4];
+    mu[0]          = gb[0] + R*T*rlog((sf[1]*sf[6])) + mu_Gex[0];
+    mu[1]          = gb[1] + R*T*rlog((sf[2]*sf[6])) + mu_Gex[1];
+    mu[2]          = gb[2] + R*T*rlog((sf[0]*sf[6] + d_em[2])) + mu_Gex[2];
+    mu[3]          = gb[3] + R*T*rlog((sf[4]*sf[5])) + mu_Gex[3];
+    double complex cs_3 = csqrt(sf[3]);
+    double complex cs_4 = csqrt(sf[4]);
+    mu[4]          = gb[4] + R*T*rlog((2.0*cs_3*cs_4*sf[6] + d_em[4])) + mu_Gex[4];
     
     d->sum_apep = 0.0;
     for (int i = 0; i < n_em; i++){
@@ -11411,18 +12203,10 @@ double obj_mtl_cpv(unsigned n, const double *x, double *grad, void *SS_ref_db){
     double *mu_Gex    = d->mu_Gex;
     double *sf        = d->sf;
     double *mu        = d->mu;
+    double *d_em      = d->d_em;
     px_mtl_cpv(SS_ref_db,x);
 
-    for (int i = 0; i < n_em; i++){
-        mu_Gex[i] = 0.0;
-        int it    = 0;
-        for (int j = 0; j < d->n_xeos; j++){
-            for (int k = j+1; k < n_em; k++){
-                mu_Gex[i] -= (d->eye[i][j] - d->p[j])*(d->eye[i][k] - d->p[k])*(d->W[it]);
-                it += 1;
-            }
-        }
-    }
+    mu_Gex_sym_n2(d, mu_Gex);
     
     sf[0]          = x[2];
     sf[1]          = x[0]*x[1] + x[0]*x[2] + x[0]*x[3] - x[0] - x[1] - x[2] - x[3] + 1.0;
@@ -11433,11 +12217,13 @@ double obj_mtl_cpv(unsigned n, const double *x, double *grad, void *SS_ref_db){
     sf[6]          = 1.0 - x[1];
     
     
-    mu[0]          = gb[0] + R*T*creal(clog(sf[1]*sf[6])) + mu_Gex[0];
-    mu[1]          = gb[1] + R*T*creal(clog(sf[2]*sf[6])) + mu_Gex[1];
-    mu[2]          = gb[2] + R*T*creal(clog(sf[0]*sf[6])) + mu_Gex[2];
-    mu[3]          = gb[3] + R*T*creal(clog(sf[4]*sf[5])) + mu_Gex[3];
-    mu[4]          = gb[4] + R*T*creal(clog(2.0*csqrt(sf[3])*csqrt(sf[4])*sf[6])) + mu_Gex[4];
+    mu[0]          = gb[0] + R*T*rlog((sf[1]*sf[6])) + mu_Gex[0];
+    mu[1]          = gb[1] + R*T*rlog((sf[2]*sf[6])) + mu_Gex[1];
+    mu[2]          = gb[2] + R*T*rlog((sf[0]*sf[6] + d_em[2])) + mu_Gex[2];
+    mu[3]          = gb[3] + R*T*rlog((sf[4]*sf[5])) + mu_Gex[3];
+    double complex cs_3 = csqrt(sf[3]);
+    double complex cs_4 = csqrt(sf[4]);
+    mu[4]          = gb[4] + R*T*rlog((2.0*cs_3*cs_4*sf[6] + d_em[4])) + mu_Gex[4];
     
     d->sum_apep = 0.0;
     for (int i = 0; i < n_em; i++){
@@ -11484,16 +12270,7 @@ double obj_mtl_crn(unsigned n, const double *x, double *grad, void *SS_ref_db){
     double *mu        = d->mu;
     px_mtl_crn(SS_ref_db,x);
 
-    for (int i = 0; i < n_em; i++){
-        mu_Gex[i] = 0.0;
-        int it    = 0;
-        for (int j = 0; j < d->n_xeos; j++){
-            for (int k = j+1; k < n_em; k++){
-                mu_Gex[i] -= (d->eye[i][j] - d->p[j])*(d->eye[i][k] - d->p[k])*(d->W[it]);
-                it += 1;
-            }
-        }
-    }
+    mu_Gex_sym_n2(d, mu_Gex);
     
     sf[0]          = x[0]*x[1] - x[0] - x[1] + 1.0;
     sf[1]          = -x[0]*x[1] + x[0];
@@ -11502,9 +12279,9 @@ double obj_mtl_crn(unsigned n, const double *x, double *grad, void *SS_ref_db){
     sf[4]          = 1.0 - x[1];
     
     
-    mu[0]          = gb[0] + R*T*creal(clog(sf[2]*sf[3])) + mu_Gex[0];
-    mu[1]          = gb[1] + R*T*creal(clog(sf[0]*sf[4])) + mu_Gex[1];
-    mu[2]          = gb[2] + R*T*creal(clog(sf[1]*sf[4])) + mu_Gex[2];
+    mu[0]          = gb[0] + R*T*rlog((sf[2]*sf[3])) + mu_Gex[0];
+    mu[1]          = gb[1] + R*T*rlog((sf[0]*sf[4])) + mu_Gex[1];
+    mu[2]          = gb[2] + R*T*rlog((sf[1]*sf[4])) + mu_Gex[2];
     
     d->sum_apep = 0.0;
     for (int i = 0; i < n_em; i++){
@@ -11549,18 +12326,10 @@ double obj_mtl_cf(unsigned n, const double *x, double *grad, void *SS_ref_db){
     double *mu_Gex    = d->mu_Gex;
     double *sf        = d->sf;
     double *mu        = d->mu;
+    double *d_em      = d->d_em;
     px_mtl_cf(SS_ref_db,x);
 
-    for (int i = 0; i < n_em; i++){
-        mu_Gex[i] = 0.0;
-        int it    = 0;
-        for (int j = 0; j < d->n_xeos; j++){
-            for (int k = j+1; k < n_em; k++){
-                mu_Gex[i] -= (d->eye[i][j] - d->p[j])*(d->eye[i][k] - d->p[k])*(d->W[it]);
-                it += 1;
-            }
-        }
-    }
+    mu_Gex_sym_n2(d, mu_Gex);
     
     sf[0]          = x[3];
     sf[1]          = x[1]*x[3] + x[1]*x[4] - x[1] + x[2]*x[3] + x[2]*x[4] - x[2] - x[3] - x[4] + 1.0;
@@ -11572,12 +12341,16 @@ double obj_mtl_cf(unsigned n, const double *x, double *grad, void *SS_ref_db){
     sf[7]          = 0.5*x[0] + 0.5*x[4];
     
     
-    mu[0]          = gb[0] + R*T*creal(clog(sf[1]*sf[6])) + mu_Gex[0];
-    mu[1]          = gb[1] + R*T*creal(clog(sf[0]*sf[6])) + mu_Gex[1];
-    mu[2]          = gb[2] + R*T*creal(clog(2.0*sf[1]*csqrt(sf[4])*csqrt(sf[7]))) + mu_Gex[2];
-    mu[3]          = gb[3] + R*T*creal(clog(2.0*sf[2]*csqrt(sf[5])*csqrt(sf[7]))) + mu_Gex[3];
-    mu[4]          = gb[4] + R*T*creal(clog(2.0*sf[2]*csqrt(sf[4])*csqrt(sf[7]))) + mu_Gex[4];
-    mu[5]          = gb[5] + R*T*creal(clog(2.0*sf[3]*csqrt(sf[6])*csqrt(sf[7]))) + mu_Gex[5];
+    mu[0]          = gb[0] + R*T*rlog((sf[1]*sf[6])) + mu_Gex[0];
+    mu[1]          = gb[1] + R*T*rlog((sf[0]*sf[6] + d_em[1])) + mu_Gex[1];
+    double complex cs_4 = csqrt(sf[4]);
+    double complex cs_7 = csqrt(sf[7]);
+    double complex cs_5 = csqrt(sf[5]);
+    double complex cs_6 = csqrt(sf[6]);
+    mu[2]          = gb[2] + R*T*rlog((2.0*sf[1]*cs_4*cs_7)) + mu_Gex[2];
+    mu[3]          = gb[3] + R*T*rlog((2.0*sf[2]*cs_5*cs_7)) + mu_Gex[3];
+    mu[4]          = gb[4] + R*T*rlog((2.0*sf[2]*cs_4*cs_7)) + mu_Gex[4];
+    mu[5]          = gb[5] + R*T*rlog((2.0*sf[3]*cs_6*cs_7 + d_em[5])) + mu_Gex[5];
     
     d->sum_apep = 0.0;
     for (int i = 0; i < n_em; i++){
@@ -11622,18 +12395,10 @@ double obj_mtl_nal(unsigned n, const double *x, double *grad, void *SS_ref_db){
     double *mu_Gex    = d->mu_Gex;
     double *sf        = d->sf;
     double *mu        = d->mu;
+    double *d_em      = d->d_em;
     px_mtl_nal(SS_ref_db,x);
 
-    for (int i = 0; i < n_em; i++){
-        mu_Gex[i] = 0.0;
-        int it    = 0;
-        for (int j = 0; j < d->n_xeos; j++){
-            for (int k = j+1; k < n_em; k++){
-                mu_Gex[i] -= (d->eye[i][j] - d->p[j])*(d->eye[i][k] - d->p[k])*(d->W[it]);
-                it += 1;
-            }
-        }
-    }
+    mu_Gex_sym_n2(d, mu_Gex);
     
     sf[0]          = x[4];
     sf[1]          = x[1]*x[4] + x[1]*x[5] - x[1] - x[2]*x[4] - x[2]*x[5] + x[2] - x[4] - x[5] + 1.0;
@@ -11641,19 +12406,27 @@ double obj_mtl_nal(unsigned n, const double *x, double *grad, void *SS_ref_db){
     sf[3]          = x[5];
     sf[4]          = -x[1] + x[3] + 1.0;
     sf[5]          = x[1] - x[3];
-    sf[6]          = 0.5*x[0]*x[1] - 0.5*x[0] + 0.0833333333333333*x[1]*x[5] - 0.5*x[1] + 0.166666666666667*x[2]*x[4] + 0.166666666666667*x[2]*x[5] - 0.166666666666667*x[2] - 1.0/3.0*x[3] - 0.0833333333333333*x[5] + 0.5;
-    sf[7]          = -0.5*x[0]*x[1] - 0.0833333333333333*x[1]*x[5] + 0.5*x[1] - 0.166666666666667*x[2]*x[4] - 0.166666666666667*x[2]*x[5] + 0.166666666666667*x[2] + 1.0/3.0*x[3];
+    sf[6]          = 0.5*x[0]*x[1] - 0.5*x[0] + 0.0833333333333333*x[1]*x[5] - 0.5*x[1] + 1.0/6.0*x[2]*x[4] + 1.0/6.0*x[2]*x[5] - 1.0/6.0*x[2] - 1.0/3.0*x[3] - 0.0833333333333333*x[5] + 0.5;
+    sf[7]          = -0.5*x[0]*x[1] - 0.0833333333333333*x[1]*x[5] + 0.5*x[1] - 1.0/6.0*x[2]*x[4] - 1.0/6.0*x[2]*x[5] + 1.0/6.0*x[2] + 1.0/3.0*x[3];
     sf[8]          = x[0];
     sf[9]          = -0.5*x[0] + 0.0833333333333333*x[5] + 0.5;
     
     
-    mu[0]          = gb[0] + R*T*creal(clog(3.8639000000000001*sf[3]*cpow(sf[4], 2.0)*cpow(sf[8], 2.5)*csqrt(sf[9]))) + mu_Gex[0];
-    mu[1]          = gb[1] + R*T*creal(clog(sf[0]*cpow(sf[4], 2.0)*cpow(sf[8], 3.0))) + mu_Gex[1];
-    mu[2]          = gb[2] + R*T*creal(clog(sf[1]*cpow(sf[4], 2.0)*cpow(sf[8], 3.0))) + mu_Gex[2];
-    mu[3]          = gb[3] + R*T*creal(clog(8.0*sf[1]*cpow(sf[4], 2.0)*cpow(sf[6], 1.5)*cpow(sf[9], 1.5))) + mu_Gex[3];
-    mu[4]          = gb[4] + R*T*creal(clog(8.0*sf[2]*cpow(sf[5], 2.0)*cpow(sf[7], 1.5)*cpow(sf[9], 1.5))) + mu_Gex[4];
-    mu[5]          = gb[5] + R*T*creal(clog(8.0*sf[2]*cpow(sf[4], 2.0)*cpow(sf[6], 1.5)*cpow(sf[9], 1.5))) + mu_Gex[5];
-    mu[6]          = gb[6] + R*T*creal(clog(8.0*sf[2]*cpow(sf[5], 2.0)*cpow(sf[6], 1.5)*cpow(sf[9], 1.5))) + mu_Gex[6];
+    double complex cp_4_2p0 = cpow(sf[4], 2.0);
+    double complex cp_8_2p5 = cpow(sf[8], 2.5);
+    double complex cp_8_3p0 = cpow(sf[8], 3.0);
+    double complex cp_6_1p5 = cpow(sf[6], 1.5);
+    double complex cp_9_1p5 = cpow(sf[9], 1.5);
+    double complex cp_5_2p0 = cpow(sf[5], 2.0);
+    double complex cp_7_1p5 = cpow(sf[7], 1.5);
+    double complex cs_9 = csqrt(sf[9]);
+    mu[0]          = gb[0] + R*T*rlog((3.8639000000000001*sf[3]*cp_4_2p0*cp_8_2p5*cs_9 + d_em[0])) + mu_Gex[0];
+    mu[1]          = gb[1] + R*T*rlog((sf[0]*cp_4_2p0*cp_8_3p0 + d_em[1])) + mu_Gex[1];
+    mu[2]          = gb[2] + R*T*rlog((sf[1]*cp_4_2p0*cp_8_3p0)) + mu_Gex[2];
+    mu[3]          = gb[3] + R*T*rlog((8.0*sf[1]*cp_4_2p0*cp_6_1p5*cp_9_1p5)) + mu_Gex[3];
+    mu[4]          = gb[4] + R*T*rlog((8.0*sf[2]*cp_5_2p0*cp_7_1p5*cp_9_1p5)) + mu_Gex[4];
+    mu[5]          = gb[5] + R*T*rlog((8.0*sf[2]*cp_4_2p0*cp_6_1p5*cp_9_1p5)) + mu_Gex[5];
+    mu[6]          = gb[6] + R*T*rlog((8.0*sf[2]*cp_5_2p0*cp_6_1p5*cp_9_1p5)) + mu_Gex[6];
     
     d->sum_apep = 0.0;
     for (int i = 0; i < n_em; i++){
@@ -11700,16 +12473,7 @@ double obj_mtl_aki(unsigned n, const double *x, double *grad, void *SS_ref_db){
     double *mu        = d->mu;
     px_mtl_aki(SS_ref_db,x);
 
-    for (int i = 0; i < n_em; i++){
-        mu_Gex[i] = 0.0;
-        int it    = 0;
-        for (int j = 0; j < d->n_xeos; j++){
-            for (int k = j+1; k < n_em; k++){
-                mu_Gex[i] -= (d->eye[i][j] - d->p[j])*(d->eye[i][k] - d->p[k])*(d->W[it]);
-                it += 1;
-            }
-        }
-    }
+    mu_Gex_sym_n2(d, mu_Gex);
     
     sf[0]          = x[1];
     sf[1]          = x[0]*x[1] - x[0] - x[1] + 1.0;
@@ -11718,9 +12482,14 @@ double obj_mtl_aki(unsigned n, const double *x, double *grad, void *SS_ref_db){
     sf[4]          = 1.0 - x[1];
     
     
-    mu[0]          = gb[0] + R*T*creal(clog(csqrt(sf[0])*csqrt(sf[3]))) + mu_Gex[0];
-    mu[1]          = gb[1] + R*T*creal(clog(csqrt(sf[1])*csqrt(sf[4]))) + mu_Gex[1];
-    mu[2]          = gb[2] + R*T*creal(clog(csqrt(sf[2])*csqrt(sf[4]))) + mu_Gex[2];
+    double complex cs_0 = csqrt(sf[0]);
+    double complex cs_3 = csqrt(sf[3]);
+    double complex cs_1 = csqrt(sf[1]);
+    double complex cs_4 = csqrt(sf[4]);
+    double complex cs_2 = csqrt(sf[2]);
+    mu[0]          = gb[0] + R*T*rlog((cs_0*cs_3)) + mu_Gex[0];
+    mu[1]          = gb[1] + R*T*rlog((cs_1*cs_4)) + mu_Gex[1];
+    mu[2]          = gb[2] + R*T*rlog((cs_2*cs_4)) + mu_Gex[2];
     
     d->sum_apep = 0.0;
     for (int i = 0; i < n_em; i++){
@@ -11767,23 +12536,16 @@ double obj_mtl_ol(unsigned n, const double *x, double *grad, void *SS_ref_db){
     double *mu        = d->mu;
     px_mtl_ol(SS_ref_db,x);
 
-    for (int i = 0; i < n_em; i++){
-        mu_Gex[i] = 0.0;
-        int it    = 0;
-        for (int j = 0; j < d->n_xeos; j++){
-            for (int k = j+1; k < n_em; k++){
-                mu_Gex[i] -= (d->eye[i][j] - d->p[j])*(d->eye[i][k] - d->p[k])*(d->W[it]);
-                it += 1;
-            }
-        }
-    }
+    mu_Gex_sym_n2(d, mu_Gex);
     
     sf[0]          = 1.0 - x[0];
     sf[1]          = x[0];
     
     
-    mu[0]          = gb[0] + R*T*creal(clog(cpow(sf[0], 2.0))) + mu_Gex[0];
-    mu[1]          = gb[1] + R*T*creal(clog(cpow(sf[1], 2.0))) + mu_Gex[1];
+    double complex cp_0_2p0 = cpow(sf[0], 2.0);
+    double complex cp_1_2p0 = cpow(sf[1], 2.0);
+    mu[0]          = gb[0] + R*T*rlog((cp_0_2p0)) + mu_Gex[0];
+    mu[1]          = gb[1] + R*T*rlog((cp_1_2p0)) + mu_Gex[1];
     
     d->sum_apep = 0.0;
     for (int i = 0; i < n_em; i++){
@@ -11830,23 +12592,16 @@ double obj_mtl_wad(unsigned n, const double *x, double *grad, void *SS_ref_db){
     double *mu        = d->mu;
     px_mtl_wad(SS_ref_db,x);
 
-    for (int i = 0; i < n_em; i++){
-        mu_Gex[i] = 0.0;
-        int it    = 0;
-        for (int j = 0; j < d->n_xeos; j++){
-            for (int k = j+1; k < n_em; k++){
-                mu_Gex[i] -= (d->eye[i][j] - d->p[j])*(d->eye[i][k] - d->p[k])*(d->W[it]);
-                it += 1;
-            }
-        }
-    }
+    mu_Gex_sym_n2(d, mu_Gex);
     
     sf[0]          = 1.0 - x[0];
     sf[1]          = x[0];
     
     
-    mu[0]          = gb[0] + R*T*creal(clog(cpow(sf[0], 2.0))) + mu_Gex[0];
-    mu[1]          = gb[1] + R*T*creal(clog(cpow(sf[1], 2.0))) + mu_Gex[1];
+    double complex cp_0_2p0 = cpow(sf[0], 2.0);
+    double complex cp_1_2p0 = cpow(sf[1], 2.0);
+    mu[0]          = gb[0] + R*T*rlog((cp_0_2p0)) + mu_Gex[0];
+    mu[1]          = gb[1] + R*T*rlog((cp_1_2p0)) + mu_Gex[1];
     
     d->sum_apep = 0.0;
     for (int i = 0; i < n_em; i++){
@@ -11893,23 +12648,16 @@ double obj_mtl_ring(unsigned n, const double *x, double *grad, void *SS_ref_db){
     double *mu        = d->mu;
     px_mtl_ring(SS_ref_db,x);
 
-    for (int i = 0; i < n_em; i++){
-        mu_Gex[i] = 0.0;
-        int it    = 0;
-        for (int j = 0; j < d->n_xeos; j++){
-            for (int k = j+1; k < n_em; k++){
-                mu_Gex[i] -= (d->eye[i][j] - d->p[j])*(d->eye[i][k] - d->p[k])*(d->W[it]);
-                it += 1;
-            }
-        }
-    }
+    mu_Gex_sym_n2(d, mu_Gex);
     
     sf[0]          = 1.0 - x[0];
     sf[1]          = x[0];
     
     
-    mu[0]          = gb[0] + R*T*creal(clog(cpow(sf[0], 2.0))) + mu_Gex[0];
-    mu[1]          = gb[1] + R*T*creal(clog(cpow(sf[1], 2.0))) + mu_Gex[1];
+    double complex cp_0_2p0 = cpow(sf[0], 2.0);
+    double complex cp_1_2p0 = cpow(sf[1], 2.0);
+    mu[0]          = gb[0] + R*T*rlog((cp_0_2p0)) + mu_Gex[0];
+    mu[1]          = gb[1] + R*T*rlog((cp_1_2p0)) + mu_Gex[1];
     
     d->sum_apep = 0.0;
     for (int i = 0; i < n_em; i++){
@@ -11955,6 +12703,7 @@ double obj_mtl_cpx(unsigned n, const double *x, double *grad, void *SS_ref_db){
     double *mu_Gex    = d->mu_Gex;
     double *sf        = d->sf;
     double *mu        = d->mu;
+    double *d_em      = d->d_em;
     px_mtl_cpx(SS_ref_db,x);
 
     d->sum_v = 0.0;
@@ -11965,16 +12714,7 @@ double obj_mtl_cpx(unsigned n, const double *x, double *grad, void *SS_ref_db){
         d->mat_phi[i] = (d->p[i]*d->v[i])/d->sum_v;
     }
     
-    for (int i = 0; i < d->n_em; i++){
-        mu_Gex[i] = 0.0;
-        int it = 0;
-        for (int j = 0; j < d->n_xeos; j++){
-            for (int k = j+1; k < d->n_em; k++){
-                mu_Gex[i] -= (d->eye[i][j] - d->mat_phi[j])*(d->eye[i][k] - d->mat_phi[k])*(d->W[it]*2.0*d->v[i]/(d->v[j]+d->v[k]));
-                it += 1;
-            }
-        }
-    }
+    mu_Gex_asym_n2(d, mu_Gex);
     
     sf[0]          = x[0]*x[1] + x[0]*x[3] - x[0] + x[1]*x[4] - x[1] + x[3]*x[4] - x[3] - x[4] + 1.0;
     sf[1]          = -x[0]*x[1] - x[0]*x[3] + x[0] - x[1]*x[4] - x[3]*x[4] + x[4];
@@ -11987,12 +12727,15 @@ double obj_mtl_cpx(unsigned n, const double *x, double *grad, void *SS_ref_db){
     sf[8]          = 0.5*x[1];
     
     
-    mu[0]          = gb[0] + R*T*creal(clog(sf[0]*sf[5]*csqrt(sf[7]))) + mu_Gex[0];
-    mu[1]          = gb[1] + R*T*creal(clog(sf[1]*sf[4]*csqrt(sf[7]))) + mu_Gex[1];
-    mu[2]          = gb[2] + R*T*creal(clog(1.4141999999999999*sf[2]*sf[5]*cpow(sf[7], 0.25)*cpow(sf[8], 0.25))) + mu_Gex[2];
-    mu[3]          = gb[3] + R*T*creal(clog(sf[2]*sf[6]*csqrt(sf[7]))) + mu_Gex[3];
-    mu[4]          = gb[4] + R*T*creal(clog(sf[0]*sf[3]*csqrt(sf[7]))) + mu_Gex[4];
-    mu[5]          = gb[5] + R*T*creal(clog(sf[0]*sf[4]*csqrt(sf[7]))) + mu_Gex[5];
+    double complex cp_7_0p25 = cpow(sf[7], 0.25);
+    double complex cp_8_0p25 = cpow(sf[8], 0.25);
+    double complex cs_7 = csqrt(sf[7]);
+    mu[0]          = gb[0] + R*T*rlog((sf[0]*sf[5]*cs_7)) + mu_Gex[0];
+    mu[1]          = gb[1] + R*T*rlog((sf[1]*sf[4]*cs_7)) + mu_Gex[1];
+    mu[2]          = gb[2] + R*T*rlog((1.4142*sf[2]*sf[5]*cp_7_0p25*cp_8_0p25)) + mu_Gex[2];
+    mu[3]          = gb[3] + R*T*rlog((sf[2]*sf[6]*cs_7 + d_em[3])) + mu_Gex[3];
+    mu[4]          = gb[4] + R*T*rlog((sf[0]*sf[3]*cs_7)) + mu_Gex[4];
+    mu[5]          = gb[5] + R*T*rlog((sf[0]*sf[4]*cs_7)) + mu_Gex[5];
     
     d->sum_apep = 0.0;
     for (int i = 0; i < n_em; i++){
@@ -12005,6 +12748,9 @@ double obj_mtl_cpx(unsigned n, const double *x, double *grad, void *SS_ref_db){
         d->df_raw += mu[i]*d->p[i];
     }
     d->df = d->df_raw * d->factor;
+    for (int k = 0; k < n_em; k++){
+        d->df += d->ox_penalty[k] * d->p[k] * d->p[k];
+    }
 
     if (grad){
         double *dfx    = d->dfx;
@@ -12014,6 +12760,7 @@ double obj_mtl_cpx(unsigned n, const double *x, double *grad, void *SS_ref_db){
             dfx[i] = 0.0;
             for (int j = 0; j < n_em; j++){
                 dfx[i] += (mu[j] - (d->ape[j]/d->sum_apep)*d->df_raw)*d->factor*dp_dx[j][i];
+                dfx[i] += d->ox_penalty[j]*2.0*d->p[j]*dp_dx[j][i];
             }
             grad[i] = creal(dfx[i]);
         }
@@ -12038,6 +12785,7 @@ double obj_mtl_opx(unsigned n, const double *x, double *grad, void *SS_ref_db){
     double *mu_Gex    = d->mu_Gex;
     double *sf        = d->sf;
     double *mu        = d->mu;
+    double *d_em      = d->d_em;
     px_mtl_opx(SS_ref_db,x);
 
     d->sum_v = 0.0;
@@ -12048,16 +12796,7 @@ double obj_mtl_opx(unsigned n, const double *x, double *grad, void *SS_ref_db){
         d->mat_phi[i] = (d->p[i]*d->v[i])/d->sum_v;
     }
     
-    for (int i = 0; i < d->n_em; i++){
-        mu_Gex[i] = 0.0;
-        int it = 0;
-        for (int j = 0; j < d->n_xeos; j++){
-            for (int k = j+1; k < d->n_em; k++){
-                mu_Gex[i] -= (d->eye[i][j] - d->mat_phi[j])*(d->eye[i][k] - d->mat_phi[k])*(d->W[it]*2.0*d->v[i]/(d->v[j]+d->v[k]));
-                it += 1;
-            }
-        }
-    }
+    mu_Gex_asym_n2(d, mu_Gex);
     
     sf[0]          = x[0]*x[1] + x[0]*x[2] - x[0] - x[1] + 0.5*x[3] + 1.0;
     sf[1]          = -x[0]*x[1] - x[0]*x[2] + x[0] - 0.5*x[3];
@@ -12069,11 +12808,14 @@ double obj_mtl_opx(unsigned n, const double *x, double *grad, void *SS_ref_db){
     sf[7]          = 0.5*x[1];
     
     
-    mu[0]          = gb[0] + R*T*creal(clog(sf[0]*sf[4]*csqrt(sf[6]))) + mu_Gex[0];
-    mu[1]          = gb[1] + R*T*creal(clog(sf[1]*sf[5]*csqrt(sf[6]))) + mu_Gex[1];
-    mu[2]          = gb[2] + R*T*creal(clog(sf[0]*sf[5]*csqrt(sf[6]))) + mu_Gex[2];
-    mu[3]          = gb[3] + R*T*creal(clog(sf[0]*sf[3]*csqrt(sf[6]))) + mu_Gex[3];
-    mu[4]          = gb[4] + R*T*creal(clog(1.4141999999999999*sf[2]*sf[4]*cpow(sf[6], 0.25)*cpow(sf[7], 0.25))) + mu_Gex[4];
+    double complex cp_6_0p25 = cpow(sf[6], 0.25);
+    double complex cp_7_0p25 = cpow(sf[7], 0.25);
+    double complex cs_6 = csqrt(sf[6]);
+    mu[0]          = gb[0] + R*T*rlog((sf[0]*sf[4]*cs_6)) + mu_Gex[0];
+    mu[1]          = gb[1] + R*T*rlog((sf[1]*sf[5]*cs_6)) + mu_Gex[1];
+    mu[2]          = gb[2] + R*T*rlog((sf[0]*sf[5]*cs_6)) + mu_Gex[2];
+    mu[3]          = gb[3] + R*T*rlog((sf[0]*sf[3]*cs_6 + d_em[3])) + mu_Gex[3];
+    mu[4]          = gb[4] + R*T*rlog((1.4142*sf[2]*sf[4]*cp_6_0p25*cp_7_0p25)) + mu_Gex[4];
     
     d->sum_apep = 0.0;
     for (int i = 0; i < n_em; i++){
@@ -12119,6 +12861,7 @@ double obj_mtl_hpx(unsigned n, const double *x, double *grad, void *SS_ref_db){
     double *mu_Gex    = d->mu_Gex;
     double *sf        = d->sf;
     double *mu        = d->mu;
+    double *d_em      = d->d_em;
     px_mtl_hpx(SS_ref_db,x);
 
     d->sum_v = 0.0;
@@ -12129,16 +12872,7 @@ double obj_mtl_hpx(unsigned n, const double *x, double *grad, void *SS_ref_db){
         d->mat_phi[i] = (d->p[i]*d->v[i])/d->sum_v;
     }
     
-    for (int i = 0; i < d->n_em; i++){
-        mu_Gex[i] = 0.0;
-        int it = 0;
-        for (int j = 0; j < d->n_xeos; j++){
-            for (int k = j+1; k < d->n_em; k++){
-                mu_Gex[i] -= (d->eye[i][j] - d->mat_phi[j])*(d->eye[i][k] - d->mat_phi[k])*(d->W[it]*2.0*d->v[i]/(d->v[j]+d->v[k]));
-                it += 1;
-            }
-        }
-    }
+    mu_Gex_asym_n2(d, mu_Gex);
     
     sf[0]          = x[0]*x[1] + x[0]*x[2] - x[0] - x[1] + 0.5*x[3] + 1.0;
     sf[1]          = -x[0]*x[1] - x[0]*x[2] + x[0] - 0.5*x[3];
@@ -12149,11 +12883,14 @@ double obj_mtl_hpx(unsigned n, const double *x, double *grad, void *SS_ref_db){
     sf[6]          = 1.0 - 0.5*x[1];
     sf[7]          = 0.5*x[1];
     
-    mu[0]          = gb[0] + R*T*creal(clog(sf[0]*sf[4]*csqrt(sf[6]))) + mu_Gex[0];
-    mu[1]          = gb[1] + R*T*creal(clog(sf[1]*sf[5]*csqrt(sf[6]))) + mu_Gex[1];
-    mu[2]          = gb[2] + R*T*creal(clog(sf[0]*sf[5]*csqrt(sf[6]))) + mu_Gex[2];
-    mu[3]          = gb[3] + R*T*creal(clog(sf[0]*sf[3]*csqrt(sf[6]))) + mu_Gex[3];
-    mu[4]          = gb[4] + R*T*creal(clog(1.4142*sf[2]*sf[4]*cpow(sf[6], 0.25)*cpow(sf[7], 0.25))) + mu_Gex[4];
+    double complex cp_6_0p25 = cpow(sf[6], 0.25);
+    double complex cp_7_0p25 = cpow(sf[7], 0.25);
+    double complex cs_6 = csqrt(sf[6]);
+    mu[0]          = gb[0] + R*T*rlog((sf[0]*sf[4]*cs_6)) + mu_Gex[0];
+    mu[1]          = gb[1] + R*T*rlog((sf[1]*sf[5]*cs_6)) + mu_Gex[1];
+    mu[2]          = gb[2] + R*T*rlog((sf[0]*sf[5]*cs_6)) + mu_Gex[2];
+    mu[3]          = gb[3] + R*T*rlog((sf[0]*sf[3]*cs_6 + d_em[3])) + mu_Gex[3];
+    mu[4]          = gb[4] + R*T*rlog((1.4142*sf[2]*sf[4]*cp_6_0p25*cp_7_0p25)) + mu_Gex[4];
     
     d->sum_apep = 0.0;
     for (int i = 0; i < n_em; i++){
@@ -12216,9 +12953,21 @@ void dpdx_mpe_fsp(void *SS_ref_db, const double *x){
     SS_ref *d  = (SS_ref *) SS_ref_db;
     double **dp_dx = d->dp_dx;
 
-    dp_dx[0][0] = -1.0;      dp_dx[0][1] = -1.0;      
-    dp_dx[1][0] = 1.0;      dp_dx[1][1] = 0.0;      
-    dp_dx[2][0] = 0.0;      dp_dx[2][1] = 1.0;      
+    dp_dx[0][0] = -1.0;      dp_dx[0][1] = -1.0;
+    dp_dx[1][0] = 1.0;      dp_dx[1][1] = 0.0;
+    dp_dx[2][0] = 0.0;      dp_dx[2][1] = 1.0;
+}
+
+/**
+    Update dpdx matrix of plc_mpe - same p() formulas as fsp (p=[1-ca-k, ca, k]).
+*/
+void dpdx_mpe_plc(void *SS_ref_db, const double *x){
+    SS_ref *d  = (SS_ref *) SS_ref_db;
+    double **dp_dx = d->dp_dx;
+
+    dp_dx[0][0] = -1.0;      dp_dx[0][1] = -1.0;
+    dp_dx[1][0] = 1.0;       dp_dx[1][1] = 0.0;
+    dp_dx[2][0] = 0.0;       dp_dx[2][1] = 1.0;
 }
 
 
@@ -12259,6 +13008,15 @@ void dpdx_mpe_g(void *SS_ref_db, const double *x){
 /**
     Update dpdx matrix of ep_mp
 */
+void dpdx_mpe_scp(void *SS_ref_db, const double *x){
+    SS_ref *d  = (SS_ref *) SS_ref_db;
+    double **dp_dx = d->dp_dx;
+
+    dp_dx[0][0] = -1.0;      dp_dx[0][1] = -2.0/3.0;      
+    dp_dx[1][0] = 1.0;      dp_dx[1][1] = -1.0/3.0;      
+    dp_dx[2][0] = 0.0;      dp_dx[2][1] = 1.0;      
+}
+
 void dpdx_mpe_ep(void *SS_ref_db, const double *x){
     SS_ref *d  = (SS_ref *) SS_ref_db;
     double **dp_dx = d->dp_dx;
@@ -12532,6 +13290,19 @@ void dpdx_mpe_dio(void *SS_ref_db, const double *x){
 }
 
 
+
+/**
+    Update dpdx matrix of carp
+*/
+void dpdx_mpe_carp(void *SS_ref_db, const double *x){
+    SS_ref *d  = (SS_ref *) SS_ref_db;
+    double **dp_dx = d->dp_dx;
+
+    dp_dx[0][0] = 1.0;      
+    dp_dx[1][0] = -1.0;      
+}
+
+
 /**
     Endmember to xeos for bi_mp
 */
@@ -12622,6 +13393,22 @@ void p2x_mpe_ctd(void *SS_ref_db, double eps){
 /**
     Endmember to xeos for ep_mp
 */
+void p2x_mpe_scp(void *SS_ref_db, double eps){
+    SS_ref *d  = (SS_ref *) SS_ref_db;
+    
+    d->iguess[1]   =  d->p[2];
+    d->iguess[0]   =  d->p[1] + d->iguess[1]/3.0;
+    
+    for (int i = 0; i < d->n_xeos; i++){
+        if (d->iguess[i] < d->bounds[i][0]){
+            d->iguess[i] = d->bounds[i][0];
+        }
+        if (d->iguess[i] > d->bounds[i][1]){
+            d->iguess[i] = d->bounds[i][1];
+        }
+    }
+}
+
 void p2x_mpe_ep(void *SS_ref_db, double eps){
     SS_ref *d  = (SS_ref *) SS_ref_db;
     
@@ -12814,10 +13601,29 @@ void p2x_mpe_opx(void *SS_ref_db, double eps){
 */
 void p2x_mpe_fsp(void *SS_ref_db, double eps){
     SS_ref *d  = (SS_ref *) SS_ref_db;
-    
+
     d->iguess[1]   = d->p[2];
     d->iguess[0]  = d->p[1];
-    
+
+    for (int i = 0; i < d->n_xeos; i++){
+        if (d->iguess[i] < d->bounds[i][0]){
+            d->iguess[i] = d->bounds[i][0];
+        }
+        if (d->iguess[i] > d->bounds[i][1]){
+            d->iguess[i] = d->bounds[i][1];
+        }
+    }
+}
+
+/**
+    Endmember to xeos for plc_mpe
+*/
+void p2x_mpe_plc(void *SS_ref_db, double eps){
+    SS_ref *d  = (SS_ref *) SS_ref_db;
+
+    d->iguess[1]   = d->p[2];
+    d->iguess[0]  = d->p[1];
+
     for (int i = 0; i < d->n_xeos; i++){
         if (d->iguess[i] < d->bounds[i][0]){
             d->iguess[i] = d->bounds[i][0];
@@ -12986,105 +13792,44 @@ void p2x_mpe_dio(void *SS_ref_db, double eps){
 /**
     Endmember to xeos for amp
 */
-void p2x_mpe_amp(void *SS_ref_db, double eps) {
-    SS_ref *d = (SS_ref *) SS_ref_db;
+void p2x_mpe_amp(void *SS_ref_db, double eps){
+	SS_ref *d  = (SS_ref *) SS_ref_db;
+	double *p  = d->p;
 
-    // Common denominator for x, Q1, Q2
-    double denom_x_Q1 =  4.0 * d->p[3] + 3.0 * d->p[9] + 4.0 * d->p[8] + 
-                        3.0 * d->p[2] + 2.0 * d->p[0] + 4.0 * d->p[1] + 4.0 * d->p[10] - 7.0;
-    double denom_Q2 = 8.0 * pow(d->p[3], 2.0) + 10.0 * d->p[3] * d->p[9] + 
-                      16.0 * d->p[3] * d->p[8] + 10.0 * d->p[3] * d->p[2] + 4.0 * d->p[3] * d->p[0] + 
-                      16.0 * d->p[3] * d->p[1] + 16.0 * d->p[3] * d->p[10] - 22.0 * d->p[3] + 
-                      3.0 * pow(d->p[9], 2.0) + 10.0 * d->p[9] * d->p[8] + 6.0 * d->p[9] * d->p[2] + 
-                      2.0 * d->p[9] * d->p[0] + 10.0 * d->p[9] * d->p[1] + 10.0 * d->p[9] * d->p[10] - 
-                      13.0 * d->p[9] + 8.0 * pow(d->p[8], 2.0) + 10.0 * d->p[8] * d->p[2] + 
-                      4.0 * d->p[8] * d->p[0] + 16.0 * d->p[8] * d->p[1] + 16.0 * d->p[8] * d->p[10] - 
-                      22.0 * d->p[8] + 3.0 * pow(d->p[2], 2.0) + 2.0 * d->p[2] * d->p[0] + 
-                      10.0 * d->p[2] * d->p[1] + 10.0 * d->p[2] * d->p[10] - 13.0 * d->p[2] + 
-                      4.0 * d->p[0] * d->p[1] + 4.0 * d->p[0] * d->p[10] - 4.0 * d->p[0] + 
-                      8.0 * pow(d->p[1], 2.0) + 16.0 * d->p[1] * d->p[10] - 22.0 * d->p[1] + 
-                      8.0 * pow(d->p[10], 2.0) - 22.0 * d->p[10] + 14.0;
-    double denom_k = d->p[2] + d->p[9];
+	double xNaA   = p[2];
+	double xKA    = p[9];
+	double xMgM13 = p[0] + p[1] + p[2] + p[3] + p[4] + p[6] + p[8] + p[9] + p[10];
+	double xFeM13 = p[5] + p[7];
+	double xMgM2  = p[0] + 0.5*p[2] + p[4] + p[7] + 0.5*p[9];
+	double xFeM2  = p[5] + p[6];
+	double xMgM4  = p[4];
+	double xFeM4  = p[5] + p[6] + p[7];
+	double num_x  = 3.0*xFeM13 + 2.0*xFeM2 + 2.0*xFeM4;
+	double den_x  = num_x + 3.0*xMgM13 + 2.0*xMgM2 + 2.0*xMgM4;
+	double x      = (den_x != 0.0) ? num_x/den_x : d->bounds[0][0];
+	double den_a  = xKA + xNaA;
+	double den_13 = xFeM13 + xMgM13;
+	double den_2  = xFeM2 + xMgM2;
 
-    // Assignments
-    d->iguess[3]  = d->p[2] + d->p[9]; // a
-    d->iguess[5]  = d->p[0] + d->p[1] + d->p[10] + d->p[11] + d->p[2] + d->p[9]; // c
-    d->iguess[6]  = d->p[8]; // f
-    d->iguess[4]  = (denom_k != 0.0) ? d->p[9] / denom_k : d->bounds[4][0]; // k
-    d->iguess[7]  = d->p[10]; // t
-    d->iguess[1]  = d->p[1] + 0.5 * d->p[2] + d->p[3] + 0.5 * d->p[9]; // y
-    d->iguess[2]  = d->p[3] + d->p[8]; // z
-    d->iguess[0]  = (denom_x_Q1 != 0.0) ? 
-                    0.142857142857143 * (5.0 * d->p[0] + 5.0 * d->p[1] + 5.0 * d->p[10] + 
-                                        5.0 * d->p[2] + 5.0 * d->p[3] + 
-                                         5.0 * d->p[4] - 2.0 * d->p[5] + d->p[6] + 
-                                         5.0 * d->p[8] + 5.0 * d->p[9] - 5.0) / denom_x_Q1 : 
-                    d->bounds[0][0]; // x
-    d->iguess[8]  = (denom_x_Q1 != 0.0) ? 
-                    0.142857142857143 * (2.0 * d->p[0] * d->p[1] + 2.0 * d->p[0] * d->p[10] + 
-                                         5.0 * d->p[0] * d->p[2] + 
-                                         6.0 * d->p[0] * d->p[3] + 2.0 * d->p[0] * d->p[4] + 
-                                         2.0 * d->p[0] * d->p[6] + 6.0 * d->p[0] * d->p[8] + 
-                                         5.0 * d->p[0] * d->p[9] - 4.0 * d->p[0] + 2.0 * pow(d->p[0], 2.0) + 
-                                         8.0 * d->p[1] * d->p[10]  + 
-                                         7.0 * d->p[1] * d->p[2] + 8.0 * d->p[1] * d->p[3] + 
-                                         4.0 * d->p[1] * d->p[4] + 4.0 * d->p[1] * d->p[6] + 
-                                         8.0 * d->p[1] * d->p[8] + 7.0 * d->p[1] * d->p[9] - 
-                                         6.0 * d->p[1] + 4.0 * pow(d->p[1], 2.0) + 
-                                         7.0 * d->p[10] * d->p[2] + 8.0 * d->p[10] * d->p[3] + 
-                                         4.0 * d->p[10] * d->p[4] + 4.0 * d->p[10] * d->p[6] + 
-                                         8.0 * d->p[10] * d->p[8] + 7.0 * d->p[10] * d->p[9] - 
-                                         6.0 * d->p[10] + 4.0 * pow(d->p[10], 2.0) + 
-                                         7.0 * d->p[2] * d->p[3] + 3.0 * d->p[2] * d->p[4] + 
-                                         3.0 * d->p[2] * d->p[6] + 7.0 * d->p[2] * d->p[8] + 
-                                         6.0 * d->p[2] * d->p[9] - 5.0 * d->p[2] + 3.0 * pow(d->p[2], 2.0) + 
-                                         4.0 * d->p[3] * d->p[4] + 4.0 * d->p[3] * d->p[6] + 
-                                         8.0 * d->p[3] * d->p[8] + 7.0 * d->p[3] * d->p[9] - 
-                                         6.0 * d->p[3] + 4.0 * pow(d->p[3], 2.0) + 4.0 * d->p[4] * d->p[8] + 
-                                         3.0 * d->p[4] * d->p[9] - 2.0 * d->p[4] - 2.0 * d->p[5] + 
-                                         4.0 * d->p[6] * d->p[8] + 3.0 * d->p[6] * d->p[9] - 6.0 * d->p[6] + 
-                                         7.0 * d->p[8] * d->p[9] - 6.0 * d->p[8] + 4.0 * pow(d->p[8], 2.0) - 
-                                         5.0 * d->p[9] + 3.0 * pow(d->p[9], 2.0) + 2.0) / denom_x_Q1 : 
-                    d->bounds[8][0]; // Q1
-    d->iguess[9]  = (denom_Q2 != 0.0) ? 
-                    0.0454545454545455 * (10.0 * d->p[0] * d->p[1] + 10.0 * d->p[0] * d->p[10] + 
-                                          5.0 * d->p[0] * d->p[2] + 10.0 * d->p[0] * d->p[3] + 
-                                          4.0 * d->p[0] * d->p[5] + 4.0 * d->p[0] * d->p[6] + 
-                                          10.0 * d->p[0] * d->p[8] + 5.0 * d->p[0] * d->p[9] - 
-                                          10.0 * d->p[0] + 20.0 * d->p[1] * d->p[10] + 
-                                          15.0 * d->p[1] * d->p[2] + 
-                                          20.0 * d->p[1] * d->p[3] + 10.0 * d->p[1] * d->p[4] + 
-                                          4.0 * d->p[1] * d->p[5] + 10.0 * d->p[1] * d->p[6] + 
-                                          20.0 * d->p[1] * d->p[8] + 15.0 * d->p[1] * d->p[9] - 
-                                          20.0 * d->p[1] + 10.0 * pow(d->p[1], 2.0) + 
-                                          15.0 * d->p[10] * d->p[2] + 
-                                          20.0 * d->p[10] * d->p[3] + 10.0 * d->p[10] * d->p[4] + 
-                                          4.0 * d->p[10] * d->p[5] + 10.0 * d->p[10] * d->p[6] + 
-                                          20.0 * d->p[10] * d->p[8] + 15.0 * d->p[10] * d->p[9] - 
-                                          20.0 * d->p[10] + 10.0 * pow(d->p[10], 2.0) + 15.0 * d->p[2] * d->p[3] + 
-                                          5.0 * d->p[2] * d->p[4] + 4.0 * d->p[2] * d->p[5] + 
-                                          7.0 * d->p[2] * d->p[6] + 15.0 * d->p[2] * d->p[8] + 
-                                          10.0 * d->p[2] * d->p[9] - 15.0 * d->p[2] + 5.0 * pow(d->p[2], 2.0) + 
-                                          10.0 * d->p[3] * d->p[4] + 4.0 * d->p[3] * d->p[5] + 
-                                          10.0 * d->p[3] * d->p[6] + 20.0 * d->p[3] * d->p[8] + 
-                                          15.0 * d->p[3] * d->p[9] - 20.0 * d->p[3] + 10.0 * pow(d->p[3], 2.0) + 
-                                          10.0 * d->p[4] * d->p[8] + 5.0 * d->p[4] * d->p[9] - 
-                                          10.0 * d->p[4] + 4.0 * d->p[5] * d->p[8] + 4.0 * d->p[5] * d->p[9] - 
-                                          10.0 * d->p[5] + 10.0 * d->p[6] * d->p[8] + 7.0 * d->p[6] * d->p[9] - 
-                                          16.0 * d->p[6] + 15.0 * d->p[8] * d->p[9] - 20.0 * d->p[8] + 
-                                          10.0 * pow(d->p[8], 2.0) - 15.0 * d->p[9] + 5.0 * pow(d->p[9], 2.0) + 
-                                          10.0) / denom_Q2 : 
-                    d->bounds[9][0]; // Q2
+	d->iguess[0]  = x;
+	d->iguess[1]  = p[1] + 0.5*p[2] + p[3] + 0.5*p[9];
+	d->iguess[2]  = p[3] + p[8];
+	d->iguess[3]  = den_a;
+	d->iguess[4]  = (den_a != 0.0) ? xKA/den_a : d->bounds[4][0];
+	d->iguess[5]  = p[0] + p[1] + p[2] + p[9] + p[10];
+	d->iguess[6]  = p[8];
+	d->iguess[7]  = p[10];
+	d->iguess[8]  = (den_13 != 0.0) ? x - xFeM13/den_13 : 0.0;
+	d->iguess[9]  = (den_2  != 0.0) ? x - xFeM2/den_2   : 0.0;
 
-    // Bounds checking
-    for (int i = 0; i < d->n_xeos; i++) {
-        if (d->iguess[i] < d->bounds[i][0]) {
-            d->iguess[i] = d->bounds[i][0];
-        }
-        if (d->iguess[i] > d->bounds[i][1]) {
-            d->iguess[i] = d->bounds[i][1];
-        }
-    }
+	for (int i = 0; i < d->n_xeos; i++){
+		if (d->iguess[i] < d->bounds[i][0]){
+			d->iguess[i] = d->bounds[i][0];
+		}
+		if (d->iguess[i] > d->bounds[i][1]){
+			d->iguess[i] = d->bounds[i][1];
+		}
+	}
 }
 
 /**
@@ -13127,6 +13872,24 @@ void p2x_mpe_occm(void *SS_ref_db, double eps){
 }
 
 /**
+    Endmember to xeos for carp
+*/
+void p2x_mpe_carp(void *SS_ref_db, double eps){
+    SS_ref *d  = (SS_ref *) SS_ref_db;
+    
+    d->iguess[0]  = d->p[0];
+    
+    for (int i = 0; i < d->n_xeos; i++){
+        if (d->iguess[i] < d->bounds[i][0]){
+            d->iguess[i] = d->bounds[i][0];
+        }
+        if (d->iguess[i] > d->bounds[i][1]){
+            d->iguess[i] = d->bounds[i][1];
+        }
+    }
+}
+
+/**
     Endmember fraction of liq_mp
 */
 void px_mpe_liq(void *SS_ref_db, const double *x){
@@ -13146,6 +13909,16 @@ void px_mpe_liq(void *SS_ref_db, const double *x){
     Endmember fraction of fsp_mp
 */
 void px_mpe_fsp(void *SS_ref_db, const double *x){
+    SS_ref *d  = (SS_ref *) SS_ref_db;
+    double *p = d->p;
+        p[0]           = -x[0] - x[1] + 1.0;
+        p[1]           = x[0];
+        p[2]           = x[1];
+}
+/**
+    Endmember fraction of plc_mpe
+*/
+void px_mpe_plc(void *SS_ref_db, const double *x){
     SS_ref *d  = (SS_ref *) SS_ref_db;
     double *p = d->p;
         p[0]           = -x[0] - x[1] + 1.0;
@@ -13183,6 +13956,14 @@ void px_mpe_g(void *SS_ref_db, const double *x){
 /**
     Endmember fraction of ep_mp
 */
+void px_mpe_scp(void *SS_ref_db, const double *x){
+    SS_ref *d  = (SS_ref *) SS_ref_db;
+    double *p = d->p;
+        p[0]           = 1.0 - x[0] - 2.0/3.0*x[1];
+        p[1]           = x[0] - x[1]/3.0;
+        p[2]           = x[1];
+}
+
 void px_mpe_ep(void *SS_ref_db, const double *x){
     SS_ref *d  = (SS_ref *) SS_ref_db;
     double *p = d->p;
@@ -13436,6 +14217,16 @@ void px_mpe_dio(void *SS_ref_db, const double *x){
         p[5]           = 2.0*x[0]*x[3] + 2.0*x[1]*x[5] + 2.0*x[3]*x[5] - 2.0*x[5];
         p[6]           = 2.0*x[4];
 }
+    
+/**
+    Endmember fraction of carp
+*/
+void px_mpe_carp(void *SS_ref_db, const double *x){
+    SS_ref *d  = (SS_ref *) SS_ref_db;
+    double *p = d->p;
+        p[0]           = x[0];
+        p[1]           = 1.0 -x[0];
+}
 
 /**
     Objective function of liq_mp
@@ -13457,18 +14248,7 @@ double obj_mpe_liq(unsigned n, const double *x, double *grad, void *SS_ref_db){
 
     double tmp = 0.0;
     double Gex = 0.0;
-    for (int i = 0; i < n_em; i++){
-        Gex = 0.0;
-        int it    = 0;
-        for (int j = 0; j < d->n_xeos; j++){
-            tmp = (d->eye[i][j] - d->p[j]);
-            for (int k = j+1; k < n_em; k++){
-                Gex -= tmp*(d->eye[i][k] - d->p[k])*(d->W[it]);
-                it += 1;
-            }
-        }
-        mu_Gex[i] = Gex;
-    }   
+    mu_Gex_sym_n2(d, mu_Gex);   
   
     sf[0]          = 1.0 - x[6];
     sf[1]          = x[0];
@@ -13482,15 +14262,18 @@ double obj_mpe_liq(unsigned n, const double *x, double *grad, void *SS_ref_db){
     sf[9]          = x[6];
     
     
-    mu[0]          = R*T*creal(clog(sf[0]*sf[1])) + gb[0] + mu_Gex[0];
-    mu[1]          = R*T*creal(clog(sf[0]*sf[2])) + gb[1] + mu_Gex[1];
-    mu[2]          = R*T*creal(clog(sf[0]*sf[3])) + gb[2] + mu_Gex[2];
-    mu[3]          = R*T*creal(clog(sf[0]*sf[4])) + gb[3] + mu_Gex[3];
-    mu[4]          = R*T*creal(clog(sf[0]*sf[5])) + gb[4] + mu_Gex[4];
-    mu[5]          = R*T*creal(clog(sf[0]*sf[6]*cpow(sf[8], 5.0))) + gb[5] + mu_Gex[5];
-    mu[6]          = R*T*creal(clog(sf[0]*sf[6]*cpow(sf[7], 5.0))) + gb[6] + mu_Gex[6];
-    mu[7]          = R*T*creal(clog(cpow(sf[9], 2.0) + d_em[7])) + gb[7] + mu_Gex[7];
-    
+    mu[0]          = R*T*rlog((sf[0]*sf[1])) + gb[0] + mu_Gex[0];
+    mu[1]          = R*T*rlog((sf[0]*sf[2] + d_em[1])) + gb[1] + mu_Gex[1];
+    mu[2]          = R*T*rlog((sf[0]*sf[3] + d_em[2])) + gb[2] + mu_Gex[2];
+    mu[3]          = R*T*rlog((sf[0]*sf[4] + d_em[3])) + gb[3] + mu_Gex[3];
+    mu[4]          = R*T*rlog((sf[0]*sf[5])) + gb[4] + mu_Gex[4];
+    double complex cp_8_5p0 = cpow(sf[8], 5.0);
+    double complex cp_7_5p0 = cpow(sf[7], 5.0);
+    double complex cp_9_2p0 = cpow(sf[9], 2.0);
+    mu[5]          = R*T*rlog((sf[0]*sf[6]*cp_8_5p0)) + gb[5] + mu_Gex[5];
+    mu[6]          = R*T*rlog((sf[0]*sf[6]*cp_7_5p0)) + gb[6] + mu_Gex[6];
+    mu[7]          = R*T*rlog((cp_9_2p0 + d_em[7])) + gb[7] + mu_Gex[7];
+
     d->sum_apep = 0.0;
     for (int i = 0; i < n_em; i++){
         d->sum_apep += d->ape[i]*d->p[i];
@@ -13536,6 +14319,7 @@ double obj_mpe_fsp(unsigned n, const double *x, double *grad, void *SS_ref_db){
 	double *mu_Gex = d->mu_Gex;
 	double *sf     = d->sf;
 	double *mu     = d->mu;
+	double *d_em   = d->d_em;
 
 	px_mpe_fsp(SS_ref_db,x);
 
@@ -13547,16 +14331,7 @@ double obj_mpe_fsp(unsigned n, const double *x, double *grad, void *SS_ref_db){
 		d->mat_phi[i] = (d->p[i]*d->v[i])/d->sum_v;
 	}
 
-	for (int i = 0; i < d->n_em; i++){
-		mu_Gex[i] = 0.0;
-		int it = 0;
-		for (int j = 0; j < d->n_xeos; j++){
-			for (int k = j+1; k < d->n_em; k++){
-				mu_Gex[i] -= (d->eye[i][j] - d->mat_phi[j])*(d->eye[i][k] - d->mat_phi[k])*(d->W[it]*2.0*d->v[i]/(d->v[j]+d->v[k]));
-				it += 1;
-			}
-		}
-	}
+    mu_Gex_asym_n2(d, mu_Gex);
 	
     sf[0]           = -x[0] - x[1] + 1.0;
     sf[1]           = x[0];
@@ -13564,9 +14339,9 @@ double obj_mpe_fsp(unsigned n, const double *x, double *grad, void *SS_ref_db){
     sf[3]           = 0.25*x[0] + 0.25;
     sf[4]           = 0.75 - 0.25*x[0];
 
-	mu[0]          = R*T*creal(clog(1.7548*sf[0]*cpow(sf[3], 0.25)*cpow(sf[4], 0.75))) 	+ gb[0] + mu_Gex[0];
-	mu[1]          = R*T*creal(clog(2.0*sf[1]*csqrt(sf[3])*csqrt(sf[4]))) 				+ gb[1] + mu_Gex[1];
-	mu[2]          = R*T*creal(clog(1.7548*sf[2]*cpow(sf[3], 0.25)*cpow(sf[4], 0.75))) 	+ gb[2] + mu_Gex[2];
+	mu[0]          = R*T*rlog((1.7548*sf[0]*cpow(sf[3], 0.25)*cpow(sf[4], 0.75) + d_em[0])) 	+ gb[0] + mu_Gex[0];
+	mu[1]          = R*T*rlog((2.0*sf[1]*csqrt(sf[3])*csqrt(sf[4]) + d_em[1])) 		+ gb[1] + mu_Gex[1];
+	mu[2]          = R*T*rlog((1.7548*sf[2]*cpow(sf[3], 0.25)*cpow(sf[4], 0.75) + d_em[2])) 	+ gb[2] + mu_Gex[2];
 
 	d->sum_apep = 0.0;
 	for (int i = 0; i < n_em; i++){
@@ -13579,7 +14354,11 @@ double obj_mpe_fsp(unsigned n, const double *x, double *grad, void *SS_ref_db){
 		d->df_raw += mu[i]*d->p[i];
 	}
 	d->df = d->df_raw * d->factor;
-	
+
+	for (int k = 0; k < n_em; k++){
+		d->df += d->ox_penalty[k] * d->p[k] * d->p[k];
+	}
+
 	if (grad){
 	double *dfx    = d->dfx;
 	double **dp_dx = d->dp_dx;
@@ -13588,6 +14367,7 @@ double obj_mpe_fsp(unsigned n, const double *x, double *grad, void *SS_ref_db){
 		   dfx[i] = 0.0;
 		   for (int j = 0; j < n_em; j++){
 			   dfx[i] += (mu[j] - (d->ape[j]/d->sum_apep)*d->df_raw)*d->factor*dp_dx[j][i];
+			   dfx[i] += d->ox_penalty[j]*2.0*d->p[j]*dp_dx[j][i];
 		   }
 		   grad[i] = creal(dfx[i]);
 		}
@@ -13595,7 +14375,82 @@ double obj_mpe_fsp(unsigned n, const double *x, double *grad, void *SS_ref_db){
 
 	return d->df;
 }
-    
+
+/**
+    Objective function of plc_mpe (ternary plagioclase, Baldwin et al. 2005).
+    Single A-site ideal-mixing term (a_ideal(em) = site_fraction(em)^1, from the
+    source a-x file's "abh/an/san ... x(..) 1" lines) - simpler than fsp_H22's
+    two-site (A + T-site Al-Si) formula, same asymmetric-formalism (van Laar) Gex.
+*/
+double obj_mpe_plc(unsigned n, const double *x, double *grad, void *SS_ref_db){
+
+	SS_ref *d  = (SS_ref *) SS_ref_db;
+
+	int n_em   = d->n_em;
+	double P   = d->P;
+	double T   = d->T;
+	double R   = d->R;
+
+	double *gb     = d->gb_lvl;
+	double *mat_phi= d->mat_phi;
+	double *mu_Gex = d->mu_Gex;
+	double *sf     = d->sf;
+	double *mu     = d->mu;
+	double *d_em   = d->d_em;
+
+	px_mpe_plc(SS_ref_db,x);
+
+	d->sum_v = 0.0;
+	for (int i = 0; i < d->n_em; i++){
+		d->sum_v += d->p[i]*d->v[i];
+	}
+	for (int i = 0; i < d->n_em; i++){
+		d->mat_phi[i] = (d->p[i]*d->v[i])/d->sum_v;
+	}
+
+    mu_Gex_asym_n2(d, mu_Gex);
+
+    sf[0]           = -x[0] - x[1] + 1.0;
+    sf[1]           = x[0];
+    sf[2]           = x[1];
+
+	mu[0]          = R*T*rlog((sf[0] + d_em[0])) + gb[0] + mu_Gex[0];
+	mu[1]          = R*T*rlog((sf[1] + d_em[1])) + gb[1] + mu_Gex[1];
+	mu[2]          = R*T*rlog((sf[2] + d_em[2])) + gb[2] + mu_Gex[2];
+
+	d->sum_apep = 0.0;
+	for (int i = 0; i < n_em; i++){
+	   d->sum_apep += d->ape[i]*d->p[i];
+	}
+	d->factor = d->fbc/d->sum_apep;
+
+	d->df_raw = 0.0;
+	for (int i = 0; i < d->n_em; i++){
+		d->df_raw += mu[i]*d->p[i];
+	}
+	d->df = d->df_raw * d->factor;
+
+	for (int k = 0; k < n_em; k++){
+		d->df += d->ox_penalty[k] * d->p[k] * d->p[k];
+	}
+
+	if (grad){
+	double *dfx    = d->dfx;
+	double **dp_dx = d->dp_dx;
+		dpdx_mpe_plc(SS_ref_db,x);
+		for (int i = 0; i < (d->n_xeos); i++){
+		   dfx[i] = 0.0;
+		   for (int j = 0; j < n_em; j++){
+			   dfx[i] += (mu[j] - (d->ape[j]/d->sum_apep)*d->df_raw)*d->factor*dp_dx[j][i];
+			   dfx[i] += d->ox_penalty[j]*2.0*d->p[j]*dp_dx[j][i];
+		   }
+		   grad[i] = creal(dfx[i]);
+		}
+	}
+
+	return d->df;
+}
+
 /**
     Objective function of bi_mp
 */
@@ -13616,18 +14471,7 @@ double obj_mpe_bi(unsigned n, const double *x, double *grad, void *SS_ref_db){
 
     double tmp = 0.0;
     double Gex = 0.0;
-    for (int i = 0; i < n_em; i++){
-        Gex = 0.0;
-        int it    = 0;
-        for (int j = 0; j < d->n_xeos; j++){
-            tmp = (d->eye[i][j] - d->p[j]);
-            for (int k = j+1; k < n_em; k++){
-                Gex -= tmp*(d->eye[i][k] - d->p[k])*(d->W[it]);
-                it += 1;
-            }
-        }
-        mu_Gex[i] = Gex;
-    }   
+    mu_Gex_sym_n2(d, mu_Gex);   
   
     sf[0]          = x[3]*x[0] - x[3] + 3.0*x[1]*x[0] - x[1] - 2./3.*x[5] + x[4]*x[0] - x[4] + x[0]*x[2] - x[0] - x[2] + 1.0;
     sf[1]          = x[1];
@@ -13644,13 +14488,19 @@ double obj_mpe_bi(unsigned n, const double *x, double *grad, void *SS_ref_db){
     sf[12]          = x[4];
     
     
-    mu[0]          = R*T*creal(clog(4.0*sf[10]*cpow(sf[6], 2.0)*sf[0]*cpow(sf[11], 2.0)*sf[9])) + gb[0] + mu_Gex[0];
-    mu[1]          = R*T*creal(clog(4.0*sf[10]*cpow(sf[8], 2.0)*sf[2]*cpow(sf[11], 2.0)*sf[9])) + gb[1] + mu_Gex[1];
-    mu[2]          = R*T*creal(clog(4.0*sf[10]*sf[2]*cpow(sf[6], 2.0)*cpow(sf[11], 2.0)*sf[9])) + gb[2] + mu_Gex[2];
-    mu[3]          = R*T*creal(clog(sf[5]*cpow(sf[10], 2.0)*cpow(sf[6], 2.0)*cpow(sf[11], 2.0))) + gb[3] + mu_Gex[3];
-    mu[4]          = R*T*creal(clog(4.0*sf[10]*cpow(sf[6], 2.0)*cpow(sf[12], 2.0)*sf[9]*sf[4] + d_em[4])) + gb[4] + mu_Gex[4];
-    mu[5]          = R*T*creal(clog(cpow(sf[10], 2.0)*sf[3]*cpow(sf[6], 2.0)*cpow(sf[11], 2.0) + d_em[5])) + gb[5] + mu_Gex[5];
-    mu[6]          = R*T*creal(clog(4.0*sf[10]*cpow(sf[7], 2.0)*sf[1]*cpow(sf[11], 2.0)*sf[9] + d_em[6])) + gb[6] + mu_Gex[6];
+    double complex cp_6_2p0 = cpow(sf[6], 2.0);
+    double complex cp_11_2p0 = cpow(sf[11], 2.0);
+    double complex cp_8_2p0 = cpow(sf[8], 2.0);
+    double complex cp_10_2p0 = cpow(sf[10], 2.0);
+    double complex cp_12_2p0 = cpow(sf[12], 2.0);
+    double complex cp_7_2p0 = cpow(sf[7], 2.0);
+    mu[0]          = R*T*rlog((4.0*sf[10]*cp_6_2p0*sf[0]*cp_11_2p0*sf[9])) + gb[0] + mu_Gex[0];
+    mu[1]          = R*T*rlog((4.0*sf[10]*cp_8_2p0*sf[2]*cp_11_2p0*sf[9])) + gb[1] + mu_Gex[1];
+    mu[2]          = R*T*rlog((4.0*sf[10]*sf[2]*cp_6_2p0*cp_11_2p0*sf[9])) + gb[2] + mu_Gex[2];
+    mu[3]          = R*T*rlog((sf[5]*cp_10_2p0*cp_6_2p0*cp_11_2p0)) + gb[3] + mu_Gex[3];
+    mu[4]          = R*T*rlog((4.0*sf[10]*cp_6_2p0*cp_12_2p0*sf[9]*sf[4] + d_em[4])) + gb[4] + mu_Gex[4];
+    mu[5]          = R*T*rlog((cp_10_2p0*sf[3]*cp_6_2p0*cp_11_2p0 + d_em[5])) + gb[5] + mu_Gex[5];
+    mu[6]          = R*T*rlog((4.0*sf[10]*cp_7_2p0*sf[1]*cp_11_2p0*sf[9] + d_em[6])) + gb[6] + mu_Gex[6];
     
     d->sum_apep = 0.0;
     for (int i = 0; i < n_em; i++){
@@ -13710,18 +14560,7 @@ double obj_mpe_g(unsigned n, const double *x, double *grad, void *SS_ref_db){
     
     double tmp = 0.0;
     double Gex = 0.0;
-    for (int i = 0; i < d->n_em; i++){
-        Gex = 0.0;
-        int it = 0;
-        for (int j = 0; j < d->n_xeos; j++){
-            tmp = (d->eye[i][j] - d->mat_phi[j]);
-            for (int k = j+1; k < d->n_em; k++){
-                Gex -= tmp*(d->eye[i][k] - d->mat_phi[k])*(d->W[it]*2.0*d->v[i]/(d->v[j]+d->v[k]));
-                it += 1;
-            }
-        }
-        mu_Gex[i] = Gex;
-    }
+    mu_Gex_asym_n2(d, mu_Gex);
     
     sf[0]          = x[2]*x[0] - x[2] + x[0]*x[1] - x[0] - x[1] + 1.0;
     sf[1]          = -x[2]*x[0] - x[0]*x[1] + x[0];
@@ -13730,12 +14569,18 @@ double obj_mpe_g(unsigned n, const double *x, double *grad, void *SS_ref_db){
     sf[4]          = 1.0 - x[3];
     sf[5]          = x[3];
     
-    mu[0]          = R*T*creal(clog(cpow(sf[4], 2.0)*cpow(sf[0], 3.0))) + gb[0] + mu_Gex[0];
-    mu[1]          = R*T*creal(clog(cpow(sf[4], 2.0)*cpow(sf[1], 3.0))) + gb[1] + mu_Gex[1];
-    mu[2]          = R*T*creal(clog(cpow(sf[4], 2.0)*cpow(sf[2], 3.0) + d_em[2])) + gb[2] + mu_Gex[2];
-    mu[3]          = R*T*creal(clog(cpow(sf[4], 2.0)*cpow(sf[3], 3.0))) + gb[3] + mu_Gex[3];
-    mu[4]          = R*T*creal(clog(cpow(sf[5], 2.0)*cpow(sf[0], 3.0) + d_em[4])) + gb[4] + mu_Gex[4];
-    
+    double complex cp_4_2p0 = cpow(sf[4], 2.0);
+    double complex cp_0_3p0 = cpow(sf[0], 3.0);
+    double complex cp_1_3p0 = cpow(sf[1], 3.0);
+    double complex cp_2_3p0 = cpow(sf[2], 3.0);
+    double complex cp_3_3p0 = cpow(sf[3], 3.0);
+    double complex cp_5_2p0 = cpow(sf[5], 2.0);
+    mu[0]          = R*T*rlog((cp_4_2p0*cp_0_3p0)) + gb[0] + mu_Gex[0];
+    mu[1]          = R*T*rlog((cp_4_2p0*cp_1_3p0)) + gb[1] + mu_Gex[1];
+    mu[2]          = R*T*rlog((cp_4_2p0*cp_2_3p0 + d_em[2])) + gb[2] + mu_Gex[2];
+    mu[3]          = R*T*rlog((cp_4_2p0*cp_3_3p0 + d_em[3])) + gb[3] + mu_Gex[3];
+    mu[4]          = R*T*rlog((cp_5_2p0*cp_0_3p0 + d_em[4])) + gb[4] + mu_Gex[4];
+
 
 	d->sum_apep = 0.0;
 	for (int i = 0; i < n_em; i++){
@@ -13748,7 +14593,7 @@ double obj_mpe_g(unsigned n, const double *x, double *grad, void *SS_ref_db){
 		d->df_raw += mu[i]*d->p[i];
 	}
 	d->df = d->df_raw * d->factor;
-	
+
     if (grad){
         double *dfx    = d->dfx;
         double **dp_dx = d->dp_dx;
@@ -13768,6 +14613,62 @@ double obj_mpe_g(unsigned n, const double *x, double *grad, void *SS_ref_db){
 /**
     Objective function of ep_mp
 */
+double obj_mpe_scp(unsigned n, const double *x, double *grad, void *SS_ref_db){
+    SS_ref *d         = (SS_ref *) SS_ref_db;
+
+    int n_em          = d->n_em;
+    double P          = d->P;
+    double T          = d->T;
+    double R          = d->R;
+
+    double *gb        = d->gb_lvl;
+    double *mu_Gex    = d->mu_Gex;
+    double *sf        = d->sf;
+    double *mu        = d->mu;
+    double *d_em      = d->d_em;
+    px_mpe_scp(SS_ref_db,x);
+
+    mu_Gex_sym_n2(d, mu_Gex);
+
+    sf[0]          = 0.75*x[0];
+    sf[1]          = 1.0 - 0.75*x[0];
+    sf[2]          = 1.0 - x[0] - 2.0/3.0*x[1];
+    sf[3]          = x[0] + 2.0/3.0*x[1];
+    sf[4]          = 1.0 - x[0] + x[1]/3.0;
+    sf[5]          = x[0] - x[1]/3.0;
+
+    mu[0]          = R*T*rlog(pow(sf[1], 4.0)*sf[2]*sf[4]*sf[4]) + gb[0] + mu_Gex[0];
+    mu[1]          = R*T*rlog(256.0/27.0*pow(sf[0], 3.0)*sf[1]*sf[3]*sf[5]*sf[5] + d_em[1]) + gb[1] + mu_Gex[1];
+    mu[2]          = R*T*rlog(256.0/27.0*sf[0]*pow(sf[1], 3.0)*sf[3]*sf[4]*sf[4] + d_em[2]) + gb[2] + mu_Gex[2];
+
+    d->sum_apep = 0.0;
+    for (int i = 0; i < n_em; i++){
+        d->sum_apep += d->ape[i]*d->p[i];
+    }
+    d->factor = d->fbc/d->sum_apep;
+
+    d->df_raw = 0.0;
+    for (int i = 0; i < n_em; i++){
+        d->df_raw += mu[i]*d->p[i];
+    }
+    d->df = d->df_raw * d->factor;
+
+    if (grad){
+        double *dfx    = d->dfx;
+        double **dp_dx = d->dp_dx;
+        dpdx_mpe_scp(SS_ref_db,x);
+        for (int i = 0; i < (d->n_xeos); i++){
+            dfx[i] = 0.0;
+            for (int j = 0; j < n_em; j++){
+                dfx[i] += (mu[j] - (d->ape[j]/d->sum_apep)*d->df_raw)*d->factor*dp_dx[j][i];
+            }
+            grad[i] = creal(dfx[i]);
+        }
+    }
+
+    return d->df;
+}
+
 double obj_mpe_ep(unsigned n, const double *x, double *grad, void *SS_ref_db){
     SS_ref *d         = (SS_ref *) SS_ref_db;
 
@@ -13785,18 +14686,7 @@ double obj_mpe_ep(unsigned n, const double *x, double *grad, void *SS_ref_db){
 
     double tmp = 0.0;
     double Gex = 0.0;
-    for (int i = 0; i < n_em; i++){
-        Gex = 0.0;
-        int it    = 0;
-        for (int j = 0; j < d->n_xeos; j++){
-            tmp = (d->eye[i][j] - d->p[j]);
-            for (int k = j+1; k < n_em; k++){
-                Gex -= tmp*(d->eye[i][k] - d->p[k])*(d->W[it]);
-                it += 1;
-            }
-        }
-        mu_Gex[i] = Gex;
-    }   
+    mu_Gex_sym_n2(d, mu_Gex);   
   
     sf[0]          = x[0] - x[1];
     sf[1]          = -x[0] + x[1] + 1.0;
@@ -13804,9 +14694,9 @@ double obj_mpe_ep(unsigned n, const double *x, double *grad, void *SS_ref_db){
     sf[3]          = -x[0] - x[1] + 1.0;
     
     
-    mu[0]          = R*T*creal(clog(sf[1]*sf[3])) + gb[0] + mu_Gex[0];
-    mu[1]          = R*T*creal(clog(sf[1]*sf[2] + d_em[1])) + gb[1] + mu_Gex[1];
-    mu[2]          = R*T*creal(clog(sf[0]*sf[2] + d_em[2])) + gb[2] + mu_Gex[2];
+    mu[0]          = R*T*rlog((sf[1]*sf[3])) + gb[0] + mu_Gex[0];
+    mu[1]          = R*T*rlog((sf[1]*sf[2] + d_em[1])) + gb[1] + mu_Gex[1];
+    mu[2]          = R*T*rlog((sf[0]*sf[2] + d_em[2])) + gb[2] + mu_Gex[2];
     
     d->sum_apep = 0.0;
     for (int i = 0; i < n_em; i++){
@@ -13865,18 +14755,7 @@ double obj_mpe_ma(unsigned n, const double *x, double *grad, void *SS_ref_db){
     
     double tmp = 0.0;
     double Gex = 0.0;
-    for (int i = 0; i < d->n_em; i++){
-        Gex = 0.0;
-        int it = 0;
-        for (int j = 0; j < d->n_xeos; j++){
-            tmp = (d->eye[i][j] - d->mat_phi[j]);
-            for (int k = j+1; k < d->n_em; k++){
-                Gex -= tmp*(d->eye[i][k] - d->mat_phi[k])*(d->W[it]*2.0*d->v[i]/(d->v[j]+d->v[k]));
-                it += 1;
-            }
-        }
-        mu_Gex[i] = Gex;
-    }
+    mu_Gex_asym_n2(d, mu_Gex);
     
     sf[0]          = -x[4] - x[3] + 1.0;
     sf[1]          = x[3];
@@ -13890,13 +14769,15 @@ double obj_mpe_ma(unsigned n, const double *x, double *grad, void *SS_ref_db){
     sf[9]          = 0.5*x[4] + 0.5*x[1];
     
     
-    mu[0]          = R*T*creal(clog(4.0*sf[5]*sf[6]*sf[9]*sf[0]*sf[8])) + gb[0] + mu_Gex[0];
-    mu[1]          = R*T*creal(clog(sf[6]*sf[0]*sf[3]*cpow(sf[8], 2.0))) + gb[1] + mu_Gex[1];
-    mu[2]          = R*T*creal(clog(sf[6]*sf[4]*sf[0]*cpow(sf[8], 2.0))) + gb[2] + mu_Gex[2];
-    mu[3]          = R*T*creal(clog(4.0*sf[5]*sf[6]*sf[9]*sf[1]*sf[8])) + gb[3] + mu_Gex[3];
-    mu[4]          = R*T*creal(clog(sf[5]*sf[6]*cpow(sf[9], 2.0)*sf[2])) + gb[4] + mu_Gex[4];
-    mu[5]          = R*T*creal(clog(4.0*sf[5]*sf[9]*sf[7]*sf[0]*sf[8] + d_em[5])) + gb[5] + mu_Gex[5];
-    
+    mu[0]          = R*T*rlog((4.0*sf[5]*sf[6]*sf[9]*sf[0]*sf[8])) + gb[0] + mu_Gex[0];
+    double complex cp_8_2p0 = cpow(sf[8], 2.0);
+    double complex cp_9_2p0 = cpow(sf[9], 2.0);
+    mu[1]          = R*T*rlog((sf[6]*sf[0]*sf[3]*cp_8_2p0)) + gb[1] + mu_Gex[1];
+    mu[2]          = R*T*rlog((sf[6]*sf[4]*sf[0]*cp_8_2p0)) + gb[2] + mu_Gex[2];
+    mu[3]          = R*T*rlog((4.0*sf[5]*sf[6]*sf[9]*sf[1]*sf[8] + d_em[3])) + gb[3] + mu_Gex[3];
+    mu[4]          = R*T*rlog((sf[5]*sf[6]*cp_9_2p0*sf[2] + d_em[4])) + gb[4] + mu_Gex[4];
+    mu[5]          = R*T*rlog((4.0*sf[5]*sf[9]*sf[7]*sf[0]*sf[8] + d_em[5])) + gb[5] + mu_Gex[5];
+
     d->sum_apep = 0.0;
     for (int i = 0; i < n_em; i++){
         d->sum_apep += d->ape[i]*d->p[i];
@@ -13909,6 +14790,10 @@ double obj_mpe_ma(unsigned n, const double *x, double *grad, void *SS_ref_db){
     }
     d->df = d->df_raw * d->factor;
 
+    for (int k = 0; k < n_em; k++){
+        d->df += d->ox_penalty[k] * d->p[k] * d->p[k];
+    }
+
     if (grad){
         double *dfx    = d->dfx;
         double **dp_dx = d->dp_dx;
@@ -13917,6 +14802,7 @@ double obj_mpe_ma(unsigned n, const double *x, double *grad, void *SS_ref_db){
             dfx[i] = 0.0;
             for (int j = 0; j < n_em; j++){
                 dfx[i] += (mu[j] - (d->ape[j]/d->sum_apep)*d->df_raw)*d->factor*dp_dx[j][i];
+                dfx[i] += d->ox_penalty[j]*2.0*d->p[j]*dp_dx[j][i];
             }
             grad[i] = creal(dfx[i]);
         }
@@ -13924,7 +14810,7 @@ double obj_mpe_ma(unsigned n, const double *x, double *grad, void *SS_ref_db){
 
     return d->df;
 }
-    
+
 /**
     Objective function of mu_mp
 */
@@ -13954,18 +14840,7 @@ double obj_mpe_mu(unsigned n, const double *x, double *grad, void *SS_ref_db){
     
     double tmp = 0.0;
     double Gex = 0.0;
-    for (int i = 0; i < d->n_em; i++){
-        Gex = 0.0;
-        int it = 0;
-        for (int j = 0; j < d->n_xeos; j++){
-            tmp = (d->eye[i][j] - d->mat_phi[j]);
-            for (int k = j+1; k < d->n_em; k++){
-                Gex -= tmp*(d->eye[i][k] - d->mat_phi[k])*(d->W[it]*2.0*d->v[i]/(d->v[j]+d->v[k]));
-                it += 1;
-            }
-        }
-        mu_Gex[i] = Gex;
-    }
+    mu_Gex_asym_n2(d, mu_Gex);
     
     sf[0]          = -x[4] - x[3] + 1.0;
     sf[1]          = x[3];
@@ -13979,13 +14854,15 @@ double obj_mpe_mu(unsigned n, const double *x, double *grad, void *SS_ref_db){
     sf[9]          = 0.5*x[4] + 0.5*x[1];
     
     
-    mu[0]          = R*T*creal(clog(4.0*sf[5]*sf[6]*sf[9]*sf[0]*sf[8])) + gb[0] + mu_Gex[0];
-    mu[1]          = R*T*creal(clog(sf[6]*sf[0]*sf[3]*cpow(sf[8], 2.0))) + gb[1] + mu_Gex[1];
-    mu[2]          = R*T*creal(clog(sf[6]*sf[4]*sf[0]*cpow(sf[8], 2.0))) + gb[2] + mu_Gex[2];
-    mu[3]          = R*T*creal(clog(4.0*sf[5]*sf[6]*sf[9]*sf[1]*sf[8])) + gb[3] + mu_Gex[3];
-    mu[4]          = R*T*creal(clog(sf[5]*sf[6]*cpow(sf[9], 2.0)*sf[2])) + gb[4] + mu_Gex[4];
-    mu[5]          = R*T*creal(clog(4.0*sf[5]*sf[9]*sf[7]*sf[0]*sf[8] + d_em[5])) + gb[5] + mu_Gex[5];
-    
+    mu[0]          = R*T*rlog((4.0*sf[5]*sf[6]*sf[9]*sf[0]*sf[8])) + gb[0] + mu_Gex[0];
+    double complex cp_8_2p0 = cpow(sf[8], 2.0);
+    double complex cp_9_2p0 = cpow(sf[9], 2.0);
+    mu[1]          = R*T*rlog((sf[6]*sf[0]*sf[3]*cp_8_2p0)) + gb[1] + mu_Gex[1];
+    mu[2]          = R*T*rlog((sf[6]*sf[4]*sf[0]*cp_8_2p0)) + gb[2] + mu_Gex[2];
+    mu[3]          = R*T*rlog((4.0*sf[5]*sf[6]*sf[9]*sf[1]*sf[8] + d_em[3])) + gb[3] + mu_Gex[3];
+    mu[4]          = R*T*rlog((sf[5]*sf[6]*cp_9_2p0*sf[2] + d_em[4])) + gb[4] + mu_Gex[4];
+    mu[5]          = R*T*rlog((4.0*sf[5]*sf[9]*sf[7]*sf[0]*sf[8] + d_em[5])) + gb[5] + mu_Gex[5];
+
     d->sum_apep = 0.0;
     for (int i = 0; i < n_em; i++){
         d->sum_apep += d->ape[i]*d->p[i];
@@ -13998,6 +14875,10 @@ double obj_mpe_mu(unsigned n, const double *x, double *grad, void *SS_ref_db){
     }
     d->df = d->df_raw * d->factor;
 
+    for (int k = 0; k < n_em; k++){
+        d->df += d->ox_penalty[k] * d->p[k] * d->p[k];
+    }
+
     if (grad){
         double *dfx    = d->dfx;
         double **dp_dx = d->dp_dx;
@@ -14006,6 +14887,7 @@ double obj_mpe_mu(unsigned n, const double *x, double *grad, void *SS_ref_db){
             dfx[i] = 0.0;
             for (int j = 0; j < n_em; j++){
                 dfx[i] += (mu[j] - (d->ape[j]/d->sum_apep)*d->df_raw)*d->factor*dp_dx[j][i];
+                dfx[i] += d->ox_penalty[j]*2.0*d->p[j]*dp_dx[j][i];
             }
             grad[i] = creal(dfx[i]);
         }
@@ -14013,7 +14895,7 @@ double obj_mpe_mu(unsigned n, const double *x, double *grad, void *SS_ref_db){
 
     return d->df;
 }
-    
+
 /**
     Objective function of opx_mp
 */
@@ -14043,18 +14925,7 @@ double obj_mpe_opx(unsigned n, const double *x, double *grad, void *SS_ref_db){
     
     double tmp = 0.0;
     double Gex = 0.0;
-    for (int i = 0; i < d->n_em; i++){
-        Gex = 0.0;
-        int it = 0;
-        for (int j = 0; j < d->n_xeos; j++){
-            tmp = (d->eye[i][j] - d->mat_phi[j]);
-            for (int k = j+1; k < d->n_em; k++){
-                Gex -= tmp*(d->eye[i][k] - d->mat_phi[k])*(d->W[it]*2.0*d->v[i]/(d->v[j]+d->v[k]));
-                it += 1;
-            }
-        }
-        mu_Gex[i] = Gex;
-    }
+    mu_Gex_asym_n2(d, mu_Gex);
     
     sf[0]          = -0.5*x[4]*x[5] + x[3]*x[0] - x[3] - 0.5*x[1]*x[5] + x[1]*x[0] - x[1] + 0.5*x[5] + x[0]*x[2] - x[0] - x[2] + 1.0;
     sf[1]          = 0.5*x[4]*x[5] - x[3]*x[0] + 0.5*x[1]*x[5] - x[1]*x[0] - 0.5*x[5] - x[0]*x[2] + x[0];
@@ -14069,14 +14940,17 @@ double obj_mpe_opx(unsigned n, const double *x, double *grad, void *SS_ref_db){
     sf[10]         = -0.5*x[3] - 0.5*x[2] + 1.0;
     
     
-    mu[0]          = R*T*creal(clog(sf[0]*sf[5]*csqrt(sf[10]))) + gb[0] + mu_Gex[0];
-    mu[1]          = R*T*creal(clog(sf[1]*sf[6]*csqrt(sf[10]))) + gb[1] + mu_Gex[1];
-    mu[2]          = R*T*creal(clog(sf[6]*sf[0]*csqrt(sf[10]))) + gb[2] + mu_Gex[2];
-    mu[3]          = R*T*creal(clog(1.4142*sf[4]*cpow(sf[9], 0.25)*sf[5]*cpow(sf[10], 0.25))) + gb[3] + mu_Gex[3];
-    mu[4]          = R*T*creal(clog(1.4142*cpow(sf[9], 0.25)*sf[3]*sf[5]*cpow(sf[10], 0.25) + d_em[4])) + gb[4] + mu_Gex[4];
-    mu[5]          = R*T*creal(clog(sf[2]*sf[7]*csqrt(sf[10]) + d_em[5])) + gb[5] + mu_Gex[5];
-    mu[6]          = R*T*creal(clog(sf[8]*sf[0]*csqrt(sf[10]))) + gb[6] + mu_Gex[6];
-    
+    double complex cp_9_0p25 = cpow(sf[9], 0.25);
+    double complex cp_10_0p25 = cpow(sf[10], 0.25);
+    double complex cs_10 = csqrt(sf[10]);
+    mu[0]          = R*T*rlog((sf[0]*sf[5]*cs_10)) + gb[0] + mu_Gex[0];
+    mu[1]          = R*T*rlog((sf[1]*sf[6]*cs_10)) + gb[1] + mu_Gex[1];
+    mu[2]          = R*T*rlog((sf[6]*sf[0]*cs_10)) + gb[2] + mu_Gex[2];
+    mu[3]          = R*T*rlog((1.4142*sf[4]*cp_9_0p25*sf[5]*cp_10_0p25)) + gb[3] + mu_Gex[3];
+    mu[4]          = R*T*rlog((1.4142*cp_9_0p25*sf[3]*sf[5]*cp_10_0p25 + d_em[4])) + gb[4] + mu_Gex[4];
+    mu[5]          = R*T*rlog((sf[2]*sf[7]*cs_10 + d_em[5])) + gb[5] + mu_Gex[5];
+    mu[6]          = R*T*rlog((sf[8]*sf[0]*cs_10 + d_em[6])) + gb[6] + mu_Gex[6];
+
     d->sum_apep = 0.0;
     for (int i = 0; i < n_em; i++){
         d->sum_apep += d->ape[i]*d->p[i];
@@ -14125,18 +14999,7 @@ double obj_mpe_sa(unsigned n, const double *x, double *grad, void *SS_ref_db){
 
     double tmp = 0.0;
     double Gex = 0.0;
-    for (int i = 0; i < n_em; i++){
-        Gex = 0.0;
-        int it    = 0;
-        for (int j = 0; j < d->n_xeos; j++){
-            tmp = (d->eye[i][j] - d->p[j]);
-            for (int k = j+1; k < n_em; k++){
-                Gex -= tmp*(d->eye[i][k] - d->p[k])*(d->W[it]);
-                it += 1;
-            }
-        }
-        mu_Gex[i] = Gex;
-    }   
+    mu_Gex_sym_n2(d, mu_Gex);   
   
     sf[0]          = x[2]*x[0] - x[2] + 0.75*x[3] + x[0]*x[1] - x[0] - x[1] + 1.0;
     sf[1]          = -x[2]*x[0] - 0.75*x[3] - x[0]*x[1] + x[0];
@@ -14148,11 +15011,13 @@ double obj_mpe_sa(unsigned n, const double *x, double *grad, void *SS_ref_db){
     sf[7]          = x[2] + x[1];
     
     
-    mu[0]          = R*T*creal(clog(sf[0]*cpow(sf[4], 3.0)*sf[6])) + gb[0] + mu_Gex[0];
-    mu[1]          = R*T*creal(clog(sf[3]*sf[7]*cpow(sf[4], 3.0))) + gb[1] + mu_Gex[1];
-    mu[2]          = R*T*creal(clog(sf[1]*cpow(sf[5], 3.0)*sf[6])) + gb[2] + mu_Gex[2];
-    mu[3]          = R*T*creal(clog(cpow(sf[5], 3.0)*sf[0]*sf[6])) + gb[3] + mu_Gex[3];
-    mu[4]          = R*T*creal(clog(sf[7]*sf[2]*cpow(sf[4], 3.0) + d_em[4])) + gb[4] + mu_Gex[4];
+    double complex cp_4_3p0 = cpow(sf[4], 3.0);
+    double complex cp_5_3p0 = cpow(sf[5], 3.0);
+    mu[0]          = R*T*rlog((sf[0]*cp_4_3p0*sf[6])) + gb[0] + mu_Gex[0];
+    mu[1]          = R*T*rlog((sf[3]*sf[7]*cp_4_3p0)) + gb[1] + mu_Gex[1];
+    mu[2]          = R*T*rlog((sf[1]*cp_5_3p0*sf[6])) + gb[2] + mu_Gex[2];
+    mu[3]          = R*T*rlog((cp_5_3p0*sf[0]*sf[6])) + gb[3] + mu_Gex[3];
+    mu[4]          = R*T*rlog((sf[7]*sf[2]*cp_4_3p0 + d_em[4])) + gb[4] + mu_Gex[4];
     
     d->sum_apep = 0.0;
     for (int i = 0; i < n_em; i++){
@@ -14200,16 +15065,7 @@ double obj_mpe_cd(unsigned n, const double *x, double *grad, void *SS_ref_db){
     double *d_em      = d->d_em;
     px_mpe_cd(SS_ref_db,x);
 
-    for (int i = 0; i < n_em; i++){
-        mu_Gex[i] = 0.0;
-        int it    = 0;
-        for (int j = 0; j < d->n_xeos; j++){
-            for (int k = j+1; k < n_em; k++){
-                mu_Gex[i] -= (d->eye[i][j] - d->p[j])*(d->eye[i][k] - d->p[k])*(d->W[it]);
-                it += 1;
-            }
-        }
-    }
+    mu_Gex_sym_n2(d, mu_Gex);
     
     sf[0]          = -x[0]*x[1] +x[0];
     sf[1]          =x[0]*x[1] - x[0] - x[1] + 1.0;
@@ -14218,10 +15074,13 @@ double obj_mpe_cd(unsigned n, const double *x, double *grad, void *SS_ref_db){
     sf[4]          = 1.0 - x[2];
     
     
-    mu[0]          = gb[0] + R*T*creal(clog(cpow(sf[1], 2.0)*sf[4])) + mu_Gex[0];
-    mu[1]          = gb[1] + R*T*creal(clog(cpow(sf[0], 2.0)*sf[4])) + mu_Gex[1];
-    mu[2]          = gb[2] + R*T*creal(clog(cpow(sf[1], 2.0)*sf[3])) + mu_Gex[2];
-    mu[3]          = gb[3] + R*T*creal(clog(cpow(sf[2], 2.0)*sf[4] + d_em[3])) + mu_Gex[3];
+    double complex cp_1_2p0 = cpow(sf[1], 2.0);
+    double complex cp_0_2p0 = cpow(sf[0], 2.0);
+    double complex cp_2_2p0 = cpow(sf[2], 2.0);
+    mu[0]          = gb[0] + R*T*rlog((cp_1_2p0*sf[4])) + mu_Gex[0];
+    mu[1]          = gb[1] + R*T*rlog((cp_0_2p0*sf[4])) + mu_Gex[1];
+    mu[2]          = gb[2] + R*T*rlog((cp_1_2p0*sf[3])) + mu_Gex[2];
+    mu[3]          = gb[3] + R*T*rlog((cp_2_2p0*sf[4] + d_em[3])) + mu_Gex[3];
     
     d->sum_apep = 0.0;
     for (int i = 0; i < n_em; i++){
@@ -14271,18 +15130,7 @@ double obj_mpe_st(unsigned n, const double *x, double *grad, void *SS_ref_db){
 
     double tmp = 0.0;
     double Gex = 0.0;
-    for (int i = 0; i < n_em; i++){
-        Gex = 0.0;
-        int it    = 0;
-        for (int j = 0; j < d->n_xeos; j++){
-            tmp = (d->eye[i][j] - d->p[j]);
-            for (int k = j+1; k < n_em; k++){
-                Gex -= tmp*(d->eye[i][k] - d->p[k])*(d->W[it]);
-                it += 1;
-            }
-        }
-        mu_Gex[i] = Gex;
-    }   
+    mu_Gex_sym_n2(d, mu_Gex);   
   
     sf[0]          = x[1]*x[0] - x[1] - x[0] + 1.0;
     sf[1]          = -x[1]*x[0] + x[0];
@@ -14293,11 +15141,18 @@ double obj_mpe_st(unsigned n, const double *x, double *grad, void *SS_ref_db){
     sf[6]          = 1./3.*x[3];
     
     
-    mu[0]          = R*T*creal(clog(cpow(sf[3], 2.0)*cpow(sf[0], 4.0))) + gb[0] + mu_Gex[0];
-    mu[1]          = R*T*creal(clog(cpow(sf[3], 2.0)*cpow(sf[1], 4.0))) + gb[1] + mu_Gex[1];
-    mu[2]          = R*T*creal(clog(cpow(sf[3], 2.0)*cpow(sf[2], 4.0) + d_em[2])) + gb[2] + mu_Gex[2];
-    mu[3]          = R*T*creal(clog(cpow(sf[4], 2.0)*cpow(sf[0], 4.0) + d_em[3])) + gb[3] + mu_Gex[3];
-    mu[4]          = R*T*creal(clog(3.0792*cpow(sf[0], 4.0)*cpow(sf[5], 1.5)*csqrt(sf[6]) + d_em[4])) + gb[4] + mu_Gex[4];
+    double complex cp_3_2p0 = cpow(sf[3], 2.0);
+    double complex cp_0_4p0 = cpow(sf[0], 4.0);
+    double complex cp_1_4p0 = cpow(sf[1], 4.0);
+    double complex cp_2_4p0 = cpow(sf[2], 4.0);
+    double complex cp_4_2p0 = cpow(sf[4], 2.0);
+    double complex cp_5_1p5 = cpow(sf[5], 1.5);
+    double complex cs_6 = csqrt(sf[6]);
+    mu[0]          = R*T*rlog((cp_3_2p0*cp_0_4p0)) + gb[0] + mu_Gex[0];
+    mu[1]          = R*T*rlog((cp_3_2p0*cp_1_4p0)) + gb[1] + mu_Gex[1];
+    mu[2]          = R*T*rlog((cp_3_2p0*cp_2_4p0 + d_em[2])) + gb[2] + mu_Gex[2];
+    mu[3]          = R*T*rlog((cp_4_2p0*cp_0_4p0 + d_em[3])) + gb[3] + mu_Gex[3];
+    mu[4]          = R*T*rlog((3.0792*cp_0_4p0*cp_5_1p5*cs_6 + d_em[4])) + gb[4] + mu_Gex[4];
     
     d->sum_apep = 0.0;
     for (int i = 0; i < n_em; i++){
@@ -14347,18 +15202,7 @@ double obj_mpe_chl(unsigned n, const double *x, double *grad, void *SS_ref_db){
 
     double tmp = 0.0;
     double Gex = 0.0;
-    for (int i = 0; i < n_em; i++){
-        Gex = 0.0;
-        int it    = 0;
-        for (int j = 0; j < d->n_xeos; j++){
-            tmp = (d->eye[i][j] - d->p[j]);
-            for (int k = j+1; k < n_em; k++){
-                Gex -= tmp*(d->eye[i][k] - d->p[k])*(d->W[it]);
-                it += 1;
-            }
-        }
-        mu_Gex[i] = Gex;
-    }   
+    mu_Gex_sym_n2(d, mu_Gex);   
   
     sf[0]          = -x[3]*x[5] + x[3]*x[0] - x[3] + x[5]*x[4] - x[5]*x[1] + x[5] - x[4]*x[0] + x[4] + x[0]*x[1] - x[0] - x[1] + 1.0;
     sf[1]          = x[3]*x[5] - x[3]*x[0] - x[5]*x[4] + x[5]*x[1] - x[5] + x[4]*x[0] - x[0]*x[1] + x[0];
@@ -14374,14 +15218,19 @@ double obj_mpe_chl(unsigned n, const double *x, double *grad, void *SS_ref_db){
     sf[11]          = 0.5*x[2] + x[1];
     
     
-    mu[0]          = R*T*creal(clog(4.0*sf[9]*sf[11]*sf[0]*cpow(sf[3], 4.0)*sf[10])) + gb[0] + mu_Gex[0];
-    mu[1]          = R*T*creal(clog(sf[0]*cpow(sf[3], 4.0)*sf[6]*cpow(sf[10], 2.0))) + gb[1] + mu_Gex[1];
-    mu[2]          = R*T*creal(clog(sf[2]*sf[9]*cpow(sf[11], 2.0)*cpow(sf[3], 4.0))) + gb[2] + mu_Gex[2];
-    mu[3]          = R*T*creal(clog(4.0*sf[9]*sf[11]*sf[1]*cpow(sf[5], 4.0)*sf[10])) + gb[3] + mu_Gex[3];
-    mu[4]          = R*T*creal(clog(cpow(sf[5], 4.0)*sf[7]*sf[0]*cpow(sf[10], 2.0))) + gb[4] + mu_Gex[4];
-    mu[5]          = R*T*creal(clog(sf[1]*cpow(sf[3], 4.0)*sf[6]*cpow(sf[10], 2.0))) + gb[5] + mu_Gex[5];
-    mu[6]          = R*T*creal(clog(4.0*sf[11]*sf[8]*sf[0]*cpow(sf[3], 4.0)*sf[10] + d_em[6])) + gb[6] + mu_Gex[6];
-    mu[7]          = R*T*creal(clog(4.0*sf[9]*sf[11]*cpow(sf[4], 5.0)*sf[10] + d_em[7])) + gb[7] + mu_Gex[7];
+    double complex cp_3_4p0 = cpow(sf[3], 4.0);
+    double complex cp_10_2p0 = cpow(sf[10], 2.0);
+    double complex cp_11_2p0 = cpow(sf[11], 2.0);
+    double complex cp_5_4p0 = cpow(sf[5], 4.0);
+    double complex cp_4_5p0 = cpow(sf[4], 5.0);
+    mu[0]          = R*T*rlog((4.0*sf[9]*sf[11]*sf[0]*cp_3_4p0*sf[10])) + gb[0] + mu_Gex[0];
+    mu[1]          = R*T*rlog((sf[0]*cp_3_4p0*sf[6]*cp_10_2p0)) + gb[1] + mu_Gex[1];
+    mu[2]          = R*T*rlog((sf[2]*sf[9]*cp_11_2p0*cp_3_4p0)) + gb[2] + mu_Gex[2];
+    mu[3]          = R*T*rlog((4.0*sf[9]*sf[11]*sf[1]*cp_5_4p0*sf[10])) + gb[3] + mu_Gex[3];
+    mu[4]          = R*T*rlog((cp_5_4p0*sf[7]*sf[0]*cp_10_2p0)) + gb[4] + mu_Gex[4];
+    mu[5]          = R*T*rlog((sf[1]*cp_3_4p0*sf[6]*cp_10_2p0)) + gb[5] + mu_Gex[5];
+    mu[6]          = R*T*rlog((4.0*sf[11]*sf[8]*sf[0]*cp_3_4p0*sf[10] + d_em[6])) + gb[6] + mu_Gex[6];
+    mu[7]          = R*T*rlog((4.0*sf[9]*sf[11]*cp_4_5p0*sf[10] + d_em[7])) + gb[7] + mu_Gex[7];
     
     d->sum_apep = 0.0;
     for (int i = 0; i < n_em; i++){
@@ -14431,18 +15280,7 @@ double obj_mpe_ctd(unsigned n, const double *x, double *grad, void *SS_ref_db){
 
     double tmp = 0.0;
     double Gex = 0.0;
-    for (int i = 0; i < n_em; i++){
-        Gex = 0.0;
-        int it    = 0;
-        for (int j = 0; j < d->n_xeos; j++){
-            tmp = (d->eye[i][j] - d->p[j]);
-            for (int k = j+1; k < n_em; k++){
-                Gex -= tmp*(d->eye[i][k] - d->p[k])*(d->W[it]);
-                it += 1;
-            }
-        }
-        mu_Gex[i] = Gex;
-    }   
+    mu_Gex_sym_n2(d, mu_Gex);   
   
     sf[0]          = 1.0 - x[2];
     sf[1]          = x[2];
@@ -14451,10 +15289,12 @@ double obj_mpe_ctd(unsigned n, const double *x, double *grad, void *SS_ref_db){
     sf[4]          = x[1];
     
     
-    mu[0]          = R*T*creal(clog(csqrt(sf[0])*sf[3])) + gb[0] + mu_Gex[0];
-    mu[1]          = R*T*creal(clog(csqrt(sf[0])*sf[2])) + gb[1] + mu_Gex[1];
-    mu[2]          = R*T*creal(clog(csqrt(sf[0])*sf[4] + d_em[2])) + gb[2] + mu_Gex[2];
-    mu[3]          = R*T*creal(clog(csqrt(sf[1])*sf[3] + d_em[3])) + gb[3] + mu_Gex[3];
+    double complex cs_0 = csqrt(sf[0]);
+    double complex cs_1 = csqrt(sf[1]);
+    mu[0]          = R*T*rlog((cs_0*sf[3])) + gb[0] + mu_Gex[0];
+    mu[1]          = R*T*rlog((cs_0*sf[2])) + gb[1] + mu_Gex[1];
+    mu[2]          = R*T*rlog((cs_0*sf[4] + d_em[2])) + gb[2] + mu_Gex[2];
+    mu[3]          = R*T*rlog((cs_1*sf[3] + d_em[3])) + gb[3] + mu_Gex[3];
     
     d->sum_apep = 0.0;
     for (int i = 0; i < n_em; i++){
@@ -14504,18 +15344,7 @@ double obj_mpe_sp(unsigned n, const double *x, double *grad, void *SS_ref_db){
 
     double tmp = 0.0;
     double Gex = 0.0;
-    for (int i = 0; i < n_em; i++){
-        Gex = 0.0;
-        int it    = 0;
-        for (int j = 0; j < d->n_xeos; j++){
-            tmp = (d->eye[i][j] - d->p[j]);
-            for (int k = j+1; k < n_em; k++){
-                Gex -= tmp*(d->eye[i][k] - d->p[k])*(d->W[it]);
-                it += 1;
-            }
-        }
-        mu_Gex[i] = Gex;
-    }   
+    mu_Gex_sym_n2(d, mu_Gex);   
   
     sf[0]          = x[1];
     sf[1]          = -x[1] - x[2] + 1.0;
@@ -14524,10 +15353,10 @@ double obj_mpe_sp(unsigned n, const double *x, double *grad, void *SS_ref_db){
     sf[4]          = x[0];
     
     
-    mu[0]          = R*T*creal(clog(sf[0]*sf[4])) + gb[0] + mu_Gex[0];
-    mu[1]          = R*T*creal(clog(sf[0]*sf[3])) + gb[1] + mu_Gex[1];
-    mu[2]          = R*T*creal(clog(sf[4]*sf[1] + d_em[2])) + gb[2] + mu_Gex[2];
-    mu[3]          = R*T*creal(clog(sf[4]*sf[2] + d_em[3])) + gb[3] + mu_Gex[3];
+    mu[0]          = R*T*rlog((sf[0]*sf[4])) + gb[0] + mu_Gex[0];
+    mu[1]          = R*T*rlog((sf[0]*sf[3])) + gb[1] + mu_Gex[1];
+    mu[2]          = R*T*rlog((sf[4]*sf[1] + d_em[2])) + gb[2] + mu_Gex[2];
+    mu[3]          = R*T*rlog((sf[4]*sf[2] + d_em[3])) + gb[3] + mu_Gex[3];
     
     d->sum_apep = 0.0;
     for (int i = 0; i < n_em; i++){
@@ -14544,11 +15373,18 @@ double obj_mpe_sp(unsigned n, const double *x, double *grad, void *SS_ref_db){
     if (grad){
         double *dfx    = d->dfx;
         double **dp_dx = d->dp_dx;
+        double dsf[5][3] = {{0.0,1.0,0.0},{0.0,-1.0,-1.0},{0.0,0.0,1.0},{-1.0,0.0,0.0},{1.0,0.0,0.0}};
+        int    ia[4]    = {0, 0, 4, 4};
+        int    ib[4]    = {4, 3, 1, 2};
+        double de[4]    = {0.0, 0.0, d_em[2], d_em[3]};
         dpdx_mpe_sp(SS_ref_db,x);
         for (int i = 0; i < (d->n_xeos); i++){
             dfx[i] = 0.0;
             for (int j = 0; j < n_em; j++){
                 dfx[i] += (mu[j] - (d->ape[j]/d->sum_apep)*d->df_raw)*d->factor*dp_dx[j][i];
+            }
+            for (int j = 0; j < n_em; j++){
+                dfx[i] += d->factor*R*T*d->p[j]*(sf[ib[j]]*dsf[ia[j]][i] + sf[ia[j]]*dsf[ib[j]][i])/(sf[ia[j]]*sf[ib[j]] + de[j]);
             }
             grad[i] = creal(dfx[i]);
         }
@@ -14576,16 +15412,7 @@ double obj_mpe_ilm(unsigned n, const double *x, double *grad, void *SS_ref_db){
     double *d_em      = d->d_em;
     px_mpe_ilm(SS_ref_db,x);
 
-    for (int i = 0; i < n_em; i++){
-        mu_Gex[i] = 0.0;
-        int it    = 0;
-        for (int j = 0; j < d->n_xeos; j++){
-            for (int k = j+1; k < n_em; k++){
-                mu_Gex[i] -= (d->eye[i][j] - d->p[j])*(d->eye[i][k] - d->p[k])*(d->W[it]);
-                it += 1;
-            }
-        }
-    }
+    mu_Gex_sym_n2(d, mu_Gex);
     
     sf[0]          = 0.5*x[0] + 0.5*x[1];
     sf[1]          = 0.5*x[0] - 0.5*x[1];
@@ -14595,9 +15422,13 @@ double obj_mpe_ilm(unsigned n, const double *x, double *grad, void *SS_ref_db){
     sf[5]          = 1.0 - x[0];
     
     
-    mu[0]          = gb[0] + R*T*creal(clog(sf[0]*sf[4])) + mu_Gex[0];
-    mu[1]          = gb[1] + R*T*creal(clog(4.0*csqrt(sf[0])*csqrt(sf[1])*csqrt(sf[3])*csqrt(sf[4]))) + mu_Gex[1];
-    mu[2]          = gb[2] + R*T*creal(clog(sf[2]*sf[5] + d_em[2])) + mu_Gex[2];
+    mu[0]          = gb[0] + R*T*rlog((sf[0]*sf[4] + d_em[0])) + mu_Gex[0];
+    double complex cs_0 = csqrt(sf[0]);
+    double complex cs_1 = csqrt(sf[1]);
+    double complex cs_3 = csqrt(sf[3]);
+    double complex cs_4 = csqrt(sf[4]);
+    mu[1]          = gb[1] + R*T*rlog((4.0*cs_0*cs_1*cs_3*cs_4 + d_em[1])) + mu_Gex[1];
+    mu[2]          = gb[2] + R*T*rlog((sf[2]*sf[5] + d_em[2])) + mu_Gex[2];
     
     d->sum_apep = 0.0;
     for (int i = 0; i < n_em; i++){
@@ -14646,16 +15477,7 @@ double obj_mpe_ilmm(unsigned n, const double *x, double *grad, void *SS_ref_db){
     double *d_em      = d->d_em;
     px_mpe_ilmm(SS_ref_db,x);
 
-    for (int i = 0; i < n_em; i++){
-        mu_Gex[i] = 0.0;
-        int it    = 0;
-        for (int j = 0; j < d->n_xeos; j++){
-            for (int k = j+1; k < n_em; k++){
-                mu_Gex[i] -= (d->eye[i][j] - d->p[j])*(d->eye[i][k] - d->p[k])*(d->W[it]);
-                it += 1;
-            }
-        }
-    }
+    mu_Gex_sym_n2(d, mu_Gex);
     
     sf[0]          = 0.5*x[0] - 0.5*x[1] - 0.5*x[2] + 0.5*x[3];
     sf[1]          = 0.5*x[0] - 0.5*x[1] - 0.5*x[2] - 0.5*x[3];
@@ -14666,11 +15488,16 @@ double obj_mpe_ilmm(unsigned n, const double *x, double *grad, void *SS_ref_db){
     sf[6]          = 0.5*x[0] + 0.5*x[1] + 0.5*x[2] + 0.5*x[3];
     
     
-    mu[0]          = gb[0] + R*T*creal(clog(sf[0]*sf[6])) + mu_Gex[0];
-    mu[1]          = gb[1] + R*T*creal(clog(4.0*csqrt(sf[0])*csqrt(sf[1])*csqrt(sf[5])*csqrt(sf[6]))) + mu_Gex[1];
-    mu[2]          = gb[2] + R*T*creal(clog(cpow(sf[4], 2.0) + d_em[2])) + mu_Gex[2];
-    mu[3]          = gb[3] + R*T*creal(clog(sf[2]*sf[6])) + mu_Gex[3];
-    mu[4]          = gb[4] + R*T*creal(clog(sf[3]*sf[6] + d_em[4])) + mu_Gex[4];
+    mu[0]          = gb[0] + R*T*rlog((sf[0]*sf[6] + d_em[0])) + mu_Gex[0];
+    double complex cp_4_2p0 = cpow(sf[4], 2.0);
+    double complex cs_0 = csqrt(sf[0]);
+    double complex cs_1 = csqrt(sf[1]);
+    double complex cs_5 = csqrt(sf[5]);
+    double complex cs_6 = csqrt(sf[6]);
+    mu[1]          = gb[1] + R*T*rlog((4.0*cs_0*cs_1*cs_5*cs_6 + d_em[1])) + mu_Gex[1];
+    mu[2]          = gb[2] + R*T*rlog((cp_4_2p0 + d_em[2])) + mu_Gex[2];
+    mu[3]          = gb[3] + R*T*rlog((sf[2]*sf[6] + d_em[3])) + mu_Gex[3];
+    mu[4]          = gb[4] + R*T*rlog((sf[3]*sf[6] + d_em[4])) + mu_Gex[4];
     
     d->sum_apep = 0.0;
     for (int i = 0; i < n_em; i++){
@@ -14720,18 +15547,7 @@ double obj_mpe_mt(unsigned n, const double *x, double *grad, void *SS_ref_db){
 
     double tmp = 0.0;
     double Gex = 0.0;
-    for (int i = 0; i < n_em; i++){
-        Gex = 0.0;
-        int it    = 0;
-        for (int j = 0; j < d->n_xeos; j++){
-            tmp = (d->eye[i][j] - d->p[j]);
-            for (int k = j+1; k < n_em; k++){
-                Gex -= tmp*(d->eye[i][k] - d->p[k])*(d->W[it]);
-                it += 1;
-            }
-        }
-        mu_Gex[i] = Gex;
-    }   
+    mu_Gex_sym_n2(d, mu_Gex);   
   
     sf[0]          = 0.5 - 0.5*x[0];
     sf[1]          = -0.5*x[1] + x[0];
@@ -14740,9 +15556,9 @@ double obj_mpe_mt(unsigned n, const double *x, double *grad, void *SS_ref_db){
     sf[4]          = 1.0 - x[1];
     
     
-    mu[0]          = R*T*creal(clog(4.0*sf[1]*sf[3]*sf[2] + d_em[0])) + gb[0] + mu_Gex[0];
-    mu[1]          = R*T*creal(clog(6.75*cpow(sf[1], 4.0/3.0)*cpow(sf[3], 2.0/3.0)*cpow(sf[2], 2.0/3.0)*cpow(sf[4], 1.0/3.0) + d_em[1])) + gb[1] + mu_Gex[1];
-    mu[2]          = R*T*creal(clog(4.0*sf[2]*sf[4]*sf[0]+ d_em[2])) + gb[2] + mu_Gex[2];
+    mu[0]          = R*T*rlog((4.0*sf[1]*sf[3]*sf[2] + d_em[0])) + gb[0] + mu_Gex[0];
+    mu[1]          = R*T*rlog((6.75*cpow(sf[1], 4.0/3.0)*cpow(sf[3], 2.0/3.0)*cpow(sf[2], 2.0/3.0)*cpow(sf[4], 1.0/3.0) + d_em[1])) + gb[1] + mu_Gex[1];
+    mu[2]          = R*T*rlog((4.0*sf[2]*sf[4]*sf[0]+ d_em[2])) + gb[2] + mu_Gex[2];
     
     d->sum_apep = 0.0;
     for (int i = 0; i < n_em; i++){
@@ -14794,8 +15610,8 @@ double obj_mpe_fl(unsigned n, const double *x, double *grad, void *SS_ref_db){
     sf[0]          = 1.0 - x[0];
     sf[1]          = x[0];
     
-    mu[0]          = gb[0] + R*T*creal(clog(sf[0]+ d_em[0]));
-    mu[1]          = gb[1] + R*T*creal(clog(sf[1]+ d_em[1]));
+    mu[0]          = gb[0] + R*T*rlog((sf[0]+ d_em[0]));
+    mu[1]          = gb[1] + R*T*rlog((sf[1]+ d_em[1]));
     
     d->sum_apep = 0.0;
     for (int i = 0; i < n_em; i++){
@@ -14851,16 +15667,7 @@ double obj_mpe_occm(unsigned n, const double *x, double *grad, void *SS_ref_db){
         d->mat_phi[i] = (d->p[i]*d->v[i])/d->sum_v;
     }
     
-    for (int i = 0; i < d->n_em; i++){
-        mu_Gex[i] = 0.0;
-        int it = 0;
-        for (int j = 0; j < d->n_xeos; j++){
-            for (int k = j+1; k < d->n_em; k++){
-                mu_Gex[i] -= (d->eye[i][j] - d->mat_phi[j])*(d->eye[i][k] - d->mat_phi[k])*(d->W[it]*2.0*d->v[i]/(d->v[j]+d->v[k]));
-                it += 1;
-            }
-        }
-    }
+    mu_Gex_asym_n2(d, mu_Gex);
     
     sf[0]          = -x[0] - x[1] + 0.5*x[2] + 1.0;
     sf[1]          = x[0] - 0.5*x[2] + 0.25*x[3];
@@ -14873,12 +15680,21 @@ double obj_mpe_occm(unsigned n, const double *x, double *grad, void *SS_ref_db){
     sf[8]          = x[1] - 0.25*x[3];
     
     
-    mu[0]          = gb[0] + R*T*creal(clog(csqrt(sf[0])*cpow(sf[3], 0.25)*cpow(sf[6], 0.25))) + mu_Gex[0];
-    mu[1]          = gb[1] + R*T*creal(clog(csqrt(sf[0])*cpow(sf[4], 0.25)*cpow(sf[7], 0.25))) + mu_Gex[1];
-    mu[2]          = gb[2] + R*T*creal(clog(csqrt(sf[1])*cpow(sf[4], 0.25)*cpow(sf[7], 0.25))) + mu_Gex[2];
-    mu[3]          = gb[3] + R*T*creal(clog(csqrt(sf[2])*cpow(sf[5], 0.25)*cpow(sf[8], 0.25))) + mu_Gex[3];
-    mu[4]          = gb[4] + R*T*creal(clog(csqrt(sf[0])*cpow(sf[5], 0.25)*cpow(sf[7], 0.25))) + mu_Gex[4];
-    
+    double complex cp_3_0p25 = cpow(sf[3], 0.25);
+    double complex cp_6_0p25 = cpow(sf[6], 0.25);
+    double complex cp_4_0p25 = cpow(sf[4], 0.25);
+    double complex cp_7_0p25 = cpow(sf[7], 0.25);
+    double complex cp_5_0p25 = cpow(sf[5], 0.25);
+    double complex cp_8_0p25 = cpow(sf[8], 0.25);
+    double complex cs_0 = csqrt(sf[0]);
+    double complex cs_1 = csqrt(sf[1]);
+    double complex cs_2 = csqrt(sf[2]);
+    mu[0]          = gb[0] + R*T*rlog((cs_0*cp_3_0p25*cp_6_0p25)) + mu_Gex[0];
+    mu[1]          = gb[1] + R*T*rlog((cs_0*cp_4_0p25*cp_7_0p25)) + mu_Gex[1];
+    mu[2]          = gb[2] + R*T*rlog((cs_1*cp_4_0p25*cp_7_0p25)) + mu_Gex[2];
+    mu[3]          = gb[3] + R*T*rlog((cs_2*cp_5_0p25*cp_8_0p25)) + mu_Gex[3];
+    mu[4]          = gb[4] + R*T*rlog((cs_0*cp_5_0p25*cp_7_0p25)) + mu_Gex[4];
+
     d->sum_apep = 0.0;
     for (int i = 0; i < n_em; i++){
         d->sum_apep += d->ape[i]*d->p[i];
@@ -14891,6 +15707,10 @@ double obj_mpe_occm(unsigned n, const double *x, double *grad, void *SS_ref_db){
     }
     d->df = d->df_raw * d->factor;
 
+    for (int k = 0; k < n_em; k++){
+        d->df += d->ox_penalty[k] * d->p[k] * d->p[k];
+    }
+
     if (grad){
         double *dfx    = d->dfx;
         double **dp_dx = d->dp_dx;
@@ -14899,6 +15719,7 @@ double obj_mpe_occm(unsigned n, const double *x, double *grad, void *SS_ref_db){
             dfx[i] = 0.0;
             for (int j = 0; j < n_em; j++){
                 dfx[i] += (mu[j] - (d->ape[j]/d->sum_apep)*d->df_raw)*d->factor*dp_dx[j][i];
+                dfx[i] += d->ox_penalty[j]*2.0*d->p[j]*dp_dx[j][i];
             }
             grad[i] = creal(dfx[i]);
         }
@@ -14926,16 +15747,7 @@ double obj_mpe_dio(unsigned n, const double *x, double *grad, void *SS_ref_db){
     double *d_em      = d->d_em;
     px_mpe_dio(SS_ref_db,x);
 
-    for (int i = 0; i < n_em; i++){
-        mu_Gex[i] = 0.0;
-        int it    = 0;
-        for (int j = 0; j < d->n_xeos; j++){
-            for (int k = j+1; k < n_em; k++){
-                mu_Gex[i] -= (d->eye[i][j] - d->p[j])*(d->eye[i][k] - d->p[k])*(d->W[it]);
-                it += 1;
-            }
-        }
-    }
+    mu_Gex_sym_n2(d, mu_Gex);
     
     sf[0]          =x[0]*x[1] - x[0]*x[3] - x[0] - x[1]*x[5] - x[1] - x[3]*x[5] +x[3] +x[5] + 1.0;
     sf[1]          = -x[0]*x[1] +x[0]*x[3] +x[0] +x[1]*x[5] +x[3]*x[5] - x[5];
@@ -14951,13 +15763,25 @@ double obj_mpe_dio(unsigned n, const double *x, double *grad, void *SS_ref_db){
     sf[11]          = -x[1] - x[3] + 1.0;
     
     
-    mu[0]          = gb[0] + R*T*creal(clog(csqrt(sf[10])*csqrt(sf[3])*csqrt(sf[7])*csqrt(sf[8]))) + mu_Gex[0];
-    mu[1]          = gb[1] + R*T*creal(clog(csqrt(sf[0])*csqrt(sf[11])*csqrt(sf[4])*csqrt(sf[9]))) + mu_Gex[1];
-    mu[2]          = gb[2] + R*T*creal(clog(csqrt(sf[11])*csqrt(sf[1])*csqrt(sf[5])*csqrt(sf[9]))) + mu_Gex[2];
-    mu[3]          = gb[3] + R*T*creal(clog(csqrt(sf[10])*csqrt(sf[2])*csqrt(sf[6])*csqrt(sf[8]) +d_em[3])) + mu_Gex[3];
-    mu[4]          = gb[4] + R*T*creal(clog(csqrt(sf[0])*csqrt(sf[10])*csqrt(sf[7])*csqrt(sf[9]))) + mu_Gex[4];
-    mu[5]          = gb[5] + R*T*creal(clog(csqrt(sf[11])*csqrt(sf[1])*csqrt(sf[4])*csqrt(sf[9]))) + mu_Gex[5];
-    mu[6]          = gb[6] + R*T*creal(clog(csqrt(sf[10])*csqrt(sf[3])*csqrt(sf[6])*csqrt(sf[8]) +d_em[6])) + mu_Gex[6];
+    double complex cs_10 = csqrt(sf[10]);
+    double complex cs_3 = csqrt(sf[3]);
+    double complex cs_7 = csqrt(sf[7]);
+    double complex cs_8 = csqrt(sf[8]);
+    double complex cs_0 = csqrt(sf[0]);
+    double complex cs_11 = csqrt(sf[11]);
+    double complex cs_4 = csqrt(sf[4]);
+    double complex cs_9 = csqrt(sf[9]);
+    double complex cs_1 = csqrt(sf[1]);
+    double complex cs_5 = csqrt(sf[5]);
+    double complex cs_2 = csqrt(sf[2]);
+    double complex cs_6 = csqrt(sf[6]);
+    mu[0]          = gb[0] + R*T*rlog((cs_10*cs_3*cs_7*cs_8 +d_em[0])) + mu_Gex[0];
+    mu[1]          = gb[1] + R*T*rlog((cs_0*cs_11*cs_4*cs_9 +d_em[1])) + mu_Gex[1];
+    mu[2]          = gb[2] + R*T*rlog((cs_11*cs_1*cs_5*cs_9 +d_em[2])) + mu_Gex[2];
+    mu[3]          = gb[3] + R*T*rlog((cs_10*cs_2*cs_6*cs_8 +d_em[3])) + mu_Gex[3];
+    mu[4]          = gb[4] + R*T*rlog((cs_0*cs_10*cs_7*cs_9 +d_em[4])) + mu_Gex[4];
+    mu[5]          = gb[5] + R*T*rlog((cs_11*cs_1*cs_4*cs_9 +d_em[5])) + mu_Gex[5];
+    mu[6]          = gb[6] + R*T*rlog((cs_10*cs_3*cs_6*cs_8 +d_em[6])) + mu_Gex[6];
     
     d->sum_apep = 0.0;
     for (int i = 0; i < n_em; i++){
@@ -15015,18 +15839,9 @@ double obj_mpe_aug(unsigned n, const double *x, double *grad, void *SS_ref_db){
     for (int i = 0; i < n_em; i++){
         d->mat_phi[i] = (d->p[i]*d->v[i])/d->sum_v;
     }
-    
-    for (int i = 0; i < d->n_em; i++){
-        mu_Gex[i] = 0.0;
-        int it = 0;
-        for (int j = 0; j < d->n_xeos; j++){
-            for (int k = j+1; k < d->n_em; k++){
-                mu_Gex[i] -= (d->eye[i][j] - d->mat_phi[j])*(d->eye[i][k] - d->mat_phi[k])*(d->W[it]*2.0*d->v[i]/(d->v[j]+d->v[k]));
-                it += 1;
-            }
-        }
-    }
-    
+
+    mu_Gex_asym_n2(d, mu_Gex);
+
     sf[0]          =x[0]*x[1] +x[0]*x[4] - x[0] - x[1] - 0.5*x[3]*x[5] - 0.5*x[4]*x[5] - x[4] + 0.5*x[5] + 1.0;
     sf[1]          = -x[0]*x[1] - x[0]*x[4] +x[0] + 0.5*x[3]*x[5] + 0.5*x[4]*x[5] - 0.5*x[5];
     sf[2]          =x[1] - x[2] +x[4];
@@ -15039,17 +15854,24 @@ double obj_mpe_aug(unsigned n, const double *x, double *grad, void *SS_ref_db){
     sf[9]          = 0.5*x[1] - 0.5*x[6];
     sf[10]          = -0.5*x[1] - 0.5*x[6] + 1.0;
     sf[11]          = 0.5*x[1] + 0.5*x[6];
-    
-    
-    mu[0]          = gb[0] + R*T*creal(clog(sf[0]*cpow(sf[10], 0.25)*sf[6]*cpow(sf[8], 0.25))) + mu_Gex[0];
-    mu[1]          = gb[1] + R*T*creal(clog(sf[0]*cpow(sf[10], 0.25)*sf[4]*cpow(sf[8], 0.25))) + mu_Gex[1];
-    mu[2]          = gb[2] + R*T*creal(clog(cpow(sf[10], 0.25)*sf[1]*sf[5]*cpow(sf[8], 0.25))) + mu_Gex[2];
-    mu[3]          = gb[3] + R*T*creal(clog(cpow(sf[10], 0.25)*sf[2]*sf[7]*cpow(sf[8], 0.25))) + mu_Gex[3];
-    mu[4]          = gb[4] + R*T*creal(clog(cpow(sf[10], 0.25)*sf[3]*sf[7]*cpow(sf[8], 0.25) + d_em[4])) + mu_Gex[4];
-    mu[5]          = gb[5] + R*T*creal(clog(cpow(sf[11], 0.25)*sf[2]*sf[6]*cpow(sf[8], 0.25))) + mu_Gex[5];
-    mu[6]          = gb[6] + R*T*creal(clog(1.4142*cpow(sf[10], 0.125)*cpow(sf[11], 0.125)*sf[2]*sf[6]*cpow(sf[8], 0.125)*cpow(sf[9], 0.125))) + mu_Gex[6];
-    mu[7]          = gb[7] + R*T*creal(clog(sf[0]*cpow(sf[10], 0.25)*sf[5]*cpow(sf[8], 0.25))) + mu_Gex[7];
-    
+
+
+    double complex cp_10_0p25 = cpow(sf[10], 0.25);
+    double complex cp_8_0p25 = cpow(sf[8], 0.25);
+    double complex cp_11_0p25 = cpow(sf[11], 0.25);
+    double complex cp_10_0p125 = cpow(sf[10], 0.125);
+    double complex cp_11_0p125 = cpow(sf[11], 0.125);
+    double complex cp_8_0p125 = cpow(sf[8], 0.125);
+    double complex cp_9_0p125 = cpow(sf[9], 0.125);
+    mu[0]          = gb[0] + R*T*rlog((sf[0]*cp_10_0p25*sf[6]*cp_8_0p25 + d_em[0])) + mu_Gex[0];
+    mu[1]          = gb[1] + R*T*rlog((sf[0]*cp_10_0p25*sf[4]*cp_8_0p25)) + mu_Gex[1];
+    mu[2]          = gb[2] + R*T*rlog((cp_10_0p25*sf[1]*sf[5]*cp_8_0p25)) + mu_Gex[2];
+    mu[3]          = gb[3] + R*T*rlog((cp_10_0p25*sf[2]*sf[7]*cp_8_0p25 + d_em[3])) + mu_Gex[3];
+    mu[4]          = gb[4] + R*T*rlog((cp_10_0p25*sf[3]*sf[7]*cp_8_0p25 + d_em[4])) + mu_Gex[4];
+    mu[5]          = gb[5] + R*T*rlog((cp_11_0p25*sf[2]*sf[6]*cp_8_0p25 + d_em[5])) + mu_Gex[5];
+    mu[6]          = gb[6] + R*T*rlog((1.4142*cp_10_0p125*cp_11_0p125*sf[2]*sf[6]*cp_8_0p125*cp_9_0p125 + d_em[6])) + mu_Gex[6];
+    mu[7]          = gb[7] + R*T*rlog((sf[0]*cp_10_0p25*sf[5]*cp_8_0p25)) + mu_Gex[7];
+
     d->sum_apep = 0.0;
     for (int i = 0; i < n_em; i++){
         d->sum_apep += d->ape[i]*d->p[i];
@@ -15107,16 +15929,7 @@ double obj_mpe_amp(unsigned n, const double *x, double *grad, void *SS_ref_db){
         d->mat_phi[i] = (d->p[i]*d->v[i])/d->sum_v;
     }
     
-    for (int i = 0; i < d->n_em; i++){
-        mu_Gex[i] = 0.0;
-        int it = 0;
-        for (int j = 0; j < d->n_xeos; j++){
-            for (int k = j+1; k < d->n_em; k++){
-                mu_Gex[i] -= (d->eye[i][j] - d->mat_phi[j])*(d->eye[i][k] - d->mat_phi[k])*(d->W[it]*2.0*d->v[i]/(d->v[j]+d->v[k]));
-                it += 1;
-            }
-        }
-    }
+    mu_Gex_asym_n2(d, mu_Gex);
     
     sf[0]          = 1.0 - x[3];
     sf[1]          = -x[3]*x[4] +x[3];
@@ -15138,18 +15951,33 @@ double obj_mpe_amp(unsigned n, const double *x, double *grad, void *SS_ref_db){
     sf[17]          =x[7];
     
     
-    mu[0]          = gb[0] + R*T*creal(clog(sf[0]*cpow(sf[10], 2.0)*sf[14]*cpow(sf[16], 2.0)*cpow(sf[3], 3.0)*cpow(sf[5], 2.0))) + mu_Gex[0];
-    mu[1]          = gb[1] + R*T*creal(clog(2.0*sf[0]*cpow(sf[10], 2.0)*csqrt(sf[14])*csqrt(sf[15])*cpow(sf[16], 2.0)*cpow(sf[3], 3.0)*cpow(sf[7], 2.0))) + mu_Gex[1];
-    mu[2]          = gb[2] + R*T*creal(clog(8.0*cpow(sf[10], 2.0)*csqrt(sf[14])*csqrt(sf[15])*cpow(sf[16], 2.0)*sf[1]*cpow(sf[3], 3.0)*sf[5]*sf[7])) + mu_Gex[2];
-    mu[3]          = gb[3] + R*T*creal(clog(sf[0]*cpow(sf[13], 2.0)*sf[14]*cpow(sf[16], 2.0)*cpow(sf[3], 3.0)*cpow(sf[7], 2.0))) + mu_Gex[3];
-    mu[4]          = gb[4] + R*T*creal(clog(sf[0]*cpow(sf[11], 2.0)*sf[14]*cpow(sf[16], 2.0)*cpow(sf[3], 3.0)*cpow(sf[5], 2.0))) + mu_Gex[4];
-    mu[5]          = gb[5] + R*T*creal(clog(sf[0]*cpow(sf[12], 2.0)*sf[14]*cpow(sf[16], 2.0)*cpow(sf[4], 3.0)*cpow(sf[6], 2.0))) + mu_Gex[5];
-    mu[6]          = gb[6] + R*T*creal(clog(sf[0]*cpow(sf[12], 2.0)*sf[14]*cpow(sf[16], 2.0)*cpow(sf[3], 3.0)*cpow(sf[6], 2.0))) + mu_Gex[6];
-    mu[7]          = gb[7] + R*T*creal(clog(sf[0]*cpow(sf[12], 2.0)*sf[14]*cpow(sf[16], 2.0)*cpow(sf[4], 3.0)*cpow(sf[5], 2.0))) + mu_Gex[7];
-    mu[8]          = gb[8] + R*T*creal(clog(sf[0]*cpow(sf[13], 2.0)*sf[14]*cpow(sf[16], 2.0)*cpow(sf[3], 3.0)*cpow(sf[8], 2.0) + d_em[8])) + mu_Gex[8];
-    mu[9]          = gb[9] + R*T*creal(clog(8.0*cpow(sf[10], 2.0)*csqrt(sf[14])*csqrt(sf[15])*cpow(sf[16], 2.0)*sf[2]*cpow(sf[3], 3.0)*sf[5]*sf[7])) + mu_Gex[9];
-    mu[10]          = gb[10] + R*T*creal(clog(2.0*sf[0]*cpow(sf[10], 2.0)*csqrt(sf[14])*csqrt(sf[15])*cpow(sf[17], 2.0)*cpow(sf[3], 3.0)*cpow(sf[9], 2.0)  + d_em[10] )) + mu_Gex[10];
-    
+    double complex cp_10_2p0 = cpow(sf[10], 2.0);
+    double complex cp_16_2p0 = cpow(sf[16], 2.0);
+    double complex cp_3_3p0 = cpow(sf[3], 3.0);
+    double complex cp_5_2p0 = cpow(sf[5], 2.0);
+    double complex cp_7_2p0 = cpow(sf[7], 2.0);
+    double complex cp_13_2p0 = cpow(sf[13], 2.0);
+    double complex cp_11_2p0 = cpow(sf[11], 2.0);
+    double complex cp_12_2p0 = cpow(sf[12], 2.0);
+    double complex cp_4_3p0 = cpow(sf[4], 3.0);
+    double complex cp_6_2p0 = cpow(sf[6], 2.0);
+    double complex cp_8_2p0 = cpow(sf[8], 2.0);
+    double complex cp_17_2p0 = cpow(sf[17], 2.0);
+    double complex cp_9_2p0 = cpow(sf[9], 2.0);
+    double complex cs_14 = csqrt(sf[14]);
+    double complex cs_15 = csqrt(sf[15]);
+    mu[0]          = gb[0] + R*T*rlog((sf[0]*cp_10_2p0*sf[14]*cp_16_2p0*cp_3_3p0*cp_5_2p0)) + mu_Gex[0];
+    mu[1]          = gb[1] + R*T*rlog((2.0*sf[0]*cp_10_2p0*cs_14*cs_15*cp_16_2p0*cp_3_3p0*cp_7_2p0)) + mu_Gex[1];
+    mu[2]          = gb[2] + R*T*rlog((8.0*cp_10_2p0*cs_14*cs_15*cp_16_2p0*sf[1]*cp_3_3p0*sf[5]*sf[7] + d_em[2])) + mu_Gex[2];
+    mu[3]          = gb[3] + R*T*rlog((sf[0]*cp_13_2p0*sf[14]*cp_16_2p0*cp_3_3p0*cp_7_2p0 + d_em[3])) + mu_Gex[3];
+    mu[4]          = gb[4] + R*T*rlog((sf[0]*cp_11_2p0*sf[14]*cp_16_2p0*cp_3_3p0*cp_5_2p0)) + mu_Gex[4];
+    mu[5]          = gb[5] + R*T*rlog((sf[0]*cp_12_2p0*sf[14]*cp_16_2p0*cp_4_3p0*cp_6_2p0)) + mu_Gex[5];
+    mu[6]          = gb[6] + R*T*rlog((sf[0]*cp_12_2p0*sf[14]*cp_16_2p0*cp_3_3p0*cp_6_2p0)) + mu_Gex[6];
+    mu[7]          = gb[7] + R*T*rlog((sf[0]*cp_12_2p0*sf[14]*cp_16_2p0*cp_4_3p0*cp_5_2p0)) + mu_Gex[7];
+    mu[8]          = gb[8] + R*T*rlog((sf[0]*cp_13_2p0*sf[14]*cp_16_2p0*cp_3_3p0*cp_8_2p0 + d_em[8])) + mu_Gex[8];
+    mu[9]          = gb[9] + R*T*rlog((8.0*cp_10_2p0*cs_14*cs_15*cp_16_2p0*sf[2]*cp_3_3p0*sf[5]*sf[7] + d_em[9])) + mu_Gex[9];
+    mu[10]          = gb[10] + R*T*rlog((2.0*sf[0]*cp_10_2p0*cs_14*cs_15*cp_17_2p0*cp_3_3p0*cp_9_2p0  + d_em[10] )) + mu_Gex[10];
+
     d->sum_apep = 0.0;
     for (int i = 0; i < n_em; i++){
         d->sum_apep += d->ape[i]*d->p[i];
@@ -15162,6 +15990,10 @@ double obj_mpe_amp(unsigned n, const double *x, double *grad, void *SS_ref_db){
     }
     d->df = d->df_raw * d->factor;
 
+    for (int k = 0; k < n_em; k++){
+        d->df += d->ox_penalty[k] * d->p[k] * d->p[k];
+    }
+
     if (grad){
         double *dfx    = d->dfx;
         double **dp_dx = d->dp_dx;
@@ -15170,6 +16002,7 @@ double obj_mpe_amp(unsigned n, const double *x, double *grad, void *SS_ref_db){
             dfx[i] = 0.0;
             for (int j = 0; j < n_em; j++){
                 dfx[i] += (mu[j] - (d->ape[j]/d->sum_apep)*d->df_raw)*d->factor*dp_dx[j][i];
+                dfx[i] += d->ox_penalty[j]*2.0*d->p[j]*dp_dx[j][i];
             }
             grad[i] = creal(dfx[i]);
         }
@@ -15178,8 +16011,8 @@ double obj_mpe_amp(unsigned n, const double *x, double *grad, void *SS_ref_db){
 
     return d->df;
 }
-   
-  
+
+
 /**
     Objective function of po
 */
@@ -15199,24 +16032,15 @@ double obj_mpe_po(unsigned n, const double *x, double *grad, void *SS_ref_db){
 
     double tmp = 0.0;
     double Gex = 0.0;
-    for (int i = 0; i < n_em; i++){
-        Gex = 0.0;
-        int it    = 0;
-        for (int j = 0; j < d->n_xeos; j++){
-            tmp = (d->eye[i][j] - d->p[j]);
-            for (int k = j+1; k < n_em; k++){
-                Gex -= tmp*(d->eye[i][k] - d->p[k])*(d->W[it]);
-                it += 1;
-            }
-        }
-        mu_Gex[i] = Gex;
-    }   
+    mu_Gex_sym_n2(d, mu_Gex);   
   
     sf[0]          = 1.0 - x[0];
     sf[1]          = x[0];
     
-    mu[0]          = gb[0] + R*T*creal(clog(1.4576*cpow(sf[0], 0.875)*cpow(sf[1], 0.125))) + mu_Gex[0];
-    mu[1]          = gb[1] + R*T*creal(clog(sf[0])) + mu_Gex[1];
+    double complex cp_0_0p875 = cpow(sf[0], 0.875);
+    double complex cp_1_0p125 = cpow(sf[1], 0.125);
+    mu[0]          = gb[0] + R*T*rlog((1.4576*cp_0_0p875*cp_1_0p125)) + mu_Gex[0];
+    mu[1]          = gb[1] + R*T*rlog((sf[0])) + mu_Gex[1];
     
     d->sum_apep = 0.0;
     for (int i = 0; i < n_em; i++){
@@ -15246,246 +16070,394 @@ double obj_mpe_po(unsigned n, const double *x, double *grad, void *SS_ref_db){
     return d->df;
 }
 
-/**************************************************************************************/
-/**************************************************************************************/
-/**************************************************************************************/
-/**************************************************************************************/
-/** 
-  objective function for aqueous species
+/**
+    Objective function of carp
 */
-double DebyeHuckel( double* A,
-                    double* B,
-                    double* azero,
-                    double* bgamma,
-                    double  TK,
-                    double  Pbar,
-                    double  charge,
-                    double  II,
-                    double  density,
-                    double  g,
-                    double  epsilon,
-                    double  xiw       ){
-    
-    *A     =  1.824829238e6 * sqrt(density)/pow((TK*epsilon),1.5);
-    *B     =  50.29158649   * sqrt(density)/sqrt(TK*epsilon);
-                    
-    // azero in the Debye-Huckel (P-T dependent because g is P-T dependent)
-    double nc     =  1.0;
-    double na     =  1.0; 
-    double ni     =  2.0;
-    double zc     =  1.0;
-    double za     = -1.0;
-    double ac     =  3.72; // Common ion size parameter - NaCl
-
-    double c      =  2.0/ni * (nc * fabs(zc) + na * fabs(za));
-    *azero         = ac + c*g;
-
-    /** bgamma in the Debye-Huckel (P-T dependent)
-        Calculation - Taken from GEMS line 525 - 589
-        units are cal, kg, K, mol, bar */
-    double a1     =  0.030056;
-    double a2     = -202.55;
-    double a3     = -2.9092;
-    double a4     =  20302.0;
-    double a5     = -0.206;
-    double c1     = -1.50;
-    double c2     =  53300.0;
-    double omg    =  178650.0;
-    double bg     = -174.623;
-    double bs     =  2.164;
-    double rc     =  0.97; // rc - radius of cation at 298 K/1 bar
-    double ra     =  1.81; // ra - radius of anion at 298 K/1 bar
-
-    double omgpt  = 1.66027e5*(1.0/(0.94+rc+g)+1.0/(ra+g));
-
-    double nbg    = - ni*bg/2.0+ni*bs*(TK-298.15)/2.0 - c1*(TK*log(TK/298.15)-TK+298.15) + a1*(Pbar-1.0) + a2*log((2600.0+Pbar)/(2600.0+1.0)) - c2*((1.0/(TK-228)-1.0/(298.15-228.0))*(228.0-TK)/228.0-TK/(228.0*228.0) *log((298.15*(TK-228.0))/(TK*(298.15-228.0))))+ 1.0/(TK-228.0)*(a3*(Pbar-1.0) + a4*log((2600.0+Pbar)/(2600.0+1.0))) + a5*(omgpt*(1.0/epsilon-1.0) - omg*(1.0/78.24513-1)-5.80e-5*omg*(TK-298.15));
-    *bgamma       = nbg/(2.0*log(10.0)*1.98721*TK);
-
-    double loggamma = - ((*A) * charge*charge * sqrt(II)) / (1.0 + (*azero) * (*B) * sqrt(II)) + ((*bgamma) * II) +  log10(xiw);
-
-    return loggamma;
-}
-
-double OsmoticCoeff(double *A,
-                    double *B,
-                    double *azero,
-                    double *bgamma,
-                    double  T,
-                    double  P,
-                    double  charge,
-                    double  II,
-                    double  density,
-                    double  g,
-                    double  epsilon,
-                    double  xiw,
-                    double  m_charge,
-                    double  m_all       ){
-
-
-    double loggamma = DebyeHuckel(  A,
-                                    B,
-                                    azero,
-                                    bgamma,
-
-                                    T,
-                                    P,
-                                    charge,              //charge of species
-                                    II,
-                                    density,            //density of water
-                                    g,  
-                                    epsilon,
-                                    xiw                );  //fraction of water
-
-    // Equation 187 of Helgeson et al. (1981)
-    double gamma = -log10(1.0 + 0.0180153 * m_all);
-    double Lambda = 1.0 + (*azero) * (*B) * sqrt(II);
-
-    // sigmaterm here is short for = sigma * (azero*bgamma*csqrt(I))
-    double sigmaterm = (3.0/(pow((*azero),3.0) * pow((*B),3.0) * pow(II,(3.0/2.0)))) * (Lambda - 1.0/Lambda - 2.0*log(Lambda));
-
-    // printf("sigmaterm: %g\n",sigmaterm);
-    double Phi = -log10(m_charge/m_all) * (( pow(charge,2.0) * (*A) * sqrt(II) * sigmaterm)/3.0 + (1.0 * gamma)/(0.0180153*2.0*II) - ((*bgamma) * II) / 2.0);
-    double logawater = -(Phi*m_all)/55.508435;
-
-    return logawater;
-}
-void px_aq17(void *SS_ref_db, const double *x){
-    SS_ref *d  = (SS_ref *) SS_ref_db;
-    double *p   = d->p;
-    int n_em    = d->n_em;
-
-    for (int i = 0; i < n_em; i++){
-        p[i] = x[i];
-    }
-}
-
-
-double obj_aq17(unsigned n, const double *x, double *grad, void *SS_ref_db) {
+double obj_mpe_carp(unsigned n, const double *x, double *grad, void *SS_ref_db){
     SS_ref *d         = (SS_ref *) SS_ref_db;
 
     int n_em          = d->n_em;
-    int len_ox        = d->len_ox;
     double P          = d->P;
     double T          = d->T;
     double R          = d->R;
 
     double *gb        = d->gb_lvl;
-    double *ElH       = d->ElEntropy;
-    double **Comp     = d->Comp;
+    double *mu_Gex    = d->mu_Gex;
+    double *sf        = d->sf;
     double *mu        = d->mu;
-    double *charge    = d->mat_phi;
+    px_mpe_carp(SS_ref_db,x);
 
-    /* calculate chemical potential of fluid species, exept water */
-    double m_all       = 0.0;
-    double m_charge    = 0.0;
-    double A           = 0.0;
-    double B           = 0.0;
-    double azero       = 0.0;
-    double bgamma      = 0.0;
-    double xiw         = x[0];
-    double Xw          = 0.0;  
-    for (int i = 0; i < n_em; i++){
-        Xw += x[i];
-    } 
-  
-    double II = 0.0;
-
-    for (int i = 1; i < n_em; i++){
-        II += 55.508435*(x[i]/xiw)*pow(charge[i],2.0);
-    }
-    II *= 0.5;
-
-    double loggamma,cor;
-    for (int i = 1; i < n_em; i++){
-        loggamma = DebyeHuckel( &A,
-                                &B,
-                                &azero,
-                                &bgamma,
-                                T,
-                                P*1000.0,
-                                charge[i],              //charge of species
-                                II,
-                                d->densityW,            //density of water
-                                d->g,  
-                                d->epsilon,
-                                xiw                );  //fraction of water
-        cor          = HSC_to_SUPCRT(ElH, Comp[i], len_ox);
-        mu[i]        = gb[i]  + (log(pow(10.0,loggamma)) + log(1000.0/18.0153) + log(x[i]/Xw) - log(xiw/Xw) - xiw/Xw + 1.0 )/1000.0;
-        m_all       += x[i];
-        if (charge[i] != 0.0){
-            m_charge += x[i];
-        }
-    }
     
-
-    m_all       /= xiw;
-    m_charge    /= xiw;
-
-    double logawater = OsmoticCoeff(   &A,
-                                       &B,
-                                       &azero,
-                                       &bgamma,
-        
-                                        T,
-                                        P*1000.0,
-                                        charge[0],
-                                        II,
-                                        d->densityW,
-                                        d->g,
-                                        d->epsilon,
-                                        xiw,
-                                        m_charge,
-                                        m_all       );
-
-    /* set chemical potential of water */
-    cor          = HSC_to_SUPCRT(ElH, Comp[0], len_ox);
-    mu[0] = gb[0]  + ( log(logawater) + log(xiw/Xw) - Xw/xiw - xiw/Xw + 2.0)/1000.0;
-
-    px_aq17(SS_ref_db,x);
-
+    sf[0]          =x[0];
+    sf[1]          = 1.0 - x[0];
+    
+    mu[0]          = gb[0] + R*T*rlog((sf[0]));
+    mu[1]          = gb[1] + R*T*rlog((sf[1]));
+    
     d->sum_apep = 0.0;
     for (int i = 0; i < n_em; i++){
-        d->sum_apep += d->ape[i]*x[i];
+        d->sum_apep += d->ape[i]*d->p[i];
     }
     d->factor = d->fbc/d->sum_apep;
 
     d->df_raw = 0.0;
     for (int i = 0; i < n_em; i++){
-        d->df_raw += mu[i]*x[i];
+        d->df_raw += mu[i]*d->p[i];
     }
     d->df = d->df_raw * d->factor;
 
-
-    // printf("gb0:\n");
-    // for (int i = 0; i < n_em; i++){
-    //     printf(" %+12.6f",gb[i]);
-    // }
-    // printf("\n");
-    // printf("x:\n");
-    // for (int i = 0; i < n_em; i++){
-    //     printf(" %g",x[i]);
-    // }
-    // printf("\n");
-    // printf("mu:\n");
-    // for (int i = 0; i < n_em; i++){
-    //     printf(" %+12.6f",mu[i]);
-    // }
-    // printf("\nFLUID: dfraw -> %+10f df -> %10f\n",d->df_raw,d->df);
-
-	// printf("\n\n");
-
     if (grad){
         double *dfx    = d->dfx;
+        double **dp_dx = d->dp_dx;
+        dpdx_mpe_carp(SS_ref_db,x);
         for (int i = 0; i < (d->n_xeos); i++){
-            dfx[i]  = (mu[i] - (d->ape[i]/d->sum_apep)*d->df_raw);
+            dfx[i] = 0.0;
+            for (int j = 0; j < n_em; j++){
+                dfx[i] += (mu[j] - (d->ape[j]/d->sum_apep)*d->df_raw)*d->factor*dp_dx[j][i];
+            }
             grad[i] = creal(dfx[i]);
         }
     }
 
     return d->df;
 }
+    
 
 
+/**************************************************************************************/
+/* DEW2019 aqueous fluid ("DEW") - see TC_database/DEW_aq_solver.h.             */
+/* Unlike every other phase, DEW's actual equilibrium solve happens in          */
+/* NLopt_opt_DEW_function (DEW_aq_min_iterative, not NLopt) - obj_               */
+/* DEW only needs to reproduce that already-converged solution's mu/G from a    */
+/* mole-fraction vector alone, because copy_to_Ppc (ss_min_function.c) unconditionally */
+/* re-evaluates the phase's objective function to get the unrotated G/mu for the LP    */
+/* pseudocompound pool. DEW_aq_evaluate does exactly that (one-pass, no iteration -    */
+/* see its own doc comment for why that's mathematically equivalent at convergence).   */
+/**************************************************************************************/
+void p2x_DEW(void *SS_ref_db, double eps){
+    SS_ref *d  = (SS_ref *) SS_ref_db;
+    int n_em   = d->n_em;
+
+    for (int i = 0; i < n_em; i++){
+        d->iguess[i]  = d->p[i];
+    }
+    for (int i = 0; i < d->n_xeos; i++){
+        if (d->iguess[i] < d->bounds[i][0]){ d->iguess[i] = d->bounds[i][0]; }
+        if (d->iguess[i] > d->bounds[i][1]){ d->iguess[i] = d->bounds[i][1]; }
+    }
+}
+
+void px_DEW(void *SS_ref_db, const double *x){
+    SS_ref *d  = (SS_ref *) SS_ref_db;
+    int n_em    = d->n_em;
+
+    for (int i = 0; i < n_em; i++){
+        d->p[i] = x[i];
+    }
+}
+
+double obj_DEW(unsigned n, const double *x, double *grad, void *SS_ref_db) {
+    SS_ref *d    = (SS_ref *) SS_ref_db;
+    int n_em     = d->n_em;
+    int n_sp     = n_em - 1;   /* water is the last endmember, see G_SS_DEW_function */
+
+    /* Read d->gb_lvl, NOT d->gbase directly - every obj_* function in this codebase
+       follows this convention: the caller
+       toggles gb_lvl between rotated (gbase - Gamma.Comp, via rotate_hyperplane) and
+       unrotated (== gbase, via non_rot_hyperplane) before invoking the objective
+       function, so the SAME function returns a hyperplane-relative driving force when
+       called from PC_function (rotated) and the absolute G when called from
+       copy_to_Ppc (unrotated) - see tools/DEW_implementation_plan.md Phase 5. Hardcoding
+       d->gbase here (an earlier draft did) made every DEW driving force report the
+       phase's *absolute* G instead of ~0 at equilibrium. */
+    AQ_data AQ_shim;
+    AQ_shim.n_sp  = n_sp;
+    AQ_shim.gbase = d->gb_lvl;
+    AQ_shim.z     = d->mat_phi;      /* charge */
+    AQ_shim.rho_w = d->densityW;
+    AQ_shim.gb_w  = d->gb_lvl[n_sp];
+
+    double mu[n_em];
+    double G;
+    DEW_aq_evaluate(&AQ_shim, x, d->R, d->T, d->P, mu, &G);
+
+    for (int i = 0; i < n_em; i++){ d->mu[i] = mu[i]; }
+
+    px_DEW(SS_ref_db, x);
+
+    /* explicitly set d->sf[] here (see tools/DEW_implementation_plan.md Phase 5) */
+    for (int i = 0; i < n_em; i++){ d->sf[i] = x[i]; }
+
+    d->factor  = 1.0;   /* matches DEW_19_gbase.jl's AF_ref.factor, always 1.0 - no bulk-rock atom-count normalization for this phase, see Phase 2 */
+    d->df_raw  = G;
+    d->df      = G;
+
+    if (grad){
+        for (int i = 0; i < (int)n; i++){ grad[i] = 0.0; }   /* never called with grad != NULL: DEW's equilibrium is solved by DEW_aq_min_iterative (NLopt_opt_DEW_function), not NLopt */
+    }
+
+    return d->df;
+}
+
+
+void p2x_mtl_g(void *SS_ref_db, double eps){
+	SS_ref *d  = (SS_ref *) SS_ref_db;
+
+	d->iguess[0]  = ((-3*d->p[2] + d->p[3] + d->p[4] - d->p[5] + 3) != 0.0) ? (3*d->p[1] + d->p[4])/(-3*d->p[2] + d->p[3] + d->p[4] - d->p[5] + 3) : d->bounds[0][0];
+	d->iguess[1]  = d->p[2];
+	d->iguess[2]  = d->p[3] + d->p[4];
+	d->iguess[3]  = (((3*d->p[2] + d->p[5] - 3)*(-3*d->p[2] + d->p[3] + d->p[4] - d->p[5] + 3)) != 0.0) ? (3*d->p[1]*d->p[3] + 3*d->p[1]*d->p[4] + 3*d->p[2]*d->p[4] + d->p[4]*d->p[5] - 3*d->p[4])/((3*d->p[2] + d->p[5] - 3)*(-3*d->p[2] + d->p[3] + d->p[4] - d->p[5] + 3)) : d->bounds[3][0];
+	d->iguess[4]  = d->p[5];
+
+	for (int i = 0; i < d->n_xeos; i++){
+		if (d->iguess[i] < d->bounds[i][0]){
+			d->iguess[i] = d->bounds[i][0];
+		}
+		if (d->iguess[i] > d->bounds[i][1]){
+			d->iguess[i] = d->bounds[i][1];
+		}
+	}
+}
+
+void p2x_mtl_fp(void *SS_ref_db, double eps){
+	SS_ref *d  = (SS_ref *) SS_ref_db;
+
+	d->iguess[0]  = d->p[1];
+
+	for (int i = 0; i < d->n_xeos; i++){
+		if (d->iguess[i] < d->bounds[i][0]){
+			d->iguess[i] = d->bounds[i][0];
+		}
+		if (d->iguess[i] > d->bounds[i][1]){
+			d->iguess[i] = d->bounds[i][1];
+		}
+	}
+}
+
+void p2x_mtl_mpv(void *SS_ref_db, double eps){
+	SS_ref *d  = (SS_ref *) SS_ref_db;
+
+	d->iguess[0]  = ((d->p[2] + d->p[3] + d->p[4] - 1) != 0.0) ? (-d->p[1])/(d->p[2] + d->p[3] + d->p[4] - 1) : d->bounds[0][0];
+	d->iguess[1]  = d->p[3];
+	d->iguess[2]  = d->p[2];
+	d->iguess[3]  = d->p[4];
+
+	for (int i = 0; i < d->n_xeos; i++){
+		if (d->iguess[i] < d->bounds[i][0]){
+			d->iguess[i] = d->bounds[i][0];
+		}
+		if (d->iguess[i] > d->bounds[i][1]){
+			d->iguess[i] = d->bounds[i][1];
+		}
+	}
+}
+
+void p2x_mtl_cpv(void *SS_ref_db, double eps){
+	SS_ref *d  = (SS_ref *) SS_ref_db;
+
+	d->iguess[0]  = ((d->p[2] + d->p[3] + d->p[4] - 1) != 0.0) ? (-d->p[1])/(d->p[2] + d->p[3] + d->p[4] - 1) : d->bounds[0][0];
+	d->iguess[1]  = d->p[3];
+	d->iguess[2]  = d->p[2];
+	d->iguess[3]  = d->p[4];
+
+	for (int i = 0; i < d->n_xeos; i++){
+		if (d->iguess[i] < d->bounds[i][0]){
+			d->iguess[i] = d->bounds[i][0];
+		}
+		if (d->iguess[i] > d->bounds[i][1]){
+			d->iguess[i] = d->bounds[i][1];
+		}
+	}
+}
+
+void p2x_mtl_crn(void *SS_ref_db, double eps){
+	SS_ref *d  = (SS_ref *) SS_ref_db;
+
+	d->iguess[0]  = ((d->p[1] + d->p[2]) != 0.0) ? (d->p[2])/(d->p[1] + d->p[2]) : d->bounds[0][0];
+	d->iguess[1]  = -d->p[1] - d->p[2] + 1;
+
+	for (int i = 0; i < d->n_xeos; i++){
+		if (d->iguess[i] < d->bounds[i][0]){
+			d->iguess[i] = d->bounds[i][0];
+		}
+		if (d->iguess[i] > d->bounds[i][1]){
+			d->iguess[i] = d->bounds[i][1];
+		}
+	}
+}
+
+void p2x_mtl_cf(void *SS_ref_db, double eps){
+	SS_ref *d  = (SS_ref *) SS_ref_db;
+
+	d->iguess[0]  = d->p[2] + d->p[3] + d->p[4];
+	d->iguess[1]  = ((-d->p[1] + d->p[2] + d->p[3] + d->p[4] - d->p[5] + 1) != 0.0) ? (2*d->p[3] + d->p[4])/(-d->p[1] + d->p[2] + d->p[3] + d->p[4] - d->p[5] + 1) : d->bounds[1][0];
+	d->iguess[2]  = (((d->p[1] + d->p[5] - 1)*(-d->p[1] + d->p[2] + d->p[3] + d->p[4] - d->p[5] + 1)) != 0.0) ? (-d->p[1]*d->p[3] - d->p[2]*d->p[3] - d->p[2]*d->p[4] - pow(d->p[3], 2) - 2*d->p[3]*d->p[4] - d->p[3]*d->p[5] + d->p[3] - pow(d->p[4], 2))/((d->p[1] + d->p[5] - 1)*(-d->p[1] + d->p[2] + d->p[3] + d->p[4] - d->p[5] + 1)) : d->bounds[2][0];
+	d->iguess[3]  = d->p[1];
+	d->iguess[4]  = d->p[5];
+
+	for (int i = 0; i < d->n_xeos; i++){
+		if (d->iguess[i] < d->bounds[i][0]){
+			d->iguess[i] = d->bounds[i][0];
+		}
+		if (d->iguess[i] > d->bounds[i][1]){
+			d->iguess[i] = d->bounds[i][1];
+		}
+	}
+}
+
+void p2x_mtl_nal(void *SS_ref_db, double eps){
+	SS_ref *d  = (SS_ref *) SS_ref_db;
+
+	d->iguess[0]  = (1.0/6.0)*d->p[1] + (1.0/6.0)*d->p[2] - 5.0/6.0*d->p[3] - 5.0/6.0*d->p[4] - 5.0/6.0*d->p[5] - 5.0/6.0*d->p[6] + 5.0/6.0;
+	d->iguess[1]  = ((d->p[2] + 4*d->p[3] + 4*d->p[4] + 4*d->p[5] + 4*d->p[6] + 2) != 0.0) ? (6*d->p[4] + d->p[5] + 3*d->p[6])/(d->p[2] + 4*d->p[3] + 4*d->p[4] + 4*d->p[5] + 4*d->p[6] + 2) : d->bounds[1][0];
+	d->iguess[2]  = (((d->p[2] + d->p[3] + d->p[4] + d->p[5] + d->p[6])*(d->p[2] + 4*d->p[3] + 4*d->p[4] + 4*d->p[5] + 4*d->p[6] + 2)) != 0.0) ? (5*d->p[2]*d->p[4] + 2*d->p[2]*d->p[6] + 2*d->p[3]*d->p[4] - 3*d->p[3]*d->p[5] - d->p[3]*d->p[6] + 2*pow(d->p[4], 2) - d->p[4]*d->p[5] + d->p[4]*d->p[6] - 2*d->p[4] - 3*pow(d->p[5], 2) - 4*d->p[5]*d->p[6] - 2*d->p[5] - pow(d->p[6], 2) - 2*d->p[6])/((d->p[2] + d->p[3] + d->p[4] + d->p[5] + d->p[6])*(d->p[2] + 4*d->p[3] + 4*d->p[4] + 4*d->p[5] + 4*d->p[6] + 2)) : d->bounds[2][0];
+	d->iguess[3]  = ((d->p[2] + 4*d->p[3] + 4*d->p[4] + 4*d->p[5] + 4*d->p[6] + 2) != 0.0) ? (-d->p[2]*d->p[4] - d->p[2]*d->p[6] - 4*d->p[3]*d->p[4] - 4*d->p[3]*d->p[6] - 4*pow(d->p[4], 2) - 4*d->p[4]*d->p[5] - 8*d->p[4]*d->p[6] + 4*d->p[4] - 4*d->p[5]*d->p[6] + d->p[5] - 4*pow(d->p[6], 2) + d->p[6])/(d->p[2] + 4*d->p[3] + 4*d->p[4] + 4*d->p[5] + 4*d->p[6] + 2) : d->bounds[3][0];
+	d->iguess[4]  = d->p[1];
+	d->iguess[5]  = -d->p[1] - d->p[2] - d->p[3] - d->p[4] - d->p[5] - d->p[6] + 1;
+
+	for (int i = 0; i < d->n_xeos; i++){
+		if (d->iguess[i] < d->bounds[i][0]){
+			d->iguess[i] = d->bounds[i][0];
+		}
+		if (d->iguess[i] > d->bounds[i][1]){
+			d->iguess[i] = d->bounds[i][1];
+		}
+	}
+}
+
+void p2x_mtl_aki(void *SS_ref_db, double eps){
+	SS_ref *d  = (SS_ref *) SS_ref_db;
+
+	d->iguess[0]  = ((d->p[1] + d->p[2]) != 0.0) ? (d->p[2])/(d->p[1] + d->p[2]) : d->bounds[0][0];
+	d->iguess[1]  = -d->p[1] - d->p[2] + 1;
+
+	for (int i = 0; i < d->n_xeos; i++){
+		if (d->iguess[i] < d->bounds[i][0]){
+			d->iguess[i] = d->bounds[i][0];
+		}
+		if (d->iguess[i] > d->bounds[i][1]){
+			d->iguess[i] = d->bounds[i][1];
+		}
+	}
+}
+
+void p2x_mtl_ol(void *SS_ref_db, double eps){
+	SS_ref *d  = (SS_ref *) SS_ref_db;
+
+	d->iguess[0]  = d->p[1];
+
+	for (int i = 0; i < d->n_xeos; i++){
+		if (d->iguess[i] < d->bounds[i][0]){
+			d->iguess[i] = d->bounds[i][0];
+		}
+		if (d->iguess[i] > d->bounds[i][1]){
+			d->iguess[i] = d->bounds[i][1];
+		}
+	}
+}
+
+void p2x_mtl_wad(void *SS_ref_db, double eps){
+	SS_ref *d  = (SS_ref *) SS_ref_db;
+
+	d->iguess[0]  = d->p[1];
+
+	for (int i = 0; i < d->n_xeos; i++){
+		if (d->iguess[i] < d->bounds[i][0]){
+			d->iguess[i] = d->bounds[i][0];
+		}
+		if (d->iguess[i] > d->bounds[i][1]){
+			d->iguess[i] = d->bounds[i][1];
+		}
+	}
+}
+
+void p2x_mtl_ring(void *SS_ref_db, double eps){
+	SS_ref *d  = (SS_ref *) SS_ref_db;
+
+	d->iguess[0]  = d->p[1];
+
+	for (int i = 0; i < d->n_xeos; i++){
+		if (d->iguess[i] < d->bounds[i][0]){
+			d->iguess[i] = d->bounds[i][0];
+		}
+		if (d->iguess[i] > d->bounds[i][1]){
+			d->iguess[i] = d->bounds[i][1];
+		}
+	}
+}
+
+void p2x_mtl_cpx(void *SS_ref_db, double eps){
+	SS_ref *d  = (SS_ref *) SS_ref_db;
+
+	d->iguess[0]  = ((d->p[1] - d->p[2] - d->p[3] + d->p[4] + d->p[5] + 1) != 0.0) ? (2*d->p[1] + d->p[5])/(d->p[1] - d->p[2] - d->p[3] + d->p[4] + d->p[5] + 1) : d->bounds[0][0];
+	d->iguess[1]  = d->p[2];
+	d->iguess[2]  = d->p[1] + d->p[4] + d->p[5];
+	d->iguess[3]  = d->p[3];
+	d->iguess[4]  = (((d->p[2] + d->p[3] - 1)*(d->p[1] - d->p[2] - d->p[3] + d->p[4] + d->p[5] + 1)) != 0.0) ? (-pow(d->p[1], 2) - d->p[1]*d->p[2] - d->p[1]*d->p[3] - d->p[1]*d->p[4] - d->p[1]*d->p[5] + d->p[1] - d->p[2]*d->p[5] - d->p[3]*d->p[5] + d->p[5])/((d->p[2] + d->p[3] - 1)*(d->p[1] - d->p[2] - d->p[3] + d->p[4] + d->p[5] + 1)) : d->bounds[4][0];
+
+	for (int i = 0; i < d->n_xeos; i++){
+		if (d->iguess[i] < d->bounds[i][0]){
+			d->iguess[i] = d->bounds[i][0];
+		}
+		if (d->iguess[i] > d->bounds[i][1]){
+			d->iguess[i] = d->bounds[i][1];
+		}
+	}
+}
+
+void p2x_mtl_opx(void *SS_ref_db, double eps){
+	SS_ref *d  = (SS_ref *) SS_ref_db;
+
+	d->iguess[0]  = ((d->p[3] + d->p[4] - 2) != 0.0) ? (-2*d->p[1] - d->p[2])/(d->p[3] + d->p[4] - 2) : d->bounds[0][0];
+	d->iguess[1]  = d->p[4];
+	d->iguess[2]  = d->p[3];
+	d->iguess[3]  = ((d->p[3] + d->p[4] - 2) != 0.0) ? (2*d->p[1]*d->p[3] + 2*d->p[1]*d->p[4] + 2*d->p[2]*d->p[3] + 2*d->p[2]*d->p[4] - 2*d->p[2])/(d->p[3] + d->p[4] - 2) : d->bounds[3][0];
+
+	for (int i = 0; i < d->n_xeos; i++){
+		if (d->iguess[i] < d->bounds[i][0]){
+			d->iguess[i] = d->bounds[i][0];
+		}
+		if (d->iguess[i] > d->bounds[i][1]){
+			d->iguess[i] = d->bounds[i][1];
+		}
+	}
+}
+
+void p2x_mtl_hpx(void *SS_ref_db, double eps){
+	SS_ref *d  = (SS_ref *) SS_ref_db;
+
+	d->iguess[0]  = ((d->p[3] + d->p[4] - 2) != 0.0) ? (-2*d->p[1] - d->p[2])/(d->p[3] + d->p[4] - 2) : d->bounds[0][0];
+	d->iguess[1]  = d->p[4];
+	d->iguess[2]  = d->p[3];
+	d->iguess[3]  = ((d->p[3] + d->p[4] - 2) != 0.0) ? (2*d->p[1]*d->p[3] + 2*d->p[1]*d->p[4] + 2*d->p[2]*d->p[3] + 2*d->p[2]*d->p[4] - 2*d->p[2])/(d->p[3] + d->p[4] - 2) : d->bounds[3][0];
+
+	for (int i = 0; i < d->n_xeos; i++){
+		if (d->iguess[i] < d->bounds[i][0]){
+			d->iguess[i] = d->bounds[i][0];
+		}
+		if (d->iguess[i] > d->bounds[i][1]){
+			d->iguess[i] = d->bounds[i][1];
+		}
+	}
+}
+
+void p2x_mb_ta(void *SS_ref_db, double eps){
+	SS_ref *d  = (SS_ref *) SS_ref_db;
+
+	d->iguess[0]  = ((6*d->p[3] + d->p[4] - 6) != 0.0) ? (-6*d->p[1] - 2*d->p[2])/(6*d->p[3] + d->p[4] - 6) : d->bounds[0][0];
+	d->iguess[1]  = d->p[3] + (1.0/2.0)*d->p[4];
+	d->iguess[2]  = d->p[3];
+	d->iguess[3]  = (((2*d->p[3] + d->p[4] - 2)*(6*d->p[3] + d->p[4] - 6)) != 0.0) ? (4*d->p[1]*d->p[4] - 8*d->p[2]*d->p[3] + 8*d->p[2])/((2*d->p[3] + d->p[4] - 2)*(6*d->p[3] + d->p[4] - 6)) : d->bounds[3][0];
+
+	for (int i = 0; i < d->n_xeos; i++){
+		if (d->iguess[i] < d->bounds[i][0]){
+			d->iguess[i] = d->bounds[i][0];
+		}
+		if (d->iguess[i] > d->bounds[i][1]){
+			d->iguess[i] = d->bounds[i][1];
+		}
+	}
+}
 
 void TC_mp_P2X_init(	            P2X_type 			*P2X_read,
 									global_variable 	 gv				){	
@@ -15526,12 +16498,12 @@ void TC_mp_P2X_init(	            P2X_type 			*P2X_read,
 			P2X_read[iss]  = p2x_mp_ilmm; 		}
 		else if (strcmp( gv.SS_list[iss], "mt")    == 0){
 			P2X_read[iss]  = p2x_mp_mt; 		}
-		else if (strcmp( gv.SS_list[iss], "aq17")  == 0){
-			P2X_read[iss]  = p2x_aq17; 		    }
+		else if (strcmp( gv.SS_list[iss], "DEW")  == 0){
+			P2X_read[iss]  = p2x_DEW; 		    }
 		else{
-			printf("\nsolid solution '%s' is not in the database, cannot be initiated\n", gv.SS_list[iss]);	
-		}	
-	};	
+			printf("\nsolid solution '%s' is not in the database, cannot be initiated\n", gv.SS_list[iss]);
+		}
+	};
 }
 
 
@@ -15544,6 +16516,10 @@ void TC_mpe_P2X_init(	            P2X_type 			*P2X_read,
 			P2X_read[iss]  = p2x_mpe_liq; 		}
 		else if (strcmp( gv.SS_list[iss], "fsp") == 0){
 			P2X_read[iss]  = p2x_mpe_fsp; 		}
+		else if (strcmp( gv.SS_list[iss], "plc") == 0){
+			P2X_read[iss]  = p2x_mpe_plc; 		}
+		else if (strcmp( gv.SS_list[iss], "scp") == 0){
+			P2X_read[iss]  = p2x_mpe_scp; 		}
 		else if (strcmp( gv.SS_list[iss], "bi")    == 0){
 			P2X_read[iss]  = p2x_mpe_bi; 		}
 		else if (strcmp( gv.SS_list[iss], "g")     == 0){
@@ -15587,11 +16563,15 @@ void TC_mpe_P2X_init(	            P2X_type 			*P2X_read,
 		else if (strcmp( gv.SS_list[iss], "amp")    == 0){
 			P2X_read[iss]  = p2x_mpe_amp; 		}
 		else if (strcmp( gv.SS_list[iss], "oamp")    == 0){
-			}
+            P2X_read[iss]  = p2x_mb_oamp; }
+        else if (strcmp( gv.SS_list[iss], "carp")    == 0){
+            P2X_read[iss]  = p2x_mpe_carp; 		}
+        else if (strcmp( gv.SS_list[iss], "DEW")    == 0){
+            P2X_read[iss]  = p2x_DEW; 		}
 		else{
-			printf("\nsolid solution '%s' is not in the database, cannot be initiated\n", gv.SS_list[iss]);	
-		}	
-	};	
+			printf("\nsolid solution '%s' is not in the database, cannot be initiated\n", gv.SS_list[iss]);
+		}
+	};
 }
 
 void TC_mb_P2X_init(	            P2X_type 			*P2X_read,
@@ -15634,10 +16614,12 @@ void TC_mb_P2X_init(	            P2X_type 			*P2X_read,
             P2X_read[iss]  = p2x_mb_mu;         }
         else if (strcmp( gv.SS_list[iss], "chl")  == 0){
             P2X_read[iss]  = p2x_mb_chl;        }
+		else if (strcmp( gv.SS_list[iss], "DEW")  == 0){
+			P2X_read[iss]  = p2x_DEW;     }
 		else{
-			printf("\nsolid solution '%s' is not in the database, cannot be initiated\n", gv.SS_list[iss]);	
-		}	
-	};	
+			printf("\nsolid solution '%s' is not in the database, cannot be initiated\n", gv.SS_list[iss]);
+		}
+	};
 }
 
 
@@ -15682,13 +16664,15 @@ void TC_mb_ext_P2X_init(	        P2X_type 			*P2X_read,
         else if (strcmp( gv.SS_list[iss], "chl")  == 0){
             P2X_read[iss]  = p2x_mb_chl;        }
         else if (strcmp( gv.SS_list[iss], "ta")  == 0){
-            }
+            P2X_read[iss]  = p2x_mb_ta;         }
         else if (strcmp( gv.SS_list[iss], "oamp")  == 0){
-            }
+            P2X_read[iss]  = p2x_mb_oamp;       }
+		else if (strcmp( gv.SS_list[iss], "DEW")  == 0){
+			P2X_read[iss]  = p2x_DEW;     }
 		else{
-			printf("\nsolid solution '%s' is not in the database, cannot be initiated\n", gv.SS_list[iss]);	
-		}	
-	};	
+			printf("\nsolid solution '%s' is not in the database, cannot be initiated\n", gv.SS_list[iss]);
+		}
+	};
 }
 
 void TC_ig_P2X_init(	            P2X_type 			*P2X_read,
@@ -15728,6 +16712,35 @@ void TC_ig_P2X_init(	            P2X_type 			*P2X_read,
 			P2X_read[iss]  = p2x_ig_spl; 		}
 		else if (strcmp( gv.SS_list[iss], "chl") == 0){
 			P2X_read[iss]  = p2x_ig_chl; 		}
+		else if (strcmp( gv.SS_list[iss], "DEW") == 0){
+			P2X_read[iss]  = p2x_DEW; 		}
+		else{
+			printf("\nsolid solution '%s' is not in the database, cannot be initiated\n", gv.SS_list[iss]);
+		}
+	};
+}
+
+void TC_igd_P2X_init(	            P2X_type 			*P2X_read,
+									global_variable 	 gv				){	
+						 
+    for (int iss = 0; iss < gv.len_ss; iss++){
+
+		if (strcmp( gv.SS_list[iss], "cpx") == 0){
+			P2X_read[iss]  = p2x_igd_cpx; 		}
+		else if (strcmp( gv.SS_list[iss], "g")   == 0){
+			P2X_read[iss]  = p2x_igd_g; 		    }
+		else if (strcmp( gv.SS_list[iss], "ilm") == 0){
+			P2X_read[iss]  = p2x_igd_ilm; 		}
+		else if (strcmp( gv.SS_list[iss], "liq") == 0){
+			P2X_read[iss]  = p2x_igd_liq; 		}
+		else if (strcmp( gv.SS_list[iss], "ol")  == 0){
+			P2X_read[iss]  = p2x_igd_ol; 		}
+		else if (strcmp( gv.SS_list[iss], "opx") == 0){
+			P2X_read[iss]  = p2x_igd_opx; 		}
+		else if (strcmp( gv.SS_list[iss], "fsp") == 0){
+			P2X_read[iss]  = p2x_igd_fsp; 		}
+		else if (strcmp( gv.SS_list[iss], "spl") == 0){
+			P2X_read[iss]  = p2x_igd_spl; 		}
 		else{
 			printf("\nsolid solution '%s' is not in the database, cannot be initiated\n", gv.SS_list[iss]);	
 		}	
@@ -15798,10 +16811,12 @@ void TC_um_P2X_init(	            P2X_type 			*P2X_read,
 			P2X_read[iss]  = p2x_um_opx; 		}
 		else if (strcmp( gv.SS_list[iss], "po") == 0){
 			P2X_read[iss]  = p2x_um_po; 		}
+		else if (strcmp( gv.SS_list[iss], "DEW") == 0){
+			P2X_read[iss]  = p2x_DEW; 		}
 		else{
-			printf("\nsolid solution '%s' is not in the database, cannot be initiated\n", gv.SS_list[iss]);	
-		}	
-	};	
+			printf("\nsolid solution '%s' is not in the database, cannot be initiated\n", gv.SS_list[iss]);
+		}
+	};
 }
 
 
@@ -15846,10 +16861,209 @@ void TC_um_ext_P2X_init(	        P2X_type 			*P2X_read,
 			P2X_read[iss]  = p2x_mpe_fl; 		}
 		else if (strcmp( gv.SS_list[iss], "occm")   == 0){
 			P2X_read[iss]  = p2x_mpe_occm; 		}
+		else if (strcmp( gv.SS_list[iss], "DEW")  == 0){
+			P2X_read[iss]  = p2x_DEW; 		}
 		else{
-			printf("\nsolid solution '%s' is not in the database, cannot be initiated\n", gv.SS_list[iss]);	
-		}	
+			printf("\nsolid solution '%s' is not in the database, cannot be initiated\n", gv.SS_list[iss]);
+		}
 	};	
+}
+
+void TC_mtl_P2X_init(	            P2X_type 			*P2X_read,
+									global_variable 	 gv				){
+
+	for (int iss = 0; iss < gv.len_ss; iss++){
+
+		if      (strcmp( gv.SS_list[iss], "g")  == 0 ){
+			P2X_read[iss]  = p2x_mtl_g; 		}
+		else if (strcmp( gv.SS_list[iss], "fp")  == 0){
+			P2X_read[iss]  = p2x_mtl_fp; 		}
+		else if (strcmp( gv.SS_list[iss], "mpv") == 0){
+			P2X_read[iss]  = p2x_mtl_mpv; 		}
+		else if (strcmp( gv.SS_list[iss], "cpv") == 0){
+			P2X_read[iss]  = p2x_mtl_cpv; 		}
+		else if (strcmp( gv.SS_list[iss], "crn")  == 0){
+			P2X_read[iss]  = p2x_mtl_crn; 		}
+		else if (strcmp( gv.SS_list[iss], "cf")  == 0){
+			P2X_read[iss]  = p2x_mtl_cf; 		}
+		else if (strcmp( gv.SS_list[iss], "nal")   == 0){
+			P2X_read[iss]  = p2x_mtl_nal; 		}
+		else if (strcmp( gv.SS_list[iss], "aki")  == 0){
+			P2X_read[iss]  = p2x_mtl_aki; 		}
+		else if (strcmp( gv.SS_list[iss], "ol") == 0){
+			P2X_read[iss]  = p2x_mtl_ol; 		}
+		else if (strcmp( gv.SS_list[iss], "wad") == 0){
+			P2X_read[iss]  = p2x_mtl_wad; 		}
+		else if (strcmp( gv.SS_list[iss], "ring")  == 0){
+			P2X_read[iss]  = p2x_mtl_ring; 		}
+		else if (strcmp( gv.SS_list[iss], "cpx") == 0){
+			P2X_read[iss]  = p2x_mtl_cpx; 		}
+		else if (strcmp( gv.SS_list[iss], "opx") == 0){
+			P2X_read[iss]  = p2x_mtl_opx; 		}
+		else if (strcmp( gv.SS_list[iss], "hpx")  == 0){
+			P2X_read[iss]  = p2x_mtl_hpx; 		}
+		else{
+			printf("\nsolid solution '%s' is not in the database, cannot be initiated\n", gv.SS_list[iss]);
+		}
+	};
+}
+
+void TC_all_P2X_init(	            P2X_type 			*P2X_read,
+									global_variable 	 gv				){
+
+	for (int iss = 0; iss < gv.len_ss; iss++){
+
+		/* liq (4 citation variants) */
+		if      (strcmp( gv.SS_list[iss], "liq_S26") == 0 ){
+			P2X_read[iss]  = p2x_igd_liq; 		}
+		else if (strcmp( gv.SS_list[iss], "liq_G16")  == 0 ){
+			P2X_read[iss]  = p2x_mb_liq; 		}
+		else if (strcmp( gv.SS_list[iss], "liq_W14")  == 0 ){
+			P2X_read[iss]  = p2x_mpe_liq; 		}
+		else if (strcmp( gv.SS_list[iss], "liq_G25w") == 0 ){
+			P2X_read[iss]  = p2x_ig_liq; 		}
+		else if (strcmp( gv.SS_list[iss], "liqmn_R27") == 0 ){
+			P2X_read[iss]  = p2x_igmn_liq; 		}
+
+		/* fsp (2 citation variants) */
+		else if (strcmp( gv.SS_list[iss], "fsp_H22")   == 0 ){
+			P2X_read[iss]  = p2x_mpe_fsp; 		}
+		else if (strcmp( gv.SS_list[iss], "fsp_H22op") == 0 ){
+			P2X_read[iss]  = p2x_igd_fsp; 		}
+
+		/* g (4 citation variants) */
+		else if (strcmp( gv.SS_list[iss], "g_W24") == 0 ){
+			P2X_read[iss]  = p2x_ig_g; 		}
+		else if (strcmp( gv.SS_list[iss], "g_W14") == 0 ){
+			P2X_read[iss]  = p2x_mpe_g; 		}
+		else if (strcmp( gv.SS_list[iss], "g_H18") == 0 ){
+			P2X_read[iss]  = p2x_um_g; 		}
+		else if (strcmp( gv.SS_list[iss], "g_T21") == 0 ){
+			P2X_read[iss]  = p2x_igd_g; 		}
+
+		/* opx (3 citation variants) */
+		else if (strcmp( gv.SS_list[iss], "opx_W24") == 0 ){
+			P2X_read[iss]  = p2x_ig_opx; 		}
+		else if (strcmp( gv.SS_list[iss], "opx_W14") == 0 ){
+			P2X_read[iss]  = p2x_mpe_opx; 		}
+		else if (strcmp( gv.SS_list[iss], "opx_T21") == 0 ){
+			P2X_read[iss]  = p2x_igd_opx; 		}
+
+		/* ol (2 citation variants) */
+		else if (strcmp( gv.SS_list[iss], "ol_H18") == 0 ){
+			P2X_read[iss]  = p2x_igad_ol; 		}
+		else if (strcmp( gv.SS_list[iss], "ol_H11") == 0 ){
+			P2X_read[iss]  = p2x_mb_ol; 		}
+
+		/* ilm (3 citation variants) */
+		else if (strcmp( gv.SS_list[iss], "ilm_W24") == 0 ){
+			P2X_read[iss]  = p2x_ig_ilm; 		}
+		else if (strcmp( gv.SS_list[iss], "ilm_W00") == 0 ){
+			P2X_read[iss]  = p2x_mb_ilm; 		}
+		else if (strcmp( gv.SS_list[iss], "ilm_T21") == 0 ){
+			P2X_read[iss]  = p2x_igd_ilm; 		}
+
+		/* spl (2 citation variants) */
+		else if (strcmp( gv.SS_list[iss], "spl_T21") == 0 ){
+			P2X_read[iss]  = p2x_ume_spl; 		}
+		else if (strcmp( gv.SS_list[iss], "spl_W02") == 0 ){
+			P2X_read[iss]  = p2x_mb_spl; 		}
+
+		/* bi (2 citation variants) */
+		else if (strcmp( gv.SS_list[iss], "bi_G25") == 0 ){
+			P2X_read[iss]  = p2x_ig_bi; 		}
+		else if (strcmp( gv.SS_list[iss], "bi_W14") == 0 ){
+			P2X_read[iss]  = p2x_mpe_bi; 		}
+
+		/* cd (2 citation variants) */
+		else if (strcmp( gv.SS_list[iss], "cd_G25") == 0 ){
+			P2X_read[iss]  = p2x_ig_cd; 		}
+		else if (strcmp( gv.SS_list[iss], "cd_W14") == 0 ){
+			P2X_read[iss]  = p2x_mpe_cd; 		}
+
+		/* fl (3 citation variants) */
+		else if (strcmp( gv.SS_list[iss], "fl_G25")  == 0 ){
+			P2X_read[iss]  = p2x_ig_fl; 		}
+		else if (strcmp( gv.SS_list[iss], "fl_EF21") == 0 ){
+			P2X_read[iss]  = p2x_um_fluid; 		}
+		else if (strcmp( gv.SS_list[iss], "fl_H03")  == 0 ){
+			P2X_read[iss]  = p2x_mpe_fl; 		}
+
+		/* non-collision tokens */
+		else if (strcmp( gv.SS_list[iss], "ep_H11")    == 0){
+			P2X_read[iss]  = p2x_mpe_ep; 		}
+		else if (strcmp( gv.SS_list[iss], "ma_W14")    == 0){
+			P2X_read[iss]  = p2x_mpe_ma; 		}
+		else if (strcmp( gv.SS_list[iss], "mu_W14")    == 0){
+			P2X_read[iss]  = p2x_mpe_mu; 		}
+		else if (strcmp( gv.SS_list[iss], "sa_W14")    == 0){
+			P2X_read[iss]  = p2x_mpe_sa; 		}
+		else if (strcmp( gv.SS_list[iss], "st_W14")    == 0){
+			P2X_read[iss]  = p2x_mpe_st; 		}
+		else if (strcmp( gv.SS_list[iss], "chl_W14")   == 0){
+			P2X_read[iss]  = p2x_mpe_chl; 		}
+		else if (strcmp( gv.SS_list[iss], "ctd_W14")   == 0){
+			P2X_read[iss]  = p2x_mpe_ctd; 		}
+		else if (strcmp( gv.SS_list[iss], "sp_W02")    == 0){
+			P2X_read[iss]  = p2x_mb_sp; 		}
+		else if (strcmp( gv.SS_list[iss], "mt_W00")    == 0){
+			P2X_read[iss]  = p2x_mp_mt; 		}
+		else if (strcmp( gv.SS_list[iss], "ilmm_W14")  == 0){
+			P2X_read[iss]  = p2x_mb_ilmm; 		}
+		else if (strcmp( gv.SS_list[iss], "ilmmn_W14") == 0){
+			P2X_read[iss]  = p2x_mpe_ilmm; 		}
+		else if (strcmp( gv.SS_list[iss], "amp_G16")   == 0){
+			P2X_read[iss]  = p2x_mb_amp; 		}
+		else if (strcmp( gv.SS_list[iss], "dio_G16")   == 0){
+			P2X_read[iss]  = p2x_mb_dio; 		}
+		else if (strcmp( gv.SS_list[iss], "aug_G16")   == 0){
+			P2X_read[iss]  = p2x_mb_aug; 		}
+		else if (strcmp( gv.SS_list[iss], "abc_H11")   == 0){
+			P2X_read[iss]  = p2x_mb_abc; 		}
+		else if (strcmp( gv.SS_list[iss], "ta_EF21")    == 0){
+			P2X_read[iss]  = p2x_um_ta; 		}
+		else if (strcmp( gv.SS_list[iss], "oamp_D07")  == 0){
+			P2X_read[iss]  = p2x_mb_oamp; 		}
+		else if (strcmp( gv.SS_list[iss], "DEW_S24") == 0){
+			P2X_read[iss]  = p2x_DEW; 		}
+		else if (strcmp( gv.SS_list[iss], "cpx_W24")   == 0){
+			P2X_read[iss]  = p2x_ig_cpx; 		}
+		else if (strcmp( gv.SS_list[iss], "cpx_T21")   == 0){
+			P2X_read[iss]  = p2x_igd_cpx; 		}
+		else if (strcmp( gv.SS_list[iss], "fper")  == 0){
+			P2X_read[iss]  = p2x_ig_fper; 		}
+		else if (strcmp( gv.SS_list[iss], "lct_W24")   == 0){
+			P2X_read[iss]  = p2x_igad_lct; 		}
+		else if (strcmp( gv.SS_list[iss], "mel_W24")   == 0){
+			P2X_read[iss]  = p2x_igad_mel; 		}
+		else if (strcmp( gv.SS_list[iss], "nph_W24")   == 0){
+			P2X_read[iss]  = p2x_igad_nph; 		}
+		else if (strcmp( gv.SS_list[iss], "kals_W24")  == 0){
+			P2X_read[iss]  = p2x_igad_kals; 		}
+		else if (strcmp( gv.SS_list[iss], "br_E13")    == 0){
+			P2X_read[iss]  = p2x_um_br; 		}
+		else if (strcmp( gv.SS_list[iss], "ch_EF21")    == 0){
+			P2X_read[iss]  = p2x_um_ch; 		}
+		else if (strcmp( gv.SS_list[iss], "atg_EF21")   == 0){
+			P2X_read[iss]  = p2x_um_atg; 		}
+		else if (strcmp( gv.SS_list[iss], "spi_W02")   == 0){
+			P2X_read[iss]  = p2x_um_spi; 		}
+		else if (strcmp( gv.SS_list[iss], "po_E10")    == 0){
+			P2X_read[iss]  = p2x_um_po; 		}
+		else if (strcmp( gv.SS_list[iss], "anth_D07")  == 0){
+			P2X_read[iss]  = p2x_um_anth; 		}
+		else if (strcmp( gv.SS_list[iss], "occm_F11")  == 0){
+			P2X_read[iss]  = p2x_mpe_occm; 		}
+		else if (strcmp( gv.SS_list[iss], "carp_W14")  == 0){
+			P2X_read[iss]  = p2x_mpe_carp; 		}
+		else if (strcmp( gv.SS_list[iss], "plc_B05")   == 0){
+			P2X_read[iss]  = p2x_mpe_plc; 		}
+		else if (strcmp( gv.SS_list[iss], "scp_K04")   == 0){
+			P2X_read[iss]  = p2x_mpe_scp; 		}
+		else{
+			printf("\nsolid solution '%s' is not in the database, cannot be initiated\n", gv.SS_list[iss]);
+		}
+	};
 }
 
 void TC_P2X_init(	                P2X_type 			*P2X_read,
@@ -15871,6 +17085,10 @@ void TC_P2X_init(	                P2X_type 			*P2X_read,
 		TC_ig_P2X_init(			            P2X_read,
 											gv							);
 	}
+	else if (gv.EM_database == 22){		// igneous dry database //
+		TC_igd_P2X_init(			        P2X_read,
+											gv							);
+	}
 	else if (gv.EM_database == 3){			// igneous database //
 		TC_igad_P2X_init(			        P2X_read,
 											gv							);
@@ -15883,8 +17101,16 @@ void TC_P2X_init(	                P2X_type 			*P2X_read,
 		TC_um_ext_P2X_init(			        P2X_read,
 											gv							);
 	}
+	else if (gv.EM_database == 6){
+		TC_mtl_P2X_init(			        P2X_read,
+											gv							);
+	}
 	else if (gv.EM_database == 7){			// metapelite ext database //
 		TC_mpe_P2X_init(			        P2X_read,
+											gv							);
+	}
+	else if (gv.EM_database == 8){			// all database //
+		TC_all_P2X_init(			        P2X_read,
 											gv							);
 	}
 }
@@ -15933,12 +17159,41 @@ void TC_ig_objective_init_function(	obj_type 			*SS_objective,
 			SS_objective[iss]  = obj_ig_spl; 		}
 		else if (strcmp( gv.SS_list[iss], "chl") == 0){
 			SS_objective[iss]  = obj_ig_chl; 		}
+		else if (strcmp( gv.SS_list[iss], "DEW") == 0){
+			SS_objective[iss]  = obj_DEW; 		}
+		else{
+			printf("\nsolid solution '%s' is not in the database, cannot be initiated\n", gv.SS_list[iss]);
+		}
+	};
+}
+
+
+void TC_igd_objective_init_function(	obj_type 			*SS_objective,
+									global_variable 	 gv				){	
+						 
+	for (int iss = 0; iss < gv.len_ss; iss++){
+
+		if (strcmp( gv.SS_list[iss], "cpx") == 0){
+			SS_objective[iss]  = obj_igd_cpx; 		}
+		else if (strcmp( gv.SS_list[iss], "g")   == 0){
+			SS_objective[iss]  = obj_igd_g; 		}
+		else if (strcmp( gv.SS_list[iss], "ilm") == 0){
+			SS_objective[iss]  = obj_igd_ilm; 		}
+		else if (strcmp( gv.SS_list[iss], "liq") == 0){
+			SS_objective[iss]  = obj_igd_liq; 		}
+		else if (strcmp( gv.SS_list[iss], "ol")  == 0){
+			SS_objective[iss]  = obj_igd_ol; 		}
+		else if (strcmp( gv.SS_list[iss], "opx") == 0){
+			SS_objective[iss]  = obj_igd_opx; 		}
+		else if (strcmp( gv.SS_list[iss], "fsp") == 0){
+			SS_objective[iss]  = obj_igd_fsp; 		}
+		else if (strcmp( gv.SS_list[iss], "spl") == 0){
+			SS_objective[iss]  = obj_igd_spl; 		}
 		else{
 			printf("\nsolid solution '%s' is not in the database, cannot be initiated\n", gv.SS_list[iss]);	
 		}	
 	};			
 }
-
 
 void TC_igad_objective_init_function(	obj_type 			*SS_objective,
 									global_variable 	 gv				){	
@@ -16014,12 +17269,12 @@ void TC_mp_objective_init_function(	obj_type 			*SS_objective,
 			SS_objective[iss]  = obj_mp_ilmm; 		}
 		else if (strcmp( gv.SS_list[iss], "mt")    == 0){
 			SS_objective[iss]  = obj_mp_mt; 		}
-		else if (strcmp( gv.SS_list[iss], "aq17")  == 0){
-			SS_objective[iss]  = obj_aq17; 		}
+		else if (strcmp( gv.SS_list[iss], "DEW")  == 0){
+			SS_objective[iss]  = obj_DEW; 		}
 		else{
-			printf("\nsolid solution '%s' is not in the database, cannot be initiated\n", gv.SS_list[iss]);	
-		}	
-	};			
+			printf("\nsolid solution '%s' is not in the database, cannot be initiated\n", gv.SS_list[iss]);
+		}
+	};
 }
 
 
@@ -16064,10 +17319,12 @@ void TC_mb_objective_init_function(	obj_type 			*SS_objective,
          SS_objective[iss]  = obj_mb_mu;      }
       else if (strcmp( gv.SS_list[iss], "chl")  == 0){
          SS_objective[iss]  = obj_mb_chl;      }
+		else if (strcmp( gv.SS_list[iss], "DEW")  == 0){
+			SS_objective[iss]  = obj_DEW;      }
 		else{
-			printf("\nsolid solution '%s' is not in the database, cannot be initiated\n", gv.SS_list[iss]);	
-		}	
-	};			
+			printf("\nsolid solution '%s' is not in the database, cannot be initiated\n", gv.SS_list[iss]);
+		}
+	};
 }
 
 
@@ -16116,10 +17373,12 @@ void TC_mb_ext_objective_init_function(	obj_type 			*SS_objective,
          SS_objective[iss]  = obj_mb_oamp;      }
       else if (strcmp( gv.SS_list[iss], "ta")  == 0){
          SS_objective[iss]  = obj_mb_ta;      }
+		else if (strcmp( gv.SS_list[iss], "DEW")  == 0){
+			SS_objective[iss]  = obj_DEW;      }
 		else{
-			printf("\nsolid solution '%s' is not in the database, cannot be initiated\n", gv.SS_list[iss]);	
-		}	
-	};			
+			printf("\nsolid solution '%s' is not in the database, cannot be initiated\n", gv.SS_list[iss]);
+		}
+	};
 }
 
 void TC_um_objective_init_function(	obj_type 			*SS_objective,
@@ -16151,10 +17410,12 @@ void TC_um_objective_init_function(	obj_type 			*SS_objective,
 			SS_objective[iss]  = obj_um_opx; 		}
 		else if (strcmp( gv.SS_list[iss], "po") == 0){
 			SS_objective[iss]  = obj_um_po; 		}
+		else if (strcmp( gv.SS_list[iss], "DEW")  == 0){
+			SS_objective[iss]  = obj_DEW; 		}
 		else{
-			printf("\nsolid solution '%s' is not in the database, cannot be initiated\n", gv.SS_list[iss]);	
-		}	
-	};			
+			printf("\nsolid solution '%s' is not in the database, cannot be initiated\n", gv.SS_list[iss]);
+		}
+	};
 }
 
 
@@ -16199,10 +17460,12 @@ void TC_um_ext_objective_init_function(	obj_type 			*SS_objective,
 			SS_objective[iss]  = obj_mpe_fl; 		}
 		else if (strcmp( gv.SS_list[iss], "occm")   == 0){
 			SS_objective[iss]  = obj_mpe_occm; 		}
+		else if (strcmp( gv.SS_list[iss], "DEW")  == 0){
+			SS_objective[iss]  = obj_DEW; 		}
 		else{
-			printf("\nsolid solution '%s' is not in the database, cannot be initiated\n", gv.SS_list[iss]);	
-		}	
-	};			
+			printf("\nsolid solution '%s' is not in the database, cannot be initiated\n", gv.SS_list[iss]);
+		}
+	};
 }
 
 
@@ -16255,6 +17518,10 @@ void TC_mpe_objective_init_function(	obj_type 			*SS_objective,
 			SS_objective[iss]  = obj_mpe_liq; 		}
 		else if (strcmp( gv.SS_list[iss], "fsp") == 0){
 			SS_objective[iss]  = obj_mpe_fsp; 		}
+		else if (strcmp( gv.SS_list[iss], "plc") == 0){
+			SS_objective[iss]  = obj_mpe_plc; 		}
+		else if (strcmp( gv.SS_list[iss], "scp") == 0){
+			SS_objective[iss]  = obj_mpe_scp; 		}
 		else if (strcmp( gv.SS_list[iss], "bi")    == 0){
 			SS_objective[iss]  = obj_mpe_bi; 		}
 		else if (strcmp( gv.SS_list[iss], "g")     == 0){
@@ -16299,10 +17566,172 @@ void TC_mpe_objective_init_function(	obj_type 			*SS_objective,
 			SS_objective[iss]  = obj_mpe_po; 		}
 		else if (strcmp( gv.SS_list[iss], "oamp")    == 0){
 			SS_objective[iss]  = obj_mb_oamp; 		}
+        else if (strcmp( gv.SS_list[iss], "carp")    == 0){
+            SS_objective[iss]  = obj_mpe_carp; 		}
+        else if (strcmp( gv.SS_list[iss], "DEW")    == 0){
+            SS_objective[iss]  = obj_DEW; 		}
 		else{
-			printf("\nsolid solution '%s' is not in the database, cannot be initiated\n", gv.SS_list[iss]);	
+			printf("\nsolid solution '%s' is not in the database, cannot be initiated\n", gv.SS_list[iss]);
 		}	
 	};			
+}
+
+void TC_all_objective_init_function(	obj_type 			*SS_objective,
+									global_variable 	 gv				){
+
+	for (int iss = 0; iss < gv.len_ss; iss++){
+
+		/* liq (4 citation variants) */
+		if      (strcmp( gv.SS_list[iss], "liq_S26") == 0 ){
+			SS_objective[iss]  = obj_igd_liq; 		}
+		else if (strcmp( gv.SS_list[iss], "liq_G16")  == 0 ){
+			SS_objective[iss]  = obj_mb_liq; 		}
+		else if (strcmp( gv.SS_list[iss], "liq_W14")  == 0 ){
+			SS_objective[iss]  = obj_mpe_liq; 		}
+		else if (strcmp( gv.SS_list[iss], "liq_G25w") == 0 ){
+			SS_objective[iss]  = obj_ig_liq; 		}
+		else if (strcmp( gv.SS_list[iss], "liqmn_R27") == 0 ){
+			SS_objective[iss]  = obj_igmn_liq; 		}
+
+		/* fsp (2 citation variants) */
+		else if (strcmp( gv.SS_list[iss], "fsp_H22")   == 0 ){
+			SS_objective[iss]  = obj_mpe_fsp; 		}
+		else if (strcmp( gv.SS_list[iss], "fsp_H22op") == 0 ){
+			SS_objective[iss]  = obj_igd_fsp; 		}
+
+		/* g (4 citation variants) */
+		else if (strcmp( gv.SS_list[iss], "g_W24") == 0 ){
+			SS_objective[iss]  = obj_ig_g; 		}
+		else if (strcmp( gv.SS_list[iss], "g_W14") == 0 ){
+			SS_objective[iss]  = obj_mpe_g; 		}
+		else if (strcmp( gv.SS_list[iss], "g_H18") == 0 ){
+			SS_objective[iss]  = obj_um_g; 		}
+		else if (strcmp( gv.SS_list[iss], "g_T21") == 0 ){
+			SS_objective[iss]  = obj_igd_g; 		}
+
+		/* opx (3 citation variants) */
+		else if (strcmp( gv.SS_list[iss], "opx_W24") == 0 ){
+			SS_objective[iss]  = obj_ig_opx; 		}
+		else if (strcmp( gv.SS_list[iss], "opx_W14") == 0 ){
+			SS_objective[iss]  = obj_mpe_opx; 		}
+		else if (strcmp( gv.SS_list[iss], "opx_T21") == 0 ){
+			SS_objective[iss]  = obj_igd_opx; 		}
+
+		/* ol (2 citation variants) */
+		else if (strcmp( gv.SS_list[iss], "ol_H18") == 0 ){
+			SS_objective[iss]  = obj_igad_ol; 		}
+		else if (strcmp( gv.SS_list[iss], "ol_H11") == 0 ){
+			SS_objective[iss]  = obj_mb_ol; 		}
+
+		/* ilm (3 citation variants) */
+		else if (strcmp( gv.SS_list[iss], "ilm_W24") == 0 ){
+			SS_objective[iss]  = obj_ig_ilm; 		}
+		else if (strcmp( gv.SS_list[iss], "ilm_W00") == 0 ){
+			SS_objective[iss]  = obj_mb_ilm; 		}
+		else if (strcmp( gv.SS_list[iss], "ilm_T21") == 0 ){
+			SS_objective[iss]  = obj_igd_ilm; 		}
+
+		/* spl (2 citation variants) */
+		else if (strcmp( gv.SS_list[iss], "spl_T21") == 0 ){
+			SS_objective[iss]  = obj_ume_spl; 		}
+		else if (strcmp( gv.SS_list[iss], "spl_W02") == 0 ){
+			SS_objective[iss]  = obj_mb_spl; 		}
+
+		/* bi (2 citation variants) */
+		else if (strcmp( gv.SS_list[iss], "bi_G25") == 0 ){
+			SS_objective[iss]  = obj_ig_bi; 		}
+		else if (strcmp( gv.SS_list[iss], "bi_W14") == 0 ){
+			SS_objective[iss]  = obj_mpe_bi; 		}
+
+		/* cd (2 citation variants) */
+		else if (strcmp( gv.SS_list[iss], "cd_G25") == 0 ){
+			SS_objective[iss]  = obj_ig_cd; 		}
+		else if (strcmp( gv.SS_list[iss], "cd_W14") == 0 ){
+			SS_objective[iss]  = obj_mpe_cd; 		}
+
+		/* fl (3 citation variants) */
+		else if (strcmp( gv.SS_list[iss], "fl_G25")  == 0 ){
+			SS_objective[iss]  = obj_ig_fl; 		}
+		else if (strcmp( gv.SS_list[iss], "fl_EF21") == 0 ){
+			SS_objective[iss]  = obj_um_fluid; 		}
+		else if (strcmp( gv.SS_list[iss], "fl_H03")  == 0 ){
+			SS_objective[iss]  = obj_mpe_fl; 		}
+
+		/* non-collision tokens */
+		else if (strcmp( gv.SS_list[iss], "ep_H11")    == 0){
+			SS_objective[iss]  = obj_mpe_ep; 		}
+		else if (strcmp( gv.SS_list[iss], "ma_W14")    == 0){
+			SS_objective[iss]  = obj_mpe_ma; 		}
+		else if (strcmp( gv.SS_list[iss], "mu_W14")    == 0){
+			SS_objective[iss]  = obj_mpe_mu; 		}
+		else if (strcmp( gv.SS_list[iss], "sa_W14")    == 0){
+			SS_objective[iss]  = obj_mpe_sa; 		}
+		else if (strcmp( gv.SS_list[iss], "st_W14")    == 0){
+			SS_objective[iss]  = obj_mpe_st; 		}
+		else if (strcmp( gv.SS_list[iss], "chl_W14")   == 0){
+			SS_objective[iss]  = obj_mpe_chl; 		}
+		else if (strcmp( gv.SS_list[iss], "ctd_W14")   == 0){
+			SS_objective[iss]  = obj_mpe_ctd; 		}
+		else if (strcmp( gv.SS_list[iss], "sp_W02")    == 0){
+			SS_objective[iss]  = obj_mb_sp; 		}
+		else if (strcmp( gv.SS_list[iss], "mt_W00")    == 0){
+			SS_objective[iss]  = obj_mp_mt; 		}
+		else if (strcmp( gv.SS_list[iss], "ilmm_W14")  == 0){
+			SS_objective[iss]  = obj_mb_ilmm; 		}
+		else if (strcmp( gv.SS_list[iss], "ilmmn_W14") == 0){
+			SS_objective[iss]  = obj_mpe_ilmm; 		}
+		else if (strcmp( gv.SS_list[iss], "amp_G16")   == 0){
+			SS_objective[iss]  = obj_mb_amp; 		}
+		else if (strcmp( gv.SS_list[iss], "dio_G16")   == 0){
+			SS_objective[iss]  = obj_mb_dio; 		}
+		else if (strcmp( gv.SS_list[iss], "aug_G16")   == 0){
+			SS_objective[iss]  = obj_mb_aug; 		}
+		else if (strcmp( gv.SS_list[iss], "abc_H11")   == 0){
+			SS_objective[iss]  = obj_mb_abc; 		}
+		else if (strcmp( gv.SS_list[iss], "ta_EF21")    == 0){
+			SS_objective[iss]  = obj_um_ta; 		}
+		else if (strcmp( gv.SS_list[iss], "oamp_D07")  == 0){
+			SS_objective[iss]  = obj_mb_oamp; 		}
+		else if (strcmp( gv.SS_list[iss], "DEW_S24") == 0){
+			SS_objective[iss]  = obj_DEW; 		}
+		else if (strcmp( gv.SS_list[iss], "cpx_W24")   == 0){
+			SS_objective[iss]  = obj_ig_cpx; 		}
+		else if (strcmp( gv.SS_list[iss], "cpx_T21")   == 0){
+			SS_objective[iss]  = obj_igd_cpx; 		}
+		else if (strcmp( gv.SS_list[iss], "fper")  == 0){
+			SS_objective[iss]  = obj_ig_fper; 		}
+		else if (strcmp( gv.SS_list[iss], "lct_W24")   == 0){
+			SS_objective[iss]  = obj_igad_lct; 		}
+		else if (strcmp( gv.SS_list[iss], "mel_W24")   == 0){
+			SS_objective[iss]  = obj_igad_mel; 		}
+		else if (strcmp( gv.SS_list[iss], "nph_W24")   == 0){
+			SS_objective[iss]  = obj_igad_nph; 		}
+		else if (strcmp( gv.SS_list[iss], "kals_W24")  == 0){
+			SS_objective[iss]  = obj_igad_kals; 		}
+		else if (strcmp( gv.SS_list[iss], "br_E13")    == 0){
+			SS_objective[iss]  = obj_um_br; 		}
+		else if (strcmp( gv.SS_list[iss], "ch_EF21")    == 0){
+			SS_objective[iss]  = obj_um_ch; 		}
+		else if (strcmp( gv.SS_list[iss], "atg_EF21")   == 0){
+			SS_objective[iss]  = obj_um_atg; 		}
+		else if (strcmp( gv.SS_list[iss], "spi_W02")   == 0){
+			SS_objective[iss]  = obj_um_spi; 		}
+		else if (strcmp( gv.SS_list[iss], "po_E10")    == 0){
+			SS_objective[iss]  = obj_um_po; 		}
+		else if (strcmp( gv.SS_list[iss], "anth_D07")  == 0){
+			SS_objective[iss]  = obj_um_anth; 		}
+		else if (strcmp( gv.SS_list[iss], "occm_F11")  == 0){
+			SS_objective[iss]  = obj_mpe_occm; 		}
+		else if (strcmp( gv.SS_list[iss], "carp_W14")  == 0){
+			SS_objective[iss]  = obj_mpe_carp; 		}
+		else if (strcmp( gv.SS_list[iss], "plc_B05")   == 0){
+			SS_objective[iss]  = obj_mpe_plc; 		}
+		else if (strcmp( gv.SS_list[iss], "scp_K04")   == 0){
+			SS_objective[iss]  = obj_mpe_scp; 		}
+		else{
+			printf("\nsolid solution '%s' is not in the database, cannot be initiated\n", gv.SS_list[iss]);
+		}
+	};
 }
 
 void TC_SS_objective_init_function(	obj_type 			*SS_objective,
@@ -16324,6 +17753,10 @@ void TC_SS_objective_init_function(	obj_type 			*SS_objective,
 		TC_ig_objective_init_function(			SS_objective,
 												gv							);
 	}
+	else if (gv.EM_database == 22){		// igneous dry database //
+		TC_igd_objective_init_function(		SS_objective,
+												gv							);
+	}
 	else if (gv.EM_database == 3){			// igneous alkali dry database //
 		TC_igad_objective_init_function(		SS_objective,
 												gv							);
@@ -16342,6 +17775,10 @@ void TC_SS_objective_init_function(	obj_type 			*SS_objective,
 	}
     else if (gv.EM_database == 7){			// ultramafic database //
 		TC_mpe_objective_init_function(		    SS_objective,
+												gv							);
+	}
+	else if (gv.EM_database == 8){			// all database //
+		TC_all_objective_init_function(		    SS_objective,
 												gv							);
 	}
 }
@@ -16386,11 +17823,11 @@ void TC_mp_PC_init(	                PC_type 			*PC_read,
 			PC_read[iss]  = obj_mp_ilmm; 		        }
 		else if (strcmp( gv.SS_list[iss], "mt")    == 0){
 			PC_read[iss]  = obj_mp_mt; 		            }
-		else if (strcmp( gv.SS_list[iss], "aq17")  == 0){
-			PC_read[iss]  = obj_aq17; 		            }
+		else if (strcmp( gv.SS_list[iss], "DEW")  == 0){
+			PC_read[iss]  = obj_DEW; 		            }
 		else{
-			printf("\nsolid solution '%s' is not in the database, cannot be initiated\n", gv.SS_list[iss]);	
-		}	
+			printf("\nsolid solution '%s' is not in the database, cannot be initiated\n", gv.SS_list[iss]);
+		}
     }
 }
 
@@ -16435,9 +17872,11 @@ void TC_mb_PC_init(	                PC_type 			*PC_read,
          PC_read[iss]  = obj_mb_mu;                 }
       else if (strcmp( gv.SS_list[iss], "chl")  == 0){
          PC_read[iss]  = obj_mb_chl;                }
+		else if (strcmp( gv.SS_list[iss], "DEW")  == 0){
+			PC_read[iss]  = obj_DEW;             }
 		else{
-			printf("\nsolid solution '%s' is not in the database, cannot be initiated\n", gv.SS_list[iss]);	
-		}	
+			printf("\nsolid solution '%s' is not in the database, cannot be initiated\n", gv.SS_list[iss]);
+		}
     }
 }
 
@@ -16487,9 +17926,11 @@ void TC_mb_ext_PC_init(	            PC_type 			*PC_read,
          PC_read[iss]  = obj_mb_oamp;                }
       else if (strcmp( gv.SS_list[iss], "ta")  == 0){
          PC_read[iss]  = obj_mb_ta;                 }
+		else if (strcmp( gv.SS_list[iss], "DEW")  == 0){
+			PC_read[iss]  = obj_DEW;             }
 		else{
-			printf("\nsolid solution '%s' is not in the database, cannot be initiated\n", gv.SS_list[iss]);	
-		}	
+			printf("\nsolid solution '%s' is not in the database, cannot be initiated\n", gv.SS_list[iss]);
+		}
     }
 }
 
@@ -16530,12 +17971,40 @@ void TC_ig_PC_init(	                PC_type 			*PC_read,
 			PC_read[iss]  = obj_ig_spl; 		    }
 		else if (strcmp( gv.SS_list[iss], "chl") == 0){
 			PC_read[iss]  = obj_ig_chl; 		    }
+		else if (strcmp( gv.SS_list[iss], "DEW") == 0){
+			PC_read[iss]  = obj_DEW; 		    }
+		else{
+			printf("\nsolid solution '%s' is not in the database, cannot be initiated\n", gv.SS_list[iss]);
+		}
+    }
+}
+
+void TC_igd_PC_init(	                PC_type 			*PC_read,
+									global_variable 	 gv				){	
+						 
+	for (int iss = 0; iss < gv.len_ss; iss++){
+
+		if (strcmp( gv.SS_list[iss], "cpx") == 0){
+			PC_read[iss]  = obj_igd_cpx; 		      }
+		else if (strcmp( gv.SS_list[iss], "g")   == 0){
+			PC_read[iss]  = obj_igd_g; 		          }
+		else if (strcmp( gv.SS_list[iss], "ilm") == 0){
+			PC_read[iss]  = obj_igd_ilm; 		      }
+		else if (strcmp( gv.SS_list[iss], "liq") == 0){
+			PC_read[iss]  = obj_igd_liq; 		      }
+		else if (strcmp( gv.SS_list[iss], "ol")  == 0){
+			PC_read[iss]  = obj_igd_ol; 		      }
+		else if (strcmp( gv.SS_list[iss], "opx") == 0){
+			PC_read[iss]  = obj_igd_opx; 		      }
+		else if (strcmp( gv.SS_list[iss], "fsp") == 0){
+			PC_read[iss]  = obj_igd_fsp; 		      }
+		else if (strcmp( gv.SS_list[iss], "spl") == 0){
+			PC_read[iss]  = obj_igd_spl; 		    }
 		else{
 			printf("\nsolid solution '%s' is not in the database, cannot be initiated\n", gv.SS_list[iss]);	
 		}	
     }
 }
-
 void TC_igad_PC_init(	                PC_type 			*PC_read,
 									global_variable 	 gv				){	
 						 
@@ -16599,9 +18068,11 @@ void TC_um_PC_init(	                PC_type 			*PC_read,
 			PC_read[iss]  = obj_um_opx; 		    }
 		else if (strcmp( gv.SS_list[iss], "po") == 0){
 			PC_read[iss]  = obj_um_po; 		        }
+		else if (strcmp( gv.SS_list[iss], "DEW") == 0){
+			PC_read[iss]  = obj_DEW; 		    }
 		else{
-			printf("\nsolid solution '%s' is not in the database, cannot be initiated\n", gv.SS_list[iss]);	
-		}	
+			printf("\nsolid solution '%s' is not in the database, cannot be initiated\n", gv.SS_list[iss]);
+		}
     }
 }
 
@@ -16646,9 +18117,11 @@ void TC_um_ext_PC_init(	                PC_type 			*PC_read,
 			PC_read[iss]  = obj_mpe_fl; 		        }
 		else if (strcmp( gv.SS_list[iss], "occm")   == 0){
 			PC_read[iss]  = obj_mpe_occm; 		        }
+		else if (strcmp( gv.SS_list[iss], "DEW")   == 0){
+			PC_read[iss]  = obj_DEW; 		        }
 		else{
-			printf("\nsolid solution '%s' is not in the database, cannot be initiated\n", gv.SS_list[iss]);	
-		}	
+			printf("\nsolid solution '%s' is not in the database, cannot be initiated\n", gv.SS_list[iss]);
+		}
     }
 }
 
@@ -16703,6 +18176,10 @@ void TC_mpe_PC_init(	                PC_type 			*PC_read,
 			PC_read[iss]  = obj_mpe_liq; 		        }
 		else if (strcmp( gv.SS_list[iss], "fsp") == 0){
 			PC_read[iss]  = obj_mpe_fsp; 		        }
+		else if (strcmp( gv.SS_list[iss], "plc") == 0){
+			PC_read[iss]  = obj_mpe_plc; 		        }
+		else if (strcmp( gv.SS_list[iss], "scp") == 0){
+			PC_read[iss]  = obj_mpe_scp; 		        }
 		else if (strcmp( gv.SS_list[iss], "bi")    == 0){
 			PC_read[iss]  = obj_mpe_bi; 		            }
 		else if (strcmp( gv.SS_list[iss], "g")     == 0){
@@ -16747,10 +18224,172 @@ void TC_mpe_PC_init(	                PC_type 			*PC_read,
 			PC_read[iss]  = obj_mpe_po; 		            }
 		else if (strcmp( gv.SS_list[iss], "oamp")    == 0){
 			PC_read[iss]  = obj_mb_oamp; 		            }
+        else if (strcmp( gv.SS_list[iss], "carp")    == 0){
+			PC_read[iss]  = obj_mpe_carp; 		            }
+        else if (strcmp( gv.SS_list[iss], "DEW")    == 0){
+			PC_read[iss]  = obj_DEW; 		            }
 		else{
-			printf("\nsolid solution '%s' is not in the database, cannot be initiated\n", gv.SS_list[iss]);	
-		}	
+			printf("\nsolid solution '%s' is not in the database, cannot be initiated\n", gv.SS_list[iss]);
+		}
     }
+}
+
+void TC_all_PC_init(	                PC_type 			*PC_read,
+									global_variable 	 gv				){
+
+	for (int iss = 0; iss < gv.len_ss; iss++){
+
+		/* liq (4 citation variants) */
+		if      (strcmp( gv.SS_list[iss], "liq_S26") == 0 ){
+			PC_read[iss]  = obj_igd_liq; 		}
+		else if (strcmp( gv.SS_list[iss], "liq_G16")  == 0 ){
+			PC_read[iss]  = obj_mb_liq; 		}
+		else if (strcmp( gv.SS_list[iss], "liq_W14")  == 0 ){
+			PC_read[iss]  = obj_mpe_liq; 		}
+		else if (strcmp( gv.SS_list[iss], "liq_G25w") == 0 ){
+			PC_read[iss]  = obj_ig_liq; 		}
+		else if (strcmp( gv.SS_list[iss], "liqmn_R27") == 0 ){
+			PC_read[iss]  = obj_igmn_liq; 		}
+
+		/* fsp (2 citation variants) */
+		else if (strcmp( gv.SS_list[iss], "fsp_H22")   == 0 ){
+			PC_read[iss]  = obj_mpe_fsp; 		}
+		else if (strcmp( gv.SS_list[iss], "fsp_H22op") == 0 ){
+			PC_read[iss]  = obj_igd_fsp; 		}
+
+		/* g (4 citation variants) */
+		else if (strcmp( gv.SS_list[iss], "g_W24") == 0 ){
+			PC_read[iss]  = obj_ig_g; 		}
+		else if (strcmp( gv.SS_list[iss], "g_W14") == 0 ){
+			PC_read[iss]  = obj_mpe_g; 		}
+		else if (strcmp( gv.SS_list[iss], "g_H18") == 0 ){
+			PC_read[iss]  = obj_um_g; 		}
+		else if (strcmp( gv.SS_list[iss], "g_T21") == 0 ){
+			PC_read[iss]  = obj_igd_g; 		}
+
+		/* opx (3 citation variants) */
+		else if (strcmp( gv.SS_list[iss], "opx_W24") == 0 ){
+			PC_read[iss]  = obj_ig_opx; 		}
+		else if (strcmp( gv.SS_list[iss], "opx_W14") == 0 ){
+			PC_read[iss]  = obj_mpe_opx; 		}
+		else if (strcmp( gv.SS_list[iss], "opx_T21") == 0 ){
+			PC_read[iss]  = obj_igd_opx; 		}
+
+		/* ol (2 citation variants) */
+		else if (strcmp( gv.SS_list[iss], "ol_H18") == 0 ){
+			PC_read[iss]  = obj_igad_ol; 		}
+		else if (strcmp( gv.SS_list[iss], "ol_H11") == 0 ){
+			PC_read[iss]  = obj_mb_ol; 		}
+
+		/* ilm (3 citation variants) */
+		else if (strcmp( gv.SS_list[iss], "ilm_W24") == 0 ){
+			PC_read[iss]  = obj_ig_ilm; 		}
+		else if (strcmp( gv.SS_list[iss], "ilm_W00") == 0 ){
+			PC_read[iss]  = obj_mb_ilm; 		}
+		else if (strcmp( gv.SS_list[iss], "ilm_T21") == 0 ){
+			PC_read[iss]  = obj_igd_ilm; 		}
+
+		/* spl (2 citation variants) */
+		else if (strcmp( gv.SS_list[iss], "spl_T21") == 0 ){
+			PC_read[iss]  = obj_ume_spl; 		}
+		else if (strcmp( gv.SS_list[iss], "spl_W02") == 0 ){
+			PC_read[iss]  = obj_mb_spl; 		}
+
+		/* bi (2 citation variants) */
+		else if (strcmp( gv.SS_list[iss], "bi_G25") == 0 ){
+			PC_read[iss]  = obj_ig_bi; 		}
+		else if (strcmp( gv.SS_list[iss], "bi_W14") == 0 ){
+			PC_read[iss]  = obj_mpe_bi; 		}
+
+		/* cd (2 citation variants) */
+		else if (strcmp( gv.SS_list[iss], "cd_G25") == 0 ){
+			PC_read[iss]  = obj_ig_cd; 		}
+		else if (strcmp( gv.SS_list[iss], "cd_W14") == 0 ){
+			PC_read[iss]  = obj_mpe_cd; 		}
+
+		/* fl (3 citation variants) */
+		else if (strcmp( gv.SS_list[iss], "fl_G25")  == 0 ){
+			PC_read[iss]  = obj_ig_fl; 		}
+		else if (strcmp( gv.SS_list[iss], "fl_EF21") == 0 ){
+			PC_read[iss]  = obj_um_fluid; 		}
+		else if (strcmp( gv.SS_list[iss], "fl_H03")  == 0 ){
+			PC_read[iss]  = obj_mpe_fl; 		}
+
+		/* non-collision tokens */
+		else if (strcmp( gv.SS_list[iss], "ep_H11")    == 0){
+			PC_read[iss]  = obj_mpe_ep; 		}
+		else if (strcmp( gv.SS_list[iss], "ma_W14")    == 0){
+			PC_read[iss]  = obj_mpe_ma; 		}
+		else if (strcmp( gv.SS_list[iss], "mu_W14")    == 0){
+			PC_read[iss]  = obj_mpe_mu; 		}
+		else if (strcmp( gv.SS_list[iss], "sa_W14")    == 0){
+			PC_read[iss]  = obj_mpe_sa; 		}
+		else if (strcmp( gv.SS_list[iss], "st_W14")    == 0){
+			PC_read[iss]  = obj_mpe_st; 		}
+		else if (strcmp( gv.SS_list[iss], "chl_W14")   == 0){
+			PC_read[iss]  = obj_mpe_chl; 		}
+		else if (strcmp( gv.SS_list[iss], "ctd_W14")   == 0){
+			PC_read[iss]  = obj_mpe_ctd; 		}
+		else if (strcmp( gv.SS_list[iss], "sp_W02")    == 0){
+			PC_read[iss]  = obj_mb_sp; 		}
+		else if (strcmp( gv.SS_list[iss], "mt_W00")    == 0){
+			PC_read[iss]  = obj_mp_mt; 		}
+		else if (strcmp( gv.SS_list[iss], "ilmm_W14")  == 0){
+			PC_read[iss]  = obj_mb_ilmm; 		}
+		else if (strcmp( gv.SS_list[iss], "ilmmn_W14") == 0){
+			PC_read[iss]  = obj_mpe_ilmm; 		}
+		else if (strcmp( gv.SS_list[iss], "amp_G16")   == 0){
+			PC_read[iss]  = obj_mb_amp; 		}
+		else if (strcmp( gv.SS_list[iss], "dio_G16")   == 0){
+			PC_read[iss]  = obj_mb_dio; 		}
+		else if (strcmp( gv.SS_list[iss], "aug_G16")   == 0){
+			PC_read[iss]  = obj_mb_aug; 		}
+		else if (strcmp( gv.SS_list[iss], "abc_H11")   == 0){
+			PC_read[iss]  = obj_mb_abc; 		}
+		else if (strcmp( gv.SS_list[iss], "ta_EF21")    == 0){
+			PC_read[iss]  = obj_um_ta; 		}
+		else if (strcmp( gv.SS_list[iss], "oamp_D07")  == 0){
+			PC_read[iss]  = obj_mb_oamp; 		}
+		else if (strcmp( gv.SS_list[iss], "DEW_S24") == 0){
+			PC_read[iss]  = obj_DEW; 		}
+		else if (strcmp( gv.SS_list[iss], "cpx_W24")   == 0){
+			PC_read[iss]  = obj_ig_cpx; 		}
+		else if (strcmp( gv.SS_list[iss], "cpx_T21")   == 0){
+			PC_read[iss]  = obj_igd_cpx; 		}
+		else if (strcmp( gv.SS_list[iss], "fper")  == 0){
+			PC_read[iss]  = obj_ig_fper; 		}
+		else if (strcmp( gv.SS_list[iss], "lct_W24")   == 0){
+			PC_read[iss]  = obj_igad_lct; 		}
+		else if (strcmp( gv.SS_list[iss], "mel_W24")   == 0){
+			PC_read[iss]  = obj_igad_mel; 		}
+		else if (strcmp( gv.SS_list[iss], "nph_W24")   == 0){
+			PC_read[iss]  = obj_igad_nph; 		}
+		else if (strcmp( gv.SS_list[iss], "kals_W24")  == 0){
+			PC_read[iss]  = obj_igad_kals; 		}
+		else if (strcmp( gv.SS_list[iss], "br_E13")    == 0){
+			PC_read[iss]  = obj_um_br; 		}
+		else if (strcmp( gv.SS_list[iss], "ch_EF21")    == 0){
+			PC_read[iss]  = obj_um_ch; 		}
+		else if (strcmp( gv.SS_list[iss], "atg_EF21")   == 0){
+			PC_read[iss]  = obj_um_atg; 		}
+		else if (strcmp( gv.SS_list[iss], "spi_W02")   == 0){
+			PC_read[iss]  = obj_um_spi; 		}
+		else if (strcmp( gv.SS_list[iss], "po_E10")    == 0){
+			PC_read[iss]  = obj_um_po; 		}
+		else if (strcmp( gv.SS_list[iss], "anth_D07")  == 0){
+			PC_read[iss]  = obj_um_anth; 		}
+		else if (strcmp( gv.SS_list[iss], "occm_F11")  == 0){
+			PC_read[iss]  = obj_mpe_occm; 		}
+		else if (strcmp( gv.SS_list[iss], "carp_W14")  == 0){
+			PC_read[iss]  = obj_mpe_carp; 		}
+		else if (strcmp( gv.SS_list[iss], "plc_B05")   == 0){
+			PC_read[iss]  = obj_mpe_plc; 		}
+		else if (strcmp( gv.SS_list[iss], "scp_K04")   == 0){
+			PC_read[iss]  = obj_mpe_scp; 		}
+		else{
+			printf("\nsolid solution '%s' is not in the database, cannot be initiated\n", gv.SS_list[iss]);
+		}
+	};
 }
 
 void TC_PC_init(	                PC_type 			*PC_read,
@@ -16772,6 +18411,10 @@ void TC_PC_init(	                PC_type 			*PC_read,
 		TC_ig_PC_init(			PC_read,
 								gv							);
 	}
+	else if (gv.EM_database == 22){			// igneous database //
+		TC_igd_PC_init(			PC_read,
+								gv							);
+	}
 	else if (gv.EM_database == 3){			// igneous database //
 		TC_igad_PC_init(		PC_read,
 								gv							);
@@ -16790,6 +18433,10 @@ void TC_PC_init(	                PC_type 			*PC_read,
 	}
 	else if (gv.EM_database == 7){			// mantle database //
 		TC_mpe_PC_init(		    PC_read,
+								gv							);
+	}
+	else if (gv.EM_database == 8){			// all database //
+		TC_all_PC_init(		    PC_read,
 								gv							);
 	}
 }
@@ -16832,8 +18479,19 @@ SS_ref PC_function(		global_variable 	 gv,
 	SS_ref_db.sf_ok = 1;
 	for (int i = 0; i < SS_ref_db.n_sf; i++){
 		if (SS_ref_db.sf[i] < gv.eps_sf_pc || isnan(SS_ref_db.sf[i]) == 1|| isinf(SS_ref_db.sf[i]) == 1){
-			SS_ref_db.sf_ok = 0;	
+			SS_ref_db.sf_ok = 0;
 			break;
+		}
+	}
+
+    /* Check if equality constraint on endmember fraction is respected for gh group */
+	if (SS_ref_db.sf_ok == 1 && strcmp(gv.research_group, "gh") == 0){
+		double sum_p = 0.0;
+		for (int i = 0; i < SS_ref_db.n_em; i++){
+			sum_p += SS_ref_db.p[i];
+		}
+		if (fabs(sum_p - 1.0) > 1.0e-6){
+			SS_ref_db.sf_ok = 0;
 		}
 	}
 

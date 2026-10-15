@@ -1,3 +1,13 @@
+#=~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+#
+#   Project      : MAGEMin_C
+#   License      : GNU GENERAL PUBLIC LICENSE Version 3, 29 June 2007
+#   Developers   : Nicolas Riel, Boris Kaus
+#   Contributors : Moccetti, N. B., Dominguez, H., Assunção J., Green E., Dolejš, D., Berlie N., and Rummel L.
+#   Organization : Institute of Geosciences, Johannes-Gutenberg University, Mainz
+#   Contact      : nriel[at]uni-mainz.de
+#
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ =#
 # this tests the julia interface to MAGEMin
 using Test
 
@@ -12,8 +22,16 @@ if endswith(cur_dir, "test")
 end
 
 
+@testset "db_infos" begin
+    include(joinpath(@__DIR__, "test_db_infos.jl"))
+end
+
 @testset "serial" begin
     include(joinpath(@__DIR__, "tests.jl"))
+end
+
+@testset "nullspace" begin
+    include(joinpath(@__DIR__, "test_nullspace.jl"))
 end
 
 @testset "threaded" begin

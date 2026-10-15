@@ -77,7 +77,7 @@
         "endmembers": [["py","[Mg_3][Al_1][Al_1]Si_3O_12"],["alm","[Fe_3][Al_1][Al_1]Si_3O_12"],["gr","[Ca_3][Al_1][Al_1]Si_3O_12"],["mgmj","[Mg_3][Mg_1][Si_1]Si_3O_12"],["jdmj","[Na_2Al_1][Al_1][Si_1]Si_3O_12"]],
         "margules": [0.000e+00,21117.58,22672.42,22672.42,21117.58,22672.42,22672.42,60718.2,60718.2,70879.14],
         "van_laar": [],
-        "volume_interaction": [0.0, 1.03e-05, 0.0, 0.0, 0.0, 0.0, 0.0, 1.03e-05, 0.0, 0.0]
+        "volume_interaction": [0.0, 1.03e-06, 0.0, 0.0, 0.0, 0.0, 0.0, 1.03e-06, 0.0, 0.0]
     },
     {
         "name": "perovskite", 
@@ -109,7 +109,7 @@
         "endmembers": [["pe","[Mg_2][Mg_2]O_4"],["wu","[Fe_2][Fe_2]O_4"],["anao","[Na_2][Al_2]O_4"]],
         "margules": [44000.0,120000.0, 120000.0],
         "van_laar": [],
-        "volume_interaction": [4.4e-06, 0.0, 0.0]
+        "volume_interaction": [4.4e-07, 0.0, 0.0]
     },
     {
         "name": "new-aluminium-phase",

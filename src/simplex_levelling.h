@@ -3,7 +3,7 @@
  **   Project      : MAGEMin
  **   License      : GNU GENERAL PUBLIC LICENSE Version 3, 29 June 2007
  **   Developers   : Nicolas Riel, Boris Kaus
- **   Contributors : Nickolas B. Moccetti, Dominguez, H., Assunção J., Green E., Berlie N., and Rummel L.
+ **   Contributors : Moccetti, N. B., Dominguez, H., Assunção J., Green E., Dolejš, D., Berlie N., and Rummel L.
  **   Organization : Institute of Geosciences, Johannes-Gutenberg University, Mainz
  **   Contact      : nriel[at]uni-mainz.de, kaus[at]uni-mainz.de
  **
@@ -40,7 +40,7 @@ void swap_pure_phases(				bulk_info 	 		 z_b,
 void swap_pure_endmembers(			bulk_info 	 		 z_b,
 									simplex_data 		*splx_data,
 									global_variable 	 gv,
-										
+
 									PP_ref 				*PP_ref_db,
 									SS_ref 				*SS_ref_db			);
 

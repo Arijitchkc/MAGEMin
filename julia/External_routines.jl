@@ -3,7 +3,7 @@
 #   Project      : MAGEMin_C
 #   License      : GNU GENERAL PUBLIC LICENSE Version 3, 29 June 2007
 #   Developers   : Nicolas Riel, Boris Kaus
-#   Contributors : Dominguez, H., Assunção J., Green E., Berlie N., and Rummel L.
+#   Contributors : Moccetti, N. B., Dominguez, H., Assunção J., Green E., Dolejš, D., Berlie N., and Rummel L.
 #   Organization : Institute of Geosciences, Johannes-Gutenberg University, Mainz
 #   Contact      : nriel[at]uni-mainz.de
 #
@@ -19,14 +19,31 @@
 """
     compute_melt_viscosity_G08(oxides, M_mol, T_C; A = -4.55)
 
-    Takes as input arguments:
-        oxides :: Vector{String}    -> oxide list of the melt composition
-        M_mol  :: Vector{Float64}   -> melt composition in mol
-        T_C    :: Float64           -> temperature in °C
+    Compute melt viscosity using the Giordano, Russell & Dingwell (2008) model.
 
-    returns melt viscosity in Pa.s
+    Oxide compositions are mapped onto the 12-component GRD08 system
+    (SiO₂, Al₂O₃, TiO₂, FeO, CaO, MgO, MnO, Na₂O, K₂O, P₂O₅, H₂O, F₂O₋₁),
+    re-normalised to 100 mol%, and combined via the VTF equation:
 
-    Formulation after Giordano et al., 2008
+        log₁₀(η) = A + B / (T_K − C)
+
+    Viscosity is capped at 10¹⁴ Pa·s.
+
+    Parameters
+    ----------
+    oxides : Vector{String}
+        Oxide names for the melt composition (MAGEMin ordering).
+    M_mol : Vector{Float64}
+        Melt composition in mol fractions, indexed to match `oxides`.
+    T_C : Float64
+        Temperature [°C].
+    A : Float64
+        Pre-exponential constant (default: −4.55, after Giordano et al. 2008).
+
+    Returns
+    -------
+    eta : Float64
+        Melt viscosity [Pa·s], capped at 10¹⁴ Pa·s.
 """
 function compute_melt_viscosity_G08(oxides, M_mol, T_C; A = -4.55)
 

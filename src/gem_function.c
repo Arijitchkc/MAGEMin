@@ -3,7 +3,7 @@
  **   Project      : MAGEMin
  **   License      : GNU GENERAL PUBLIC LICENSE Version 3, 29 June 2007
  **   Developers   : Nicolas Riel, Boris Kaus
- **   Contributors : Nickolas B. Moccetti, Dominguez, H., Assunção J., Green E., Berlie N., and Rummel L.
+ **   Contributors : Moccetti, N. B., Dominguez, H., Assunção J., Green E., Dolejš, D., Berlie N., and Rummel L.
  **   Organization : Institute of Geosciences, Johannes-Gutenberg University, Mainz
  **   Contact      : nriel[at]uni-mainz.de, kaus[at]uni-mainz.de
  **
@@ -50,6 +50,26 @@ PP_ref G_EM_function(	    char        *research_group,
     }
     if 	(strcmp(research_group, "sb") 	== 0){
         PP_ref_db = SB_G_EM_function(	EM_dataset,
+                                        len_ox,
+                                        id,
+                                        bulk_rock,
+                                        apo,
+                                        P, T,
+                                        name,
+                                        state);
+    }
+    if 	(strcmp(research_group, "gh") 	== 0){
+        PP_ref_db = GH_G_EM_function(	EM_dataset,
+                                        len_ox,
+                                        id,
+                                        bulk_rock,
+                                        apo,
+                                        P, T,
+                                        name,
+                                        state);
+    }
+    if 	(strcmp(research_group, "br") 	== 0){
+        PP_ref_db = BR_G_EM_function(	EM_dataset,
                                         len_ox,
                                         id,
                                         bulk_rock,

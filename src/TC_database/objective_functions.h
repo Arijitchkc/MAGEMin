@@ -3,7 +3,7 @@
  **   Project      : MAGEMin
  **   License      : GNU GENERAL PUBLIC LICENSE Version 3, 29 June 2007
  **   Developers   : Nicolas Riel, Boris Kaus
- **   Contributors : Nickolas B. Moccetti, Dominguez, H., Assunção J., Green E., Berlie N., and Rummel L.
+ **   Contributors : Moccetti, N. B., Dominguez, H., Assunção J., Green E., Dolejš, D., Berlie N., and Rummel L.
  **   Organization : Institute of Geosciences, Johannes-Gutenberg University, Mainz
  **   Contact      : nriel[at]uni-mainz.de, kaus[at]uni-mainz.de
  **
@@ -21,6 +21,8 @@ void TC_mb_ext_objective_init_function(	obj_type 		 	*SS_objective,
 									global_variable  	 gv					);
 void TC_ig_objective_init_function(	obj_type 		 	*SS_objective,
 									global_variable   	 gv					);
+void TC_igd_objective_init_function(obj_type 		 	*SS_objective,
+									global_variable   	 gv					);
 void TC_igad_objective_init_function(obj_type 		*SS_objective,
 									global_variable  	 gv					);
 void TC_mp_objective_init_function(	obj_type 		 	*SS_objective,
@@ -33,9 +35,13 @@ void TC_mtl_objective_init_function(obj_type 		*SS_objective,
 									global_variable  	 gv					);
 void TC_mpe_objective_init_function(obj_type 		 	*SS_objective,
 									global_variable 	 gv					);
+void TC_all_objective_init_function(obj_type 		 	*SS_objective,
+									global_variable 	 gv					);
 void TC_SS_objective_init_function(	obj_type 			*SS_objective,
 									global_variable 	 gv					);
 
+void TC_all_PC_init(	                PC_type 			*PC_read,
+									global_variable 	 gv					);
 void TC_PC_init(	                PC_type 			*PC_read,
 									global_variable 	 gv					);
 
@@ -43,6 +49,8 @@ void TC_PC_init(	                PC_type 			*PC_read,
 typedef void (*P2X_type) (			void 				*SS_ref_db,
 									double 				 eps				);
 
+void TC_all_P2X_init(	            P2X_type 			*P2X_read,
+									global_variable 	 gv					);
 void TC_P2X_init(	                P2X_type 			*P2X_read,
 									global_variable 	 gv					);
 									
@@ -77,12 +85,23 @@ double obj_ig_g(unsigned    n, const double *x, double *grad, void *SS_ref_db);
 double obj_ig_amp(unsigned   n, const double *x, double *grad, void *SS_ref_db);
 double obj_ig_ilm(unsigned  n, const double *x, double *grad, void *SS_ref_db);
 double obj_ig_liq(unsigned  n, const double *x, double *grad, void *SS_ref_db);
+double obj_igmn_liq(unsigned  n, const double *x, double *grad, void *SS_ref_db);
 double obj_ig_mu(unsigned   n, const double *x, double *grad, void *SS_ref_db);
 double obj_ig_ol(unsigned   n, const double *x, double *grad, void *SS_ref_db);
 double obj_ig_opx(unsigned  n, const double *x, double *grad, void *SS_ref_db);
 double obj_ig_fsp(unsigned  n, const double *x, double *grad, void *SS_ref_db);
 double obj_ig_spl(unsigned  n, const double *x, double *grad, void *SS_ref_db);
 double obj_ig_chl(unsigned  n, const double *x, double *grad, void *SS_ref_db);
+
+double obj_igd_liq(unsigned n, const double *x, double *grad, void *SS_ref_db);
+double obj_igd_fsp(unsigned  n, const double *x, double *grad, void *SS_ref_db);
+double obj_igd_spl(unsigned  n, const double *x, double *grad, void *SS_ref_db);
+double obj_igd_g(unsigned    n, const double *x, double *grad, void *SS_ref_db);
+double obj_igd_ol(unsigned   n, const double *x, double *grad, void *SS_ref_db);
+double obj_igd_opx(unsigned  n, const double *x, double *grad, void *SS_ref_db);
+double obj_igd_cpx(unsigned  n, const double *x, double *grad, void *SS_ref_db);
+double obj_igd_ilm(unsigned  n, const double *x, double *grad, void *SS_ref_db);
+
 
 double obj_igad_liq(unsigned n, const double *x, double *grad, void *SS_ref_db);
 double obj_igad_fsp(unsigned  n, const double *x, double *grad, void *SS_ref_db);
@@ -149,6 +168,8 @@ double obj_mtl_hpx(unsigned 	n, const double *x, double *grad, void *SS_ref_db);
 
 double obj_mpe_liq(unsigned   n, const double *x, double *grad, void *SS_ref_db);
 double obj_mpe_fsp(unsigned   n, const double *x, double *grad, void *SS_ref_db);
+double obj_mpe_plc(unsigned   n, const double *x, double *grad, void *SS_ref_db);
+double obj_mpe_scp(unsigned   n, const double *x, double *grad, void *SS_ref_db);
 double obj_mpe_bi(unsigned  	 n, const double *x, double *grad, void *SS_ref_db);
 double obj_mpe_g(unsigned   	 n, const double *x, double *grad, void *SS_ref_db);
 double obj_mpe_ep(unsigned    n, const double *x, double *grad, void *SS_ref_db);
@@ -170,8 +191,11 @@ double obj_mpe_dio(unsigned  	 n, const double *x, double *grad, void *SS_ref_db
 double obj_mpe_aug(unsigned   n, const double *x, double *grad, void *SS_ref_db);
 double obj_mpe_amp(unsigned  n, const double *x, double *grad, void *SS_ref_db);
 double obj_mpe_po(unsigned  	 n, const double *x, double *grad, void *SS_ref_db);
+double obj_mpe_carp(unsigned  	 n, const double *x, double *grad, void *SS_ref_db);
+
 		
-double obj_aq17(unsigned 	  n, const double *x, double *grad, void *SS_ref_db);
+
+double obj_DEW(unsigned 	  n, const double *x, double *grad, void *SS_ref_db);
 
 SS_ref PC_function(			global_variable 	 gv,
 							PC_type             *PC_read,

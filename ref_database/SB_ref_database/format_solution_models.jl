@@ -6,7 +6,7 @@ using JSON3, DataFrames, JLD2, Symbolics, Combinatorics
 include("functions_ss.jl")
 
 sb      = 11
-elems   = sb==24 ? ["Si", "Ca", "Al", "Mg", "Na", "O", "Cr", "Fe"] : ["Si", "Ca", "Al", "Fe", "Mg", "Na"]
+elems   = sb==24 ? ["Si", "Ca", "Al", "Mg", "Na", "O", "Cr", "Fe", "Fef", "Fels", "Fefls"] : ["Si", "Ca", "Al", "Fe", "Mg", "Na"]
 n_el    = length(elems)
 
 if sb == 11

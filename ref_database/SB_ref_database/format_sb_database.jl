@@ -3,6 +3,7 @@
 
 using JLD2
 using DataFrames
+using JSON3
 
 include("functions_ss.jl")
 
@@ -16,5 +17,9 @@ elseif sb_ver == "sb24"
     data = read_data("stx24_data.json")
 end
 
-out = format_em(data)
+# sb24 carries the SLB2022/24 property modifiers in their own file; the older databases do not
+mods = sb_ver == "sb24" ? Dict{String,Vector{Float64}}(String(k)=>Float64.(v) for (k,v) in
+                           pairs(JSON3.read(read("stx24_modifiers.json",String))) if k != :_comment) :
+                          Dict{String,Vector{Float64}}()
+out = format_em(data, mods)
 print(out)

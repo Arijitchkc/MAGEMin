@@ -33,7 +33,7 @@ end
 
 
 
-function format_em(data)
+function format_em(data, mods=Dict{String,Vector{Float64}}())
 
         elems  = haskey(data[1,4], "O") ? ["Si", "Ca", "Al", "Mg", "Na", "O", "Cr", "Fe"] : ["Si", "Ca", "Al", "Fe", "Mg", "Na"]
         oxide_order = haskey(data[1,4], "O") ? ["SIO2", "CAO", "AL2O3", "MGO", "NA2O", "O", "CR2O3", "FE"] : ["SIO2", "CAO", "AL2O3", "FEO", "MGO", "NA2O"]
@@ -95,7 +95,13 @@ function format_em(data)
             line4   = join(collect(Vector(data[i, 5:14])), ", ")
             out *= tab*tab*"{$line4},\n"
         
-            out *= tab*tab*"{$(data[i,:aSm]),$(data[i,:pd]),$(data[i,:td])},\n"
+            # endmembers listed in the modifier file carry six extra SLB property-modifier values
+            mod = get(mods, data[i,:abbrev], nothing)
+            if mod === nothing
+                out *= tab*tab*"{$(data[i,:aSm]),$(data[i,:pd]),$(data[i,:td])},\n"
+            else
+                out *= tab*tab*"{$(data[i,:aSm]),$(data[i,:pd]),$(data[i,:td]),$(join(mod,','))},\n"
+            end
         
             out *= tab*"},\n"
         end
@@ -296,7 +302,8 @@ function retrieve_site_cmp(ss, i)
             n_atoms = [parse(Int, m.captures[1]) for m in matches]
             matches = eachmatch(r"[A-Za-z]+", contents[k])
             elements= [m.match for m in matches]
-            mul[k]  = sum(n_atoms)
+            # an endmember that leaves this site vacant must not reset its multiplicity
+            mul[k]  = max(mul[k], sum(n_atoms))
 
             if length(n_atoms) == 1
                 id              = findfirst(elems .== elements[1])
@@ -417,11 +424,14 @@ function get_sb_objective_functions(sb_ver,ss)
         n_em    = size(site_cmp)[3]
         M   = Float64[]
         C   = Vector{Float64}[]
+        # S records the site each row of C belongs to, needed for the occupancy term below
+        S   = Int[]
         for k=1:n_sf
             for l=1:n_ox
                 if ~all(site_cmp[k,l,:] .== 0.0)
                     push!(C,site_cmp[k,l,:]./mul[k])
                     push!(M,mul[k])
+                    push!(S,k)
                 end
             end
         end
@@ -436,6 +446,13 @@ function get_sb_objective_functions(sb_ver,ss)
         fac             = fbc/sum(A.*X)
 
         config          = R * T * (M' * Diagonal(Xo) * log.(Xo))
+        # a site not filled by every endmember mixes on its own occupancy, not on 1
+        for k in unique(S)
+            rows = findall(S .== k)
+            all(isapprox.(vec(sum(C[rows,:], dims=1)), 1.0)) && continue
+            occ  = sum(Xo[rows])
+            config -= R * T * mul[k] * occ * log(occ)
+        end
         grad_config     = Symbolics.gradient(config, X)
         mu_Gex          = get_mu_Gex(W, v, n_em, sym)
 
@@ -701,7 +718,8 @@ function get_sb_gss_function(sb_ver,ss,data)
         for i=1:length(W)
             if vol_cor == 1
                 if P_cor[i] != 0.0
-                    cor = "+ $(P_cor[i]) * SS_ref_db.P"
+                    # volume_interaction is W_V in m3/mol and SS_ref_db.P is in kbar -> J
+                    cor = "+ $(round(P_cor[i]*1e8, sigdigits=12)) * SS_ref_db.P"
                 else
                     cor = ""
                 end

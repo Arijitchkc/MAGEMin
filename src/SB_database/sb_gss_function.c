@@ -3,7 +3,7 @@
  **   Project      : MAGEMin
  **   License      : GNU GENERAL PUBLIC LICENSE Version 3, 29 June 2007
  **   Developers   : Nicolas Riel, Boris Kaus
- **   Contributors : Nickolas B. Moccetti, Dominguez, H., Assunção J., Green E., Berlie N., and Rummel L.
+ **   Contributors : Moccetti, N. B., Dominguez, H., Assunção J., Green E., Dolejš, D., Berlie N., and Rummel L.
  **   Organization : Institute of Geosciences, Johannes-Gutenberg University, Mainz
  **   Contact      : nriel[at]uni-mainz.de, kaus[at]uni-mainz.de
  **
@@ -26,10 +26,29 @@ Stixrude thermodynamic database for the mantle minerals
 #include "../all_solution_phases.h"
 #include "../simplex_levelling.h"
 #include "../toolkit.h"
+
+/**
+    Boil-out test for a solution-phase endmember: true if any oxide it
+    needs (any nonzero entry of its own Comp[] row, already fetched via
+    get_em_data) is entirely absent from the bulk-rock composition.
+    Same check as GH_database's GH_boiled_out (see gh_gss_function.c);
+    ported here on a per-phase basis since SB_database never deactivates
+    endmembers for a zeroed bulk-rock oxide.
+*/
+static int SB_boiled_out(int len_ox, const double *Comp, double *bulk_rock){
+    for (int j = 0; j < len_ox; j++){
+        if (Comp[j] != 0.0 && bulk_rock[j] == 0.0){
+            return 1;
+        }
+    }
+    return 0;
+}
+
 /**
     Solution phase data for sb11_plg
 */
 SS_ref G_SS_sb11_plg_function(SS_ref SS_ref_db, char* research_group, int EM_dataset, int len_ox, bulk_info z_b, double eps){
+    strcpy(SS_ref_db.fName,"plg_SB11");
 
     int i, j;
     int n_em = SS_ref_db.n_em;
@@ -88,10 +107,14 @@ SS_ref G_SS_sb11_plg_function(SS_ref SS_ref_db, char* research_group, int EM_dat
 
     for (i = 0; i < n_em; i++){
         SS_ref_db.z_em[i] = 1.0;
+        SS_ref_db.d_em[i] = 0.0;
     };
 
     SS_ref_db.bounds_ref[0][0] = 0.0+eps;  SS_ref_db.bounds_ref[0][1] = 1.0-eps;
     SS_ref_db.bounds_ref[1][0] = 0.0+eps;  SS_ref_db.bounds_ref[1][1] = 1.0-eps;
+
+    if (SB_boiled_out(len_ox, an.C, z_b.bulk_rock)){ SS_ref_db.d_em[0] = 1.0; SS_ref_db.z_em[0] = 0.0; SS_ref_db.bounds_ref[0][0] = 0.0; SS_ref_db.bounds_ref[0][1] = 0.0; }
+    if (SB_boiled_out(len_ox, ab.C, z_b.bulk_rock)){ SS_ref_db.d_em[1] = 1.0; SS_ref_db.z_em[1] = 0.0; SS_ref_db.bounds_ref[1][0] = 0.0; SS_ref_db.bounds_ref[1][1] = 0.0; }
 
 
     return SS_ref_db;
@@ -101,6 +124,7 @@ SS_ref G_SS_sb11_plg_function(SS_ref SS_ref_db, char* research_group, int EM_dat
     Solution phase data for sb11_sp
 */
 SS_ref G_SS_sb11_sp_function(SS_ref SS_ref_db, char* research_group, int EM_dataset, int len_ox, bulk_info z_b, double eps){
+    strcpy(SS_ref_db.fName,"sp_SB11");
 
     int i, j;
     int n_em = SS_ref_db.n_em;
@@ -163,10 +187,14 @@ SS_ref G_SS_sb11_sp_function(SS_ref SS_ref_db, char* research_group, int EM_data
 
     for (i = 0; i < n_em; i++){
         SS_ref_db.z_em[i] = 1.0;
+        SS_ref_db.d_em[i] = 0.0;
     };
 
     SS_ref_db.bounds_ref[0][0] = 0.0+eps;  SS_ref_db.bounds_ref[0][1] = 1.0-eps;
     SS_ref_db.bounds_ref[1][0] = 0.0+eps;  SS_ref_db.bounds_ref[1][1] = 1.0-eps;
+
+    if (SB_boiled_out(len_ox, sp.C, z_b.bulk_rock)){ SS_ref_db.d_em[0] = 1.0; SS_ref_db.z_em[0] = 0.0; SS_ref_db.bounds_ref[0][0] = 0.0; SS_ref_db.bounds_ref[0][1] = 0.0; }
+    if (SB_boiled_out(len_ox, hc.C, z_b.bulk_rock)){ SS_ref_db.d_em[1] = 1.0; SS_ref_db.z_em[1] = 0.0; SS_ref_db.bounds_ref[1][0] = 0.0; SS_ref_db.bounds_ref[1][1] = 0.0; }
 
 
     return SS_ref_db;
@@ -176,6 +204,7 @@ SS_ref G_SS_sb11_sp_function(SS_ref SS_ref_db, char* research_group, int EM_data
     Solution phase data for sb11_ol
 */
 SS_ref G_SS_sb11_ol_function(SS_ref SS_ref_db, char* research_group, int EM_dataset, int len_ox, bulk_info z_b, double eps){
+    strcpy(SS_ref_db.fName,"ol_SB11");
 
     int i, j;
     int n_em = SS_ref_db.n_em;
@@ -234,10 +263,14 @@ SS_ref G_SS_sb11_ol_function(SS_ref SS_ref_db, char* research_group, int EM_data
 
     for (i = 0; i < n_em; i++){
         SS_ref_db.z_em[i] = 1.0;
+        SS_ref_db.d_em[i] = 0.0;
     };
 
     SS_ref_db.bounds_ref[0][0] = 0.0+eps;  SS_ref_db.bounds_ref[0][1] = 1.0-eps;
     SS_ref_db.bounds_ref[1][0] = 0.0+eps;  SS_ref_db.bounds_ref[1][1] = 1.0-eps;
+
+    if (SB_boiled_out(len_ox, fo.C, z_b.bulk_rock)){ SS_ref_db.d_em[0] = 1.0; SS_ref_db.z_em[0] = 0.0; SS_ref_db.bounds_ref[0][0] = 0.0; SS_ref_db.bounds_ref[0][1] = 0.0; }
+    if (SB_boiled_out(len_ox, fa.C, z_b.bulk_rock)){ SS_ref_db.d_em[1] = 1.0; SS_ref_db.z_em[1] = 0.0; SS_ref_db.bounds_ref[1][0] = 0.0; SS_ref_db.bounds_ref[1][1] = 0.0; }
 
 
     return SS_ref_db;
@@ -247,6 +280,7 @@ SS_ref G_SS_sb11_ol_function(SS_ref SS_ref_db, char* research_group, int EM_data
     Solution phase data for sb11_wa
 */
 SS_ref G_SS_sb11_wa_function(SS_ref SS_ref_db, char* research_group, int EM_dataset, int len_ox, bulk_info z_b, double eps){
+    strcpy(SS_ref_db.fName,"wa_SB11");
 
     int i, j;
     int n_em = SS_ref_db.n_em;
@@ -305,10 +339,14 @@ SS_ref G_SS_sb11_wa_function(SS_ref SS_ref_db, char* research_group, int EM_data
 
     for (i = 0; i < n_em; i++){
         SS_ref_db.z_em[i] = 1.0;
+        SS_ref_db.d_em[i] = 0.0;
     };
 
     SS_ref_db.bounds_ref[0][0] = 0.0+eps;  SS_ref_db.bounds_ref[0][1] = 1.0-eps;
     SS_ref_db.bounds_ref[1][0] = 0.0+eps;  SS_ref_db.bounds_ref[1][1] = 1.0-eps;
+
+    if (SB_boiled_out(len_ox, mgwa.C, z_b.bulk_rock)){ SS_ref_db.d_em[0] = 1.0; SS_ref_db.z_em[0] = 0.0; SS_ref_db.bounds_ref[0][0] = 0.0; SS_ref_db.bounds_ref[0][1] = 0.0; }
+    if (SB_boiled_out(len_ox, fewa.C, z_b.bulk_rock)){ SS_ref_db.d_em[1] = 1.0; SS_ref_db.z_em[1] = 0.0; SS_ref_db.bounds_ref[1][0] = 0.0; SS_ref_db.bounds_ref[1][1] = 0.0; }
 
 
     return SS_ref_db;
@@ -318,6 +356,7 @@ SS_ref G_SS_sb11_wa_function(SS_ref SS_ref_db, char* research_group, int EM_data
     Solution phase data for sb11_ri
 */
 SS_ref G_SS_sb11_ri_function(SS_ref SS_ref_db, char* research_group, int EM_dataset, int len_ox, bulk_info z_b, double eps){
+    strcpy(SS_ref_db.fName,"ri_SB11");
 
     int i, j;
     int n_em = SS_ref_db.n_em;
@@ -376,10 +415,14 @@ SS_ref G_SS_sb11_ri_function(SS_ref SS_ref_db, char* research_group, int EM_data
 
     for (i = 0; i < n_em; i++){
         SS_ref_db.z_em[i] = 1.0;
+        SS_ref_db.d_em[i] = 0.0;
     };
 
     SS_ref_db.bounds_ref[0][0] = 0.0+eps;  SS_ref_db.bounds_ref[0][1] = 1.0-eps;
     SS_ref_db.bounds_ref[1][0] = 0.0+eps;  SS_ref_db.bounds_ref[1][1] = 1.0-eps;
+
+    if (SB_boiled_out(len_ox, mgri.C, z_b.bulk_rock)){ SS_ref_db.d_em[0] = 1.0; SS_ref_db.z_em[0] = 0.0; SS_ref_db.bounds_ref[0][0] = 0.0; SS_ref_db.bounds_ref[0][1] = 0.0; }
+    if (SB_boiled_out(len_ox, feri.C, z_b.bulk_rock)){ SS_ref_db.d_em[1] = 1.0; SS_ref_db.z_em[1] = 0.0; SS_ref_db.bounds_ref[1][0] = 0.0; SS_ref_db.bounds_ref[1][1] = 0.0; }
 
 
     return SS_ref_db;
@@ -389,6 +432,7 @@ SS_ref G_SS_sb11_ri_function(SS_ref SS_ref_db, char* research_group, int EM_data
     Solution phase data for sb11_opx
 */
 SS_ref G_SS_sb11_opx_function(SS_ref SS_ref_db, char* research_group, int EM_dataset, int len_ox, bulk_info z_b, double eps){
+    strcpy(SS_ref_db.fName,"opx_SB11");
 
     int i, j;
     int n_em = SS_ref_db.n_em;
@@ -486,12 +530,18 @@ SS_ref G_SS_sb11_opx_function(SS_ref SS_ref_db, char* research_group, int EM_dat
 
     for (i = 0; i < n_em; i++){
         SS_ref_db.z_em[i] = 1.0;
+        SS_ref_db.d_em[i] = 0.0;
     };
 
     SS_ref_db.bounds_ref[0][0] = 0.0+eps;  SS_ref_db.bounds_ref[0][1] = 1.0-eps;
     SS_ref_db.bounds_ref[1][0] = 0.0+eps;  SS_ref_db.bounds_ref[1][1] = 1.0-eps;
     SS_ref_db.bounds_ref[2][0] = 0.0+eps;  SS_ref_db.bounds_ref[2][1] = 1.0-eps;
     SS_ref_db.bounds_ref[3][0] = 0.0+eps;  SS_ref_db.bounds_ref[3][1] = 1.0-eps;
+
+    if (SB_boiled_out(len_ox, en.C, z_b.bulk_rock)){ SS_ref_db.d_em[0] = 1.0; SS_ref_db.z_em[0] = 0.0; SS_ref_db.bounds_ref[0][0] = 0.0; SS_ref_db.bounds_ref[0][1] = 0.0; }
+    if (SB_boiled_out(len_ox, fs.C, z_b.bulk_rock)){ SS_ref_db.d_em[1] = 1.0; SS_ref_db.z_em[1] = 0.0; SS_ref_db.bounds_ref[1][0] = 0.0; SS_ref_db.bounds_ref[1][1] = 0.0; }
+    if (SB_boiled_out(len_ox, mgts.C, z_b.bulk_rock)){ SS_ref_db.d_em[2] = 1.0; SS_ref_db.z_em[2] = 0.0; SS_ref_db.bounds_ref[2][0] = 0.0; SS_ref_db.bounds_ref[2][1] = 0.0; }
+    if (SB_boiled_out(len_ox, odi.C, z_b.bulk_rock)){ SS_ref_db.d_em[3] = 1.0; SS_ref_db.z_em[3] = 0.0; SS_ref_db.bounds_ref[3][0] = 0.0; SS_ref_db.bounds_ref[3][1] = 0.0; }
 
 
     return SS_ref_db;
@@ -501,6 +551,7 @@ SS_ref G_SS_sb11_opx_function(SS_ref SS_ref_db, char* research_group, int EM_dat
     Solution phase data for sb11_cpx
 */
 SS_ref G_SS_sb11_cpx_function(SS_ref SS_ref_db, char* research_group, int EM_dataset, int len_ox, bulk_info z_b, double eps){
+    strcpy(SS_ref_db.fName,"cpx_SB11");
 
     int i, j;
     int n_em = SS_ref_db.n_em;
@@ -624,6 +675,7 @@ SS_ref G_SS_sb11_cpx_function(SS_ref SS_ref_db, char* research_group, int EM_dat
 
     for (i = 0; i < n_em; i++){
         SS_ref_db.z_em[i] = 1.0;
+        SS_ref_db.d_em[i] = 0.0;
     };
 
     SS_ref_db.bounds_ref[0][0] = 0.0+eps;  SS_ref_db.bounds_ref[0][1] = 1.0-eps;
@@ -631,6 +683,12 @@ SS_ref G_SS_sb11_cpx_function(SS_ref SS_ref_db, char* research_group, int EM_dat
     SS_ref_db.bounds_ref[2][0] = 0.0+eps;  SS_ref_db.bounds_ref[2][1] = 1.0-eps;
     SS_ref_db.bounds_ref[3][0] = 0.0+eps;  SS_ref_db.bounds_ref[3][1] = 1.0-eps;
     SS_ref_db.bounds_ref[4][0] = 0.0+eps;  SS_ref_db.bounds_ref[4][1] = 1.0-eps;
+
+    if (SB_boiled_out(len_ox, di.C, z_b.bulk_rock)){ SS_ref_db.d_em[0] = 1.0; SS_ref_db.z_em[0] = 0.0; SS_ref_db.bounds_ref[0][0] = 0.0; SS_ref_db.bounds_ref[0][1] = 0.0; }
+    if (SB_boiled_out(len_ox, he.C, z_b.bulk_rock)){ SS_ref_db.d_em[1] = 1.0; SS_ref_db.z_em[1] = 0.0; SS_ref_db.bounds_ref[1][0] = 0.0; SS_ref_db.bounds_ref[1][1] = 0.0; }
+    if (SB_boiled_out(len_ox, cen.C, z_b.bulk_rock)){ SS_ref_db.d_em[2] = 1.0; SS_ref_db.z_em[2] = 0.0; SS_ref_db.bounds_ref[2][0] = 0.0; SS_ref_db.bounds_ref[2][1] = 0.0; }
+    if (SB_boiled_out(len_ox, cats.C, z_b.bulk_rock)){ SS_ref_db.d_em[3] = 1.0; SS_ref_db.z_em[3] = 0.0; SS_ref_db.bounds_ref[3][0] = 0.0; SS_ref_db.bounds_ref[3][1] = 0.0; }
+    if (SB_boiled_out(len_ox, jd.C, z_b.bulk_rock)){ SS_ref_db.d_em[4] = 1.0; SS_ref_db.z_em[4] = 0.0; SS_ref_db.bounds_ref[4][0] = 0.0; SS_ref_db.bounds_ref[4][1] = 0.0; }
 
 
     return SS_ref_db;
@@ -640,6 +698,7 @@ SS_ref G_SS_sb11_cpx_function(SS_ref SS_ref_db, char* research_group, int EM_dat
     Solution phase data for sb11_hpcpx
 */
 SS_ref G_SS_sb11_hpcpx_function(SS_ref SS_ref_db, char* research_group, int EM_dataset, int len_ox, bulk_info z_b, double eps){
+    strcpy(SS_ref_db.fName,"hpcpx_SB11");
 
     int i, j;
     int n_em = SS_ref_db.n_em;
@@ -698,10 +757,14 @@ SS_ref G_SS_sb11_hpcpx_function(SS_ref SS_ref_db, char* research_group, int EM_d
 
     for (i = 0; i < n_em; i++){
         SS_ref_db.z_em[i] = 1.0;
+        SS_ref_db.d_em[i] = 0.0;
     };
 
     SS_ref_db.bounds_ref[0][0] = 0.0+eps;  SS_ref_db.bounds_ref[0][1] = 1.0-eps;
     SS_ref_db.bounds_ref[1][0] = 0.0+eps;  SS_ref_db.bounds_ref[1][1] = 1.0-eps;
+
+    if (SB_boiled_out(len_ox, hpcen.C, z_b.bulk_rock)){ SS_ref_db.d_em[0] = 1.0; SS_ref_db.z_em[0] = 0.0; SS_ref_db.bounds_ref[0][0] = 0.0; SS_ref_db.bounds_ref[0][1] = 0.0; }
+    if (SB_boiled_out(len_ox, hpcfs.C, z_b.bulk_rock)){ SS_ref_db.d_em[1] = 1.0; SS_ref_db.z_em[1] = 0.0; SS_ref_db.bounds_ref[1][0] = 0.0; SS_ref_db.bounds_ref[1][1] = 0.0; }
 
 
     return SS_ref_db;
@@ -711,6 +774,7 @@ SS_ref G_SS_sb11_hpcpx_function(SS_ref SS_ref_db, char* research_group, int EM_d
     Solution phase data for sb11_ak
 */
 SS_ref G_SS_sb11_ak_function(SS_ref SS_ref_db, char* research_group, int EM_dataset, int len_ox, bulk_info z_b, double eps){
+    strcpy(SS_ref_db.fName,"ak_SB11");
 
     int i, j;
     int n_em = SS_ref_db.n_em;
@@ -789,11 +853,16 @@ SS_ref G_SS_sb11_ak_function(SS_ref SS_ref_db, char* research_group, int EM_data
 
     for (i = 0; i < n_em; i++){
         SS_ref_db.z_em[i] = 1.0;
+        SS_ref_db.d_em[i] = 0.0;
     };
 
     SS_ref_db.bounds_ref[0][0] = 0.0+eps;  SS_ref_db.bounds_ref[0][1] = 1.0-eps;
     SS_ref_db.bounds_ref[1][0] = 0.0+eps;  SS_ref_db.bounds_ref[1][1] = 1.0-eps;
     SS_ref_db.bounds_ref[2][0] = 0.0+eps;  SS_ref_db.bounds_ref[2][1] = 1.0-eps;
+
+    if (SB_boiled_out(len_ox, mgak.C, z_b.bulk_rock)){ SS_ref_db.d_em[0] = 1.0; SS_ref_db.z_em[0] = 0.0; SS_ref_db.bounds_ref[0][0] = 0.0; SS_ref_db.bounds_ref[0][1] = 0.0; }
+    if (SB_boiled_out(len_ox, feak.C, z_b.bulk_rock)){ SS_ref_db.d_em[1] = 1.0; SS_ref_db.z_em[1] = 0.0; SS_ref_db.bounds_ref[1][0] = 0.0; SS_ref_db.bounds_ref[1][1] = 0.0; }
+    if (SB_boiled_out(len_ox, co.C, z_b.bulk_rock)){ SS_ref_db.d_em[2] = 1.0; SS_ref_db.z_em[2] = 0.0; SS_ref_db.bounds_ref[2][0] = 0.0; SS_ref_db.bounds_ref[2][1] = 0.0; }
 
 
     return SS_ref_db;
@@ -803,6 +872,7 @@ SS_ref G_SS_sb11_ak_function(SS_ref SS_ref_db, char* research_group, int EM_data
     Solution phase data for sb11_gtmj
 */
 SS_ref G_SS_sb11_gtmj_function(SS_ref SS_ref_db, char* research_group, int EM_dataset, int len_ox, bulk_info z_b, double eps){
+    strcpy(SS_ref_db.fName,"gtmj_SB11");
 
     int i, j;
     int n_em = SS_ref_db.n_em;
@@ -814,7 +884,7 @@ SS_ref G_SS_sb11_gtmj_function(SS_ref SS_ref_db, char* research_group, int EM_da
 
     // Site mixing composition;
     SS_ref_db.C[0][0] = 0.0;    SS_ref_db.C[0][1] = 0.0;    SS_ref_db.C[0][2] = 1.0;    SS_ref_db.C[0][3] = 0.0;    SS_ref_db.C[0][4] = 0.0;
-    SS_ref_db.C[1][0] = 0.0;    SS_ref_db.C[1][1] = 0.0;    SS_ref_db.C[1][2] = 0.0;    SS_ref_db.C[1][3] = 0.0;    SS_ref_db.C[1][4] = 0.3333333333333333;
+    SS_ref_db.C[1][0] = 0.0;    SS_ref_db.C[1][1] = 0.0;    SS_ref_db.C[1][2] = 0.0;    SS_ref_db.C[1][3] = 0.0;    SS_ref_db.C[1][4] = 1.0/3.03;
     SS_ref_db.C[2][0] = 0.0;    SS_ref_db.C[2][1] = 1.0;    SS_ref_db.C[2][2] = 0.0;    SS_ref_db.C[2][3] = 0.0;    SS_ref_db.C[2][4] = 0.0;
     SS_ref_db.C[3][0] = 1.0;    SS_ref_db.C[3][1] = 0.0;    SS_ref_db.C[3][2] = 0.0;    SS_ref_db.C[3][3] = 1.0;    SS_ref_db.C[3][4] = 0.0;
     SS_ref_db.C[4][0] = 0.0;    SS_ref_db.C[4][1] = 0.0;    SS_ref_db.C[4][2] = 0.0;    SS_ref_db.C[4][3] = 0.0;    SS_ref_db.C[4][4] = 0.6666666666666666;
@@ -922,6 +992,7 @@ SS_ref G_SS_sb11_gtmj_function(SS_ref SS_ref_db, char* research_group, int EM_da
 
     for (i = 0; i < n_em; i++){
         SS_ref_db.z_em[i] = 1.0;
+        SS_ref_db.d_em[i] = 0.0;
     };
 
     SS_ref_db.bounds_ref[0][0] = 0.0+eps;  SS_ref_db.bounds_ref[0][1] = 1.0-eps;
@@ -929,6 +1000,12 @@ SS_ref G_SS_sb11_gtmj_function(SS_ref SS_ref_db, char* research_group, int EM_da
     SS_ref_db.bounds_ref[2][0] = 0.0+eps;  SS_ref_db.bounds_ref[2][1] = 1.0-eps;
     SS_ref_db.bounds_ref[3][0] = 0.0+eps;  SS_ref_db.bounds_ref[3][1] = 1.0-eps;
     SS_ref_db.bounds_ref[4][0] = 0.0+eps;  SS_ref_db.bounds_ref[4][1] = 1.0-eps;
+
+    if (SB_boiled_out(len_ox, py.C, z_b.bulk_rock)){ SS_ref_db.d_em[0] = 1.0; SS_ref_db.z_em[0] = 0.0; SS_ref_db.bounds_ref[0][0] = 0.0; SS_ref_db.bounds_ref[0][1] = 0.0; }
+    if (SB_boiled_out(len_ox, alm.C, z_b.bulk_rock)){ SS_ref_db.d_em[1] = 1.0; SS_ref_db.z_em[1] = 0.0; SS_ref_db.bounds_ref[1][0] = 0.0; SS_ref_db.bounds_ref[1][1] = 0.0; }
+    if (SB_boiled_out(len_ox, gr.C, z_b.bulk_rock)){ SS_ref_db.d_em[2] = 1.0; SS_ref_db.z_em[2] = 0.0; SS_ref_db.bounds_ref[2][0] = 0.0; SS_ref_db.bounds_ref[2][1] = 0.0; }
+    if (SB_boiled_out(len_ox, mgmj.C, z_b.bulk_rock)){ SS_ref_db.d_em[3] = 1.0; SS_ref_db.z_em[3] = 0.0; SS_ref_db.bounds_ref[3][0] = 0.0; SS_ref_db.bounds_ref[3][1] = 0.0; }
+    if (SB_boiled_out(len_ox, jdmj.C, z_b.bulk_rock)){ SS_ref_db.d_em[4] = 1.0; SS_ref_db.z_em[4] = 0.0; SS_ref_db.bounds_ref[4][0] = 0.0; SS_ref_db.bounds_ref[4][1] = 0.0; }
 
 
     return SS_ref_db;
@@ -938,6 +1015,7 @@ SS_ref G_SS_sb11_gtmj_function(SS_ref SS_ref_db, char* research_group, int EM_da
     Solution phase data for sb11_pv
 */
 SS_ref G_SS_sb11_pv_function(SS_ref SS_ref_db, char* research_group, int EM_dataset, int len_ox, bulk_info z_b, double eps){
+    strcpy(SS_ref_db.fName,"pv_SB11");
 
     int i, j;
     int n_em = SS_ref_db.n_em;
@@ -1019,11 +1097,16 @@ SS_ref G_SS_sb11_pv_function(SS_ref SS_ref_db, char* research_group, int EM_data
 
     for (i = 0; i < n_em; i++){
         SS_ref_db.z_em[i] = 1.0;
+        SS_ref_db.d_em[i] = 0.0;
     };
 
     SS_ref_db.bounds_ref[0][0] = 0.0+eps;  SS_ref_db.bounds_ref[0][1] = 1.0-eps;
     SS_ref_db.bounds_ref[1][0] = 0.0+eps;  SS_ref_db.bounds_ref[1][1] = 1.0-eps;
     SS_ref_db.bounds_ref[2][0] = 0.0+eps;  SS_ref_db.bounds_ref[2][1] = 1.0-eps;
+
+    if (SB_boiled_out(len_ox, mgpv.C, z_b.bulk_rock)){ SS_ref_db.d_em[0] = 1.0; SS_ref_db.z_em[0] = 0.0; SS_ref_db.bounds_ref[0][0] = 0.0; SS_ref_db.bounds_ref[0][1] = 0.0; }
+    if (SB_boiled_out(len_ox, fepv.C, z_b.bulk_rock)){ SS_ref_db.d_em[1] = 1.0; SS_ref_db.z_em[1] = 0.0; SS_ref_db.bounds_ref[1][0] = 0.0; SS_ref_db.bounds_ref[1][1] = 0.0; }
+    if (SB_boiled_out(len_ox, alpv.C, z_b.bulk_rock)){ SS_ref_db.d_em[2] = 1.0; SS_ref_db.z_em[2] = 0.0; SS_ref_db.bounds_ref[2][0] = 0.0; SS_ref_db.bounds_ref[2][1] = 0.0; }
 
 
     return SS_ref_db;
@@ -1033,6 +1116,7 @@ SS_ref G_SS_sb11_pv_function(SS_ref SS_ref_db, char* research_group, int EM_data
     Solution phase data for sb11_ppv
 */
 SS_ref G_SS_sb11_ppv_function(SS_ref SS_ref_db, char* research_group, int EM_dataset, int len_ox, bulk_info z_b, double eps){
+    strcpy(SS_ref_db.fName,"ppv_SB11");
 
     int i, j;
     int n_em = SS_ref_db.n_em;
@@ -1111,11 +1195,16 @@ SS_ref G_SS_sb11_ppv_function(SS_ref SS_ref_db, char* research_group, int EM_dat
 
     for (i = 0; i < n_em; i++){
         SS_ref_db.z_em[i] = 1.0;
+        SS_ref_db.d_em[i] = 0.0;
     };
 
     SS_ref_db.bounds_ref[0][0] = 0.0+eps;  SS_ref_db.bounds_ref[0][1] = 1.0-eps;
     SS_ref_db.bounds_ref[1][0] = 0.0+eps;  SS_ref_db.bounds_ref[1][1] = 1.0-eps;
     SS_ref_db.bounds_ref[2][0] = 0.0+eps;  SS_ref_db.bounds_ref[2][1] = 1.0-eps;
+
+    if (SB_boiled_out(len_ox, mppv.C, z_b.bulk_rock)){ SS_ref_db.d_em[0] = 1.0; SS_ref_db.z_em[0] = 0.0; SS_ref_db.bounds_ref[0][0] = 0.0; SS_ref_db.bounds_ref[0][1] = 0.0; }
+    if (SB_boiled_out(len_ox, fppv.C, z_b.bulk_rock)){ SS_ref_db.d_em[1] = 1.0; SS_ref_db.z_em[1] = 0.0; SS_ref_db.bounds_ref[1][0] = 0.0; SS_ref_db.bounds_ref[1][1] = 0.0; }
+    if (SB_boiled_out(len_ox, appv.C, z_b.bulk_rock)){ SS_ref_db.d_em[2] = 1.0; SS_ref_db.z_em[2] = 0.0; SS_ref_db.bounds_ref[2][0] = 0.0; SS_ref_db.bounds_ref[2][1] = 0.0; }
 
 
     return SS_ref_db;
@@ -1125,6 +1214,7 @@ SS_ref G_SS_sb11_ppv_function(SS_ref SS_ref_db, char* research_group, int EM_dat
     Solution phase data for sb11_mw
 */
 SS_ref G_SS_sb11_mw_function(SS_ref SS_ref_db, char* research_group, int EM_dataset, int len_ox, bulk_info z_b, double eps){
+    strcpy(SS_ref_db.fName,"mw_SB11");
 
     int i, j;
     int n_em = SS_ref_db.n_em;
@@ -1183,10 +1273,14 @@ SS_ref G_SS_sb11_mw_function(SS_ref SS_ref_db, char* research_group, int EM_data
 
     for (i = 0; i < n_em; i++){
         SS_ref_db.z_em[i] = 1.0;
+        SS_ref_db.d_em[i] = 0.0;
     };
 
     SS_ref_db.bounds_ref[0][0] = 0.0+eps;  SS_ref_db.bounds_ref[0][1] = 1.0-eps;
     SS_ref_db.bounds_ref[1][0] = 0.0+eps;  SS_ref_db.bounds_ref[1][1] = 1.0-eps;
+
+    if (SB_boiled_out(len_ox, pe.C, z_b.bulk_rock)){ SS_ref_db.d_em[0] = 1.0; SS_ref_db.z_em[0] = 0.0; SS_ref_db.bounds_ref[0][0] = 0.0; SS_ref_db.bounds_ref[0][1] = 0.0; }
+    if (SB_boiled_out(len_ox, wu.C, z_b.bulk_rock)){ SS_ref_db.d_em[1] = 1.0; SS_ref_db.z_em[1] = 0.0; SS_ref_db.bounds_ref[1][0] = 0.0; SS_ref_db.bounds_ref[1][1] = 0.0; }
 
 
     return SS_ref_db;
@@ -1196,6 +1290,7 @@ SS_ref G_SS_sb11_mw_function(SS_ref SS_ref_db, char* research_group, int EM_data
     Solution phase data for sb11_cf
 */
 SS_ref G_SS_sb11_cf_function(SS_ref SS_ref_db, char* research_group, int EM_dataset, int len_ox, bulk_info z_b, double eps){
+    strcpy(SS_ref_db.fName,"cf_SB11");
 
     int i, j;
     int n_em = SS_ref_db.n_em;
@@ -1274,12 +1369,16 @@ SS_ref G_SS_sb11_cf_function(SS_ref SS_ref_db, char* research_group, int EM_data
 
     for (i = 0; i < n_em; i++){
         SS_ref_db.z_em[i] = 1.0;
+        SS_ref_db.d_em[i] = 0.0;
     };
 
     SS_ref_db.bounds_ref[0][0] = 0.0+eps;  SS_ref_db.bounds_ref[0][1] = 1.0-eps;
     SS_ref_db.bounds_ref[1][0] = 0.0+eps;  SS_ref_db.bounds_ref[1][1] = 1.0-eps;
     SS_ref_db.bounds_ref[2][0] = 0.0+eps;  SS_ref_db.bounds_ref[2][1] = 1.0-eps;
 
+    if (SB_boiled_out(len_ox, mgcf.C, z_b.bulk_rock)){ SS_ref_db.d_em[0] = 1.0; SS_ref_db.z_em[0] = 0.0; SS_ref_db.bounds_ref[0][0] = 0.0; SS_ref_db.bounds_ref[0][1] = 0.0; }
+    if (SB_boiled_out(len_ox, fecf.C, z_b.bulk_rock)){ SS_ref_db.d_em[1] = 1.0; SS_ref_db.z_em[1] = 0.0; SS_ref_db.bounds_ref[1][0] = 0.0; SS_ref_db.bounds_ref[1][1] = 0.0; }
+    if (SB_boiled_out(len_ox, nacf.C, z_b.bulk_rock)){ SS_ref_db.d_em[2] = 1.0; SS_ref_db.z_em[2] = 0.0; SS_ref_db.bounds_ref[2][0] = 0.0; SS_ref_db.bounds_ref[2][1] = 0.0; }
 
     return SS_ref_db;
 }
@@ -1345,6 +1444,7 @@ SS_ref G_SS_sb11_EM_function(       global_variable        gv,
         for (int j = 0; j < SS_ref_db.n_em; j++){
             SS_ref_db.mu_array[FD][j] = SS_ref_db.gbase[j];
         }
+        store_FD_interactions(&SS_ref_db, FD);
     }
 
     for (int j = 0; j < SS_ref_db.n_em; j++){
@@ -1390,6 +1490,7 @@ SS_ref G_SS_sb11_EM_function(       global_variable        gv,
     Solution phase data for sb21_plg
 */
 SS_ref G_SS_sb21_plg_function(SS_ref SS_ref_db, char* research_group, int EM_dataset, int len_ox, bulk_info z_b, double eps){
+    strcpy(SS_ref_db.fName,"plg_SB21");
 
     int i, j;
     int n_em = SS_ref_db.n_em;
@@ -1448,10 +1549,14 @@ SS_ref G_SS_sb21_plg_function(SS_ref SS_ref_db, char* research_group, int EM_dat
 
     for (i = 0; i < n_em; i++){
         SS_ref_db.z_em[i] = 1.0;
+        SS_ref_db.d_em[i] = 0.0;
     };
 
     SS_ref_db.bounds_ref[0][0] = 0.0+eps;  SS_ref_db.bounds_ref[0][1] = 1.0-eps;
     SS_ref_db.bounds_ref[1][0] = 0.0+eps;  SS_ref_db.bounds_ref[1][1] = 1.0-eps;
+
+    if (SB_boiled_out(len_ox, an.C, z_b.bulk_rock)){ SS_ref_db.d_em[0] = 1.0; SS_ref_db.z_em[0] = 0.0; SS_ref_db.bounds_ref[0][0] = 0.0; SS_ref_db.bounds_ref[0][1] = 0.0; }
+    if (SB_boiled_out(len_ox, ab.C, z_b.bulk_rock)){ SS_ref_db.d_em[1] = 1.0; SS_ref_db.z_em[1] = 0.0; SS_ref_db.bounds_ref[1][0] = 0.0; SS_ref_db.bounds_ref[1][1] = 0.0; }
 
 
     return SS_ref_db;
@@ -1461,6 +1566,7 @@ SS_ref G_SS_sb21_plg_function(SS_ref SS_ref_db, char* research_group, int EM_dat
     Solution phase data for sb21_sp
 */
 SS_ref G_SS_sb21_sp_function(SS_ref SS_ref_db, char* research_group, int EM_dataset, int len_ox, bulk_info z_b, double eps){
+    strcpy(SS_ref_db.fName,"sp_SB21");
 
     int i, j;
     int n_em = SS_ref_db.n_em;
@@ -1523,10 +1629,14 @@ SS_ref G_SS_sb21_sp_function(SS_ref SS_ref_db, char* research_group, int EM_data
 
     for (i = 0; i < n_em; i++){
         SS_ref_db.z_em[i] = 1.0;
+        SS_ref_db.d_em[i] = 0.0;
     };
 
     SS_ref_db.bounds_ref[0][0] = 0.0+eps;  SS_ref_db.bounds_ref[0][1] = 1.0-eps;
     SS_ref_db.bounds_ref[1][0] = 0.0+eps;  SS_ref_db.bounds_ref[1][1] = 1.0-eps;
+
+    if (SB_boiled_out(len_ox, sp.C, z_b.bulk_rock)){ SS_ref_db.d_em[0] = 1.0; SS_ref_db.z_em[0] = 0.0; SS_ref_db.bounds_ref[0][0] = 0.0; SS_ref_db.bounds_ref[0][1] = 0.0; }
+    if (SB_boiled_out(len_ox, hc.C, z_b.bulk_rock)){ SS_ref_db.d_em[1] = 1.0; SS_ref_db.z_em[1] = 0.0; SS_ref_db.bounds_ref[1][0] = 0.0; SS_ref_db.bounds_ref[1][1] = 0.0; }
 
 
     return SS_ref_db;
@@ -1536,6 +1646,7 @@ SS_ref G_SS_sb21_sp_function(SS_ref SS_ref_db, char* research_group, int EM_data
     Solution phase data for sb21_ol
 */
 SS_ref G_SS_sb21_ol_function(SS_ref SS_ref_db, char* research_group, int EM_dataset, int len_ox, bulk_info z_b, double eps){
+    strcpy(SS_ref_db.fName,"ol_SB21");
 
     int i, j;
     int n_em = SS_ref_db.n_em;
@@ -1594,10 +1705,14 @@ SS_ref G_SS_sb21_ol_function(SS_ref SS_ref_db, char* research_group, int EM_data
 
     for (i = 0; i < n_em; i++){
         SS_ref_db.z_em[i] = 1.0;
+        SS_ref_db.d_em[i] = 0.0;
     };
 
     SS_ref_db.bounds_ref[0][0] = 0.0+eps;  SS_ref_db.bounds_ref[0][1] = 1.0-eps;
     SS_ref_db.bounds_ref[1][0] = 0.0+eps;  SS_ref_db.bounds_ref[1][1] = 1.0-eps;
+
+    if (SB_boiled_out(len_ox, fo.C, z_b.bulk_rock)){ SS_ref_db.d_em[0] = 1.0; SS_ref_db.z_em[0] = 0.0; SS_ref_db.bounds_ref[0][0] = 0.0; SS_ref_db.bounds_ref[0][1] = 0.0; }
+    if (SB_boiled_out(len_ox, fa.C, z_b.bulk_rock)){ SS_ref_db.d_em[1] = 1.0; SS_ref_db.z_em[1] = 0.0; SS_ref_db.bounds_ref[1][0] = 0.0; SS_ref_db.bounds_ref[1][1] = 0.0; }
 
 
     return SS_ref_db;
@@ -1607,6 +1722,7 @@ SS_ref G_SS_sb21_ol_function(SS_ref SS_ref_db, char* research_group, int EM_data
     Solution phase data for sb21_wa
 */
 SS_ref G_SS_sb21_wa_function(SS_ref SS_ref_db, char* research_group, int EM_dataset, int len_ox, bulk_info z_b, double eps){
+    strcpy(SS_ref_db.fName,"wa_SB21");
 
     int i, j;
     int n_em = SS_ref_db.n_em;
@@ -1665,10 +1781,14 @@ SS_ref G_SS_sb21_wa_function(SS_ref SS_ref_db, char* research_group, int EM_data
 
     for (i = 0; i < n_em; i++){
         SS_ref_db.z_em[i] = 1.0;
+        SS_ref_db.d_em[i] = 0.0;
     };
 
     SS_ref_db.bounds_ref[0][0] = 0.0+eps;  SS_ref_db.bounds_ref[0][1] = 1.0-eps;
     SS_ref_db.bounds_ref[1][0] = 0.0+eps;  SS_ref_db.bounds_ref[1][1] = 1.0-eps;
+
+    if (SB_boiled_out(len_ox, mgwa.C, z_b.bulk_rock)){ SS_ref_db.d_em[0] = 1.0; SS_ref_db.z_em[0] = 0.0; SS_ref_db.bounds_ref[0][0] = 0.0; SS_ref_db.bounds_ref[0][1] = 0.0; }
+    if (SB_boiled_out(len_ox, fewa.C, z_b.bulk_rock)){ SS_ref_db.d_em[1] = 1.0; SS_ref_db.z_em[1] = 0.0; SS_ref_db.bounds_ref[1][0] = 0.0; SS_ref_db.bounds_ref[1][1] = 0.0; }
 
 
     return SS_ref_db;
@@ -1678,6 +1798,7 @@ SS_ref G_SS_sb21_wa_function(SS_ref SS_ref_db, char* research_group, int EM_data
     Solution phase data for sb21_ri
 */
 SS_ref G_SS_sb21_ri_function(SS_ref SS_ref_db, char* research_group, int EM_dataset, int len_ox, bulk_info z_b, double eps){
+    strcpy(SS_ref_db.fName,"ri_SB21");
 
     int i, j;
     int n_em = SS_ref_db.n_em;
@@ -1736,10 +1857,14 @@ SS_ref G_SS_sb21_ri_function(SS_ref SS_ref_db, char* research_group, int EM_data
 
     for (i = 0; i < n_em; i++){
         SS_ref_db.z_em[i] = 1.0;
+        SS_ref_db.d_em[i] = 0.0;
     };
 
     SS_ref_db.bounds_ref[0][0] = 0.0+eps;  SS_ref_db.bounds_ref[0][1] = 1.0-eps;
     SS_ref_db.bounds_ref[1][0] = 0.0+eps;  SS_ref_db.bounds_ref[1][1] = 1.0-eps;
+
+    if (SB_boiled_out(len_ox, mgri.C, z_b.bulk_rock)){ SS_ref_db.d_em[0] = 1.0; SS_ref_db.z_em[0] = 0.0; SS_ref_db.bounds_ref[0][0] = 0.0; SS_ref_db.bounds_ref[0][1] = 0.0; }
+    if (SB_boiled_out(len_ox, feri.C, z_b.bulk_rock)){ SS_ref_db.d_em[1] = 1.0; SS_ref_db.z_em[1] = 0.0; SS_ref_db.bounds_ref[1][0] = 0.0; SS_ref_db.bounds_ref[1][1] = 0.0; }
 
 
     return SS_ref_db;
@@ -1749,6 +1874,7 @@ SS_ref G_SS_sb21_ri_function(SS_ref SS_ref_db, char* research_group, int EM_data
     Solution phase data for sb21_opx
 */
 SS_ref G_SS_sb21_opx_function(SS_ref SS_ref_db, char* research_group, int EM_dataset, int len_ox, bulk_info z_b, double eps){
+    strcpy(SS_ref_db.fName,"opx_SB21");
 
     int i, j;
     int n_em = SS_ref_db.n_em;
@@ -1846,12 +1972,18 @@ SS_ref G_SS_sb21_opx_function(SS_ref SS_ref_db, char* research_group, int EM_dat
 
     for (i = 0; i < n_em; i++){
         SS_ref_db.z_em[i] = 1.0;
+        SS_ref_db.d_em[i] = 0.0;
     };
 
     SS_ref_db.bounds_ref[0][0] = 0.0+eps;  SS_ref_db.bounds_ref[0][1] = 1.0-eps;
     SS_ref_db.bounds_ref[1][0] = 0.0+eps;  SS_ref_db.bounds_ref[1][1] = 1.0-eps;
     SS_ref_db.bounds_ref[2][0] = 0.0+eps;  SS_ref_db.bounds_ref[2][1] = 1.0-eps;
     SS_ref_db.bounds_ref[3][0] = 0.0+eps;  SS_ref_db.bounds_ref[3][1] = 1.0-eps;
+
+    if (SB_boiled_out(len_ox, en.C, z_b.bulk_rock)){ SS_ref_db.d_em[0] = 1.0; SS_ref_db.z_em[0] = 0.0; SS_ref_db.bounds_ref[0][0] = 0.0; SS_ref_db.bounds_ref[0][1] = 0.0; }
+    if (SB_boiled_out(len_ox, fs.C, z_b.bulk_rock)){ SS_ref_db.d_em[1] = 1.0; SS_ref_db.z_em[1] = 0.0; SS_ref_db.bounds_ref[1][0] = 0.0; SS_ref_db.bounds_ref[1][1] = 0.0; }
+    if (SB_boiled_out(len_ox, mgts.C, z_b.bulk_rock)){ SS_ref_db.d_em[2] = 1.0; SS_ref_db.z_em[2] = 0.0; SS_ref_db.bounds_ref[2][0] = 0.0; SS_ref_db.bounds_ref[2][1] = 0.0; }
+    if (SB_boiled_out(len_ox, odi.C, z_b.bulk_rock)){ SS_ref_db.d_em[3] = 1.0; SS_ref_db.z_em[3] = 0.0; SS_ref_db.bounds_ref[3][0] = 0.0; SS_ref_db.bounds_ref[3][1] = 0.0; }
 
 
     return SS_ref_db;
@@ -1861,6 +1993,7 @@ SS_ref G_SS_sb21_opx_function(SS_ref SS_ref_db, char* research_group, int EM_dat
     Solution phase data for sb21_cpx
 */
 SS_ref G_SS_sb21_cpx_function(SS_ref SS_ref_db, char* research_group, int EM_dataset, int len_ox, bulk_info z_b, double eps){
+    strcpy(SS_ref_db.fName,"cpx_SB21");
 
     int i, j;
     int n_em = SS_ref_db.n_em;
@@ -1984,6 +2117,7 @@ SS_ref G_SS_sb21_cpx_function(SS_ref SS_ref_db, char* research_group, int EM_dat
 
     for (i = 0; i < n_em; i++){
         SS_ref_db.z_em[i] = 1.0;
+        SS_ref_db.d_em[i] = 0.0;
     };
 
     SS_ref_db.bounds_ref[0][0] = 0.0+eps;  SS_ref_db.bounds_ref[0][1] = 1.0-eps;
@@ -1991,6 +2125,12 @@ SS_ref G_SS_sb21_cpx_function(SS_ref SS_ref_db, char* research_group, int EM_dat
     SS_ref_db.bounds_ref[2][0] = 0.0+eps;  SS_ref_db.bounds_ref[2][1] = 1.0-eps;
     SS_ref_db.bounds_ref[3][0] = 0.0+eps;  SS_ref_db.bounds_ref[3][1] = 1.0-eps;
     SS_ref_db.bounds_ref[4][0] = 0.0+eps;  SS_ref_db.bounds_ref[4][1] = 1.0-eps;
+
+    if (SB_boiled_out(len_ox, di.C, z_b.bulk_rock)){ SS_ref_db.d_em[0] = 1.0; SS_ref_db.z_em[0] = 0.0; SS_ref_db.bounds_ref[0][0] = 0.0; SS_ref_db.bounds_ref[0][1] = 0.0; }
+    if (SB_boiled_out(len_ox, he.C, z_b.bulk_rock)){ SS_ref_db.d_em[1] = 1.0; SS_ref_db.z_em[1] = 0.0; SS_ref_db.bounds_ref[1][0] = 0.0; SS_ref_db.bounds_ref[1][1] = 0.0; }
+    if (SB_boiled_out(len_ox, cen.C, z_b.bulk_rock)){ SS_ref_db.d_em[2] = 1.0; SS_ref_db.z_em[2] = 0.0; SS_ref_db.bounds_ref[2][0] = 0.0; SS_ref_db.bounds_ref[2][1] = 0.0; }
+    if (SB_boiled_out(len_ox, cats.C, z_b.bulk_rock)){ SS_ref_db.d_em[3] = 1.0; SS_ref_db.z_em[3] = 0.0; SS_ref_db.bounds_ref[3][0] = 0.0; SS_ref_db.bounds_ref[3][1] = 0.0; }
+    if (SB_boiled_out(len_ox, jd.C, z_b.bulk_rock)){ SS_ref_db.d_em[4] = 1.0; SS_ref_db.z_em[4] = 0.0; SS_ref_db.bounds_ref[4][0] = 0.0; SS_ref_db.bounds_ref[4][1] = 0.0; }
 
 
     return SS_ref_db;
@@ -2000,6 +2140,7 @@ SS_ref G_SS_sb21_cpx_function(SS_ref SS_ref_db, char* research_group, int EM_dat
     Solution phase data for sb21_hpcpx
 */
 SS_ref G_SS_sb21_hpcpx_function(SS_ref SS_ref_db, char* research_group, int EM_dataset, int len_ox, bulk_info z_b, double eps){
+    strcpy(SS_ref_db.fName,"hpcpx_SB21");
 
     int i, j;
     int n_em = SS_ref_db.n_em;
@@ -2058,10 +2199,14 @@ SS_ref G_SS_sb21_hpcpx_function(SS_ref SS_ref_db, char* research_group, int EM_d
 
     for (i = 0; i < n_em; i++){
         SS_ref_db.z_em[i] = 1.0;
+        SS_ref_db.d_em[i] = 0.0;
     };
 
     SS_ref_db.bounds_ref[0][0] = 0.0+eps;  SS_ref_db.bounds_ref[0][1] = 1.0-eps;
     SS_ref_db.bounds_ref[1][0] = 0.0+eps;  SS_ref_db.bounds_ref[1][1] = 1.0-eps;
+
+    if (SB_boiled_out(len_ox, hpcen.C, z_b.bulk_rock)){ SS_ref_db.d_em[0] = 1.0; SS_ref_db.z_em[0] = 0.0; SS_ref_db.bounds_ref[0][0] = 0.0; SS_ref_db.bounds_ref[0][1] = 0.0; }
+    if (SB_boiled_out(len_ox, hpcfs.C, z_b.bulk_rock)){ SS_ref_db.d_em[1] = 1.0; SS_ref_db.z_em[1] = 0.0; SS_ref_db.bounds_ref[1][0] = 0.0; SS_ref_db.bounds_ref[1][1] = 0.0; }
 
 
     return SS_ref_db;
@@ -2071,6 +2216,7 @@ SS_ref G_SS_sb21_hpcpx_function(SS_ref SS_ref_db, char* research_group, int EM_d
     Solution phase data for sb21_ak
 */
 SS_ref G_SS_sb21_ak_function(SS_ref SS_ref_db, char* research_group, int EM_dataset, int len_ox, bulk_info z_b, double eps){
+    strcpy(SS_ref_db.fName,"ak_SB21");
 
     int i, j;
     int n_em = SS_ref_db.n_em;
@@ -2149,11 +2295,16 @@ SS_ref G_SS_sb21_ak_function(SS_ref SS_ref_db, char* research_group, int EM_data
 
     for (i = 0; i < n_em; i++){
         SS_ref_db.z_em[i] = 1.0;
+        SS_ref_db.d_em[i] = 0.0;
     };
 
     SS_ref_db.bounds_ref[0][0] = 0.0+eps;  SS_ref_db.bounds_ref[0][1] = 1.0-eps;
     SS_ref_db.bounds_ref[1][0] = 0.0+eps;  SS_ref_db.bounds_ref[1][1] = 1.0-eps;
     SS_ref_db.bounds_ref[2][0] = 0.0+eps;  SS_ref_db.bounds_ref[2][1] = 1.0-eps;
+
+    if (SB_boiled_out(len_ox, mgak.C, z_b.bulk_rock)){ SS_ref_db.d_em[0] = 1.0; SS_ref_db.z_em[0] = 0.0; SS_ref_db.bounds_ref[0][0] = 0.0; SS_ref_db.bounds_ref[0][1] = 0.0; }
+    if (SB_boiled_out(len_ox, feak.C, z_b.bulk_rock)){ SS_ref_db.d_em[1] = 1.0; SS_ref_db.z_em[1] = 0.0; SS_ref_db.bounds_ref[1][0] = 0.0; SS_ref_db.bounds_ref[1][1] = 0.0; }
+    if (SB_boiled_out(len_ox, co.C, z_b.bulk_rock)){ SS_ref_db.d_em[2] = 1.0; SS_ref_db.z_em[2] = 0.0; SS_ref_db.bounds_ref[2][0] = 0.0; SS_ref_db.bounds_ref[2][1] = 0.0; }
 
 
     return SS_ref_db;
@@ -2163,6 +2314,7 @@ SS_ref G_SS_sb21_ak_function(SS_ref SS_ref_db, char* research_group, int EM_data
     Solution phase data for sb21_gtmj
 */
 SS_ref G_SS_sb21_gtmj_function(SS_ref SS_ref_db, char* research_group, int EM_dataset, int len_ox, bulk_info z_b, double eps){
+    strcpy(SS_ref_db.fName,"gtmj_SB21");
 
     int i, j;
     int n_em = SS_ref_db.n_em;
@@ -2174,7 +2326,7 @@ SS_ref G_SS_sb21_gtmj_function(SS_ref SS_ref_db, char* research_group, int EM_da
 
     // Site mixing composition;
     SS_ref_db.C[0][0] = 0.0;    SS_ref_db.C[0][1] = 0.0;    SS_ref_db.C[0][2] = 1.0;    SS_ref_db.C[0][3] = 0.0;    SS_ref_db.C[0][4] = 0.0;
-    SS_ref_db.C[1][0] = 0.0;    SS_ref_db.C[1][1] = 0.0;    SS_ref_db.C[1][2] = 0.0;    SS_ref_db.C[1][3] = 0.0;    SS_ref_db.C[1][4] = 0.3333333333333333;
+    SS_ref_db.C[1][0] = 0.0;    SS_ref_db.C[1][1] = 0.0;    SS_ref_db.C[1][2] = 0.0;    SS_ref_db.C[1][3] = 0.0;    SS_ref_db.C[1][4] = 1.0/3.03;
     SS_ref_db.C[2][0] = 0.0;    SS_ref_db.C[2][1] = 1.0;    SS_ref_db.C[2][2] = 0.0;    SS_ref_db.C[2][3] = 0.0;    SS_ref_db.C[2][4] = 0.0;
     SS_ref_db.C[3][0] = 1.0;    SS_ref_db.C[3][1] = 0.0;    SS_ref_db.C[3][2] = 0.0;    SS_ref_db.C[3][3] = 1.0;    SS_ref_db.C[3][4] = 0.0;
     SS_ref_db.C[4][0] = 0.0;    SS_ref_db.C[4][1] = 0.0;    SS_ref_db.C[4][2] = 0.0;    SS_ref_db.C[4][3] = 0.0;    SS_ref_db.C[4][4] = 0.6666666666666666;
@@ -2282,6 +2434,7 @@ SS_ref G_SS_sb21_gtmj_function(SS_ref SS_ref_db, char* research_group, int EM_da
 
     for (i = 0; i < n_em; i++){
         SS_ref_db.z_em[i] = 1.0;
+        SS_ref_db.d_em[i] = 0.0;
     };
 
     SS_ref_db.bounds_ref[0][0] = 0.0+eps;  SS_ref_db.bounds_ref[0][1] = 1.0-eps;
@@ -2289,6 +2442,12 @@ SS_ref G_SS_sb21_gtmj_function(SS_ref SS_ref_db, char* research_group, int EM_da
     SS_ref_db.bounds_ref[2][0] = 0.0+eps;  SS_ref_db.bounds_ref[2][1] = 1.0-eps;
     SS_ref_db.bounds_ref[3][0] = 0.0+eps;  SS_ref_db.bounds_ref[3][1] = 1.0-eps;
     SS_ref_db.bounds_ref[4][0] = 0.0+eps;  SS_ref_db.bounds_ref[4][1] = 1.0-eps;
+
+    if (SB_boiled_out(len_ox, py.C, z_b.bulk_rock)){ SS_ref_db.d_em[0] = 1.0; SS_ref_db.z_em[0] = 0.0; SS_ref_db.bounds_ref[0][0] = 0.0; SS_ref_db.bounds_ref[0][1] = 0.0; }
+    if (SB_boiled_out(len_ox, alm.C, z_b.bulk_rock)){ SS_ref_db.d_em[1] = 1.0; SS_ref_db.z_em[1] = 0.0; SS_ref_db.bounds_ref[1][0] = 0.0; SS_ref_db.bounds_ref[1][1] = 0.0; }
+    if (SB_boiled_out(len_ox, gr.C, z_b.bulk_rock)){ SS_ref_db.d_em[2] = 1.0; SS_ref_db.z_em[2] = 0.0; SS_ref_db.bounds_ref[2][0] = 0.0; SS_ref_db.bounds_ref[2][1] = 0.0; }
+    if (SB_boiled_out(len_ox, mgmj.C, z_b.bulk_rock)){ SS_ref_db.d_em[3] = 1.0; SS_ref_db.z_em[3] = 0.0; SS_ref_db.bounds_ref[3][0] = 0.0; SS_ref_db.bounds_ref[3][1] = 0.0; }
+    if (SB_boiled_out(len_ox, jdmj.C, z_b.bulk_rock)){ SS_ref_db.d_em[4] = 1.0; SS_ref_db.z_em[4] = 0.0; SS_ref_db.bounds_ref[4][0] = 0.0; SS_ref_db.bounds_ref[4][1] = 0.0; }
 
 
     return SS_ref_db;
@@ -2298,6 +2457,7 @@ SS_ref G_SS_sb21_gtmj_function(SS_ref SS_ref_db, char* research_group, int EM_da
     Solution phase data for sb21_pv
 */
 SS_ref G_SS_sb21_pv_function(SS_ref SS_ref_db, char* research_group, int EM_dataset, int len_ox, bulk_info z_b, double eps){
+    strcpy(SS_ref_db.fName,"pv_SB21");
 
     int i, j;
     int n_em = SS_ref_db.n_em;
@@ -2376,11 +2536,16 @@ SS_ref G_SS_sb21_pv_function(SS_ref SS_ref_db, char* research_group, int EM_data
 
     for (i = 0; i < n_em; i++){
         SS_ref_db.z_em[i] = 1.0;
+        SS_ref_db.d_em[i] = 0.0;
     };
 
     SS_ref_db.bounds_ref[0][0] = 0.0+eps;  SS_ref_db.bounds_ref[0][1] = 1.0-eps;
     SS_ref_db.bounds_ref[1][0] = 0.0+eps;  SS_ref_db.bounds_ref[1][1] = 1.0-eps;
     SS_ref_db.bounds_ref[2][0] = 0.0+eps;  SS_ref_db.bounds_ref[2][1] = 1.0-eps;
+
+    if (SB_boiled_out(len_ox, mgpv.C, z_b.bulk_rock)){ SS_ref_db.d_em[0] = 1.0; SS_ref_db.z_em[0] = 0.0; SS_ref_db.bounds_ref[0][0] = 0.0; SS_ref_db.bounds_ref[0][1] = 0.0; }
+    if (SB_boiled_out(len_ox, fepv.C, z_b.bulk_rock)){ SS_ref_db.d_em[1] = 1.0; SS_ref_db.z_em[1] = 0.0; SS_ref_db.bounds_ref[1][0] = 0.0; SS_ref_db.bounds_ref[1][1] = 0.0; }
+    if (SB_boiled_out(len_ox, alpv.C, z_b.bulk_rock)){ SS_ref_db.d_em[2] = 1.0; SS_ref_db.z_em[2] = 0.0; SS_ref_db.bounds_ref[2][0] = 0.0; SS_ref_db.bounds_ref[2][1] = 0.0; }
 
 
     return SS_ref_db;
@@ -2390,6 +2555,7 @@ SS_ref G_SS_sb21_pv_function(SS_ref SS_ref_db, char* research_group, int EM_data
     Solution phase data for sb21_ppv
 */
 SS_ref G_SS_sb21_ppv_function(SS_ref SS_ref_db, char* research_group, int EM_dataset, int len_ox, bulk_info z_b, double eps){
+    strcpy(SS_ref_db.fName,"ppv_SB21");
 
     int i, j;
     int n_em = SS_ref_db.n_em;
@@ -2468,11 +2634,16 @@ SS_ref G_SS_sb21_ppv_function(SS_ref SS_ref_db, char* research_group, int EM_dat
 
     for (i = 0; i < n_em; i++){
         SS_ref_db.z_em[i] = 1.0;
+        SS_ref_db.d_em[i] = 0.0;
     };
 
     SS_ref_db.bounds_ref[0][0] = 0.0+eps;  SS_ref_db.bounds_ref[0][1] = 1.0-eps;
     SS_ref_db.bounds_ref[1][0] = 0.0+eps;  SS_ref_db.bounds_ref[1][1] = 1.0-eps;
     SS_ref_db.bounds_ref[2][0] = 0.0+eps;  SS_ref_db.bounds_ref[2][1] = 1.0-eps;
+
+    if (SB_boiled_out(len_ox, mppv.C, z_b.bulk_rock)){ SS_ref_db.d_em[0] = 1.0; SS_ref_db.z_em[0] = 0.0; SS_ref_db.bounds_ref[0][0] = 0.0; SS_ref_db.bounds_ref[0][1] = 0.0; }
+    if (SB_boiled_out(len_ox, fppv.C, z_b.bulk_rock)){ SS_ref_db.d_em[1] = 1.0; SS_ref_db.z_em[1] = 0.0; SS_ref_db.bounds_ref[1][0] = 0.0; SS_ref_db.bounds_ref[1][1] = 0.0; }
+    if (SB_boiled_out(len_ox, appv.C, z_b.bulk_rock)){ SS_ref_db.d_em[2] = 1.0; SS_ref_db.z_em[2] = 0.0; SS_ref_db.bounds_ref[2][0] = 0.0; SS_ref_db.bounds_ref[2][1] = 0.0; }
 
 
     return SS_ref_db;
@@ -2482,6 +2653,7 @@ SS_ref G_SS_sb21_ppv_function(SS_ref SS_ref_db, char* research_group, int EM_dat
     Solution phase data for sb21_cf
 */
 SS_ref G_SS_sb21_cf_function(SS_ref SS_ref_db, char* research_group, int EM_dataset, int len_ox, bulk_info z_b, double eps){
+    strcpy(SS_ref_db.fName,"cf_SB21");
 
     int i, j;
     int n_em = SS_ref_db.n_em;
@@ -2563,12 +2735,16 @@ SS_ref G_SS_sb21_cf_function(SS_ref SS_ref_db, char* research_group, int EM_data
 
     for (i = 0; i < n_em; i++){
         SS_ref_db.z_em[i] = 1.0;
+        SS_ref_db.d_em[i] = 0.0;
     };
 
     SS_ref_db.bounds_ref[0][0] = 0.0+eps;  SS_ref_db.bounds_ref[0][1] = 1.0-eps;
     SS_ref_db.bounds_ref[1][0] = 0.0+eps;  SS_ref_db.bounds_ref[1][1] = 1.0-eps;
     SS_ref_db.bounds_ref[2][0] = 0.0+eps;  SS_ref_db.bounds_ref[2][1] = 1.0-eps;
 
+    if (SB_boiled_out(len_ox, mgcf.C, z_b.bulk_rock)){ SS_ref_db.d_em[0] = 1.0; SS_ref_db.z_em[0] = 0.0; SS_ref_db.bounds_ref[0][0] = 0.0; SS_ref_db.bounds_ref[0][1] = 0.0; }
+    if (SB_boiled_out(len_ox, fecf.C, z_b.bulk_rock)){ SS_ref_db.d_em[1] = 1.0; SS_ref_db.z_em[1] = 0.0; SS_ref_db.bounds_ref[1][0] = 0.0; SS_ref_db.bounds_ref[1][1] = 0.0; }
+    if (SB_boiled_out(len_ox, nacf.C, z_b.bulk_rock)){ SS_ref_db.d_em[2] = 1.0; SS_ref_db.z_em[2] = 0.0; SS_ref_db.bounds_ref[2][0] = 0.0; SS_ref_db.bounds_ref[2][1] = 0.0; }
 
     return SS_ref_db;
 }
@@ -2577,6 +2753,7 @@ SS_ref G_SS_sb21_cf_function(SS_ref SS_ref_db, char* research_group, int EM_data
     Solution phase data for sb21_mw
 */
 SS_ref G_SS_sb21_mw_function(SS_ref SS_ref_db, char* research_group, int EM_dataset, int len_ox, bulk_info z_b, double eps){
+    strcpy(SS_ref_db.fName,"mw_SB21");
 
     int i, j;
     int n_em = SS_ref_db.n_em;
@@ -2656,11 +2833,16 @@ SS_ref G_SS_sb21_mw_function(SS_ref SS_ref_db, char* research_group, int EM_data
 
     for (i = 0; i < n_em; i++){
         SS_ref_db.z_em[i] = 1.0;
+        SS_ref_db.d_em[i] = 0.0;
     };
 
     SS_ref_db.bounds_ref[0][0] = 0.0+eps;  SS_ref_db.bounds_ref[0][1] = 1.0-eps;
     SS_ref_db.bounds_ref[1][0] = 0.0+eps;  SS_ref_db.bounds_ref[1][1] = 1.0-eps;
     SS_ref_db.bounds_ref[2][0] = 0.0+eps;  SS_ref_db.bounds_ref[2][1] = 1.0-eps;
+
+    if (SB_boiled_out(len_ox, pe.C, z_b.bulk_rock)){ SS_ref_db.d_em[0] = 1.0; SS_ref_db.z_em[0] = 0.0; SS_ref_db.bounds_ref[0][0] = 0.0; SS_ref_db.bounds_ref[0][1] = 0.0; }
+    if (SB_boiled_out(len_ox, wu.C, z_b.bulk_rock)){ SS_ref_db.d_em[1] = 1.0; SS_ref_db.z_em[1] = 0.0; SS_ref_db.bounds_ref[1][0] = 0.0; SS_ref_db.bounds_ref[1][1] = 0.0; }
+    if (SB_boiled_out(len_ox, anao.C, z_b.bulk_rock)){ SS_ref_db.d_em[2] = 1.0; SS_ref_db.z_em[2] = 0.0; SS_ref_db.bounds_ref[2][0] = 0.0; SS_ref_db.bounds_ref[2][1] = 0.0; }
 
 
     return SS_ref_db;
@@ -2670,6 +2852,7 @@ SS_ref G_SS_sb21_mw_function(SS_ref SS_ref_db, char* research_group, int EM_data
     Solution phase data for sb21_nal
 */
 SS_ref G_SS_sb21_nal_function(SS_ref SS_ref_db, char* research_group, int EM_dataset, int len_ox, bulk_info z_b, double eps){
+    strcpy(SS_ref_db.fName,"nal_SB21");
 
     int i, j;
     int n_em = SS_ref_db.n_em;
@@ -2749,11 +2932,16 @@ SS_ref G_SS_sb21_nal_function(SS_ref SS_ref_db, char* research_group, int EM_dat
 
     for (i = 0; i < n_em; i++){
         SS_ref_db.z_em[i] = 1.0;
+        SS_ref_db.d_em[i] = 0.0;
     };
 
     SS_ref_db.bounds_ref[0][0] = 0.0+eps;  SS_ref_db.bounds_ref[0][1] = 1.0-eps;
     SS_ref_db.bounds_ref[1][0] = 0.0+eps;  SS_ref_db.bounds_ref[1][1] = 1.0-eps;
     SS_ref_db.bounds_ref[2][0] = 0.0+eps;  SS_ref_db.bounds_ref[2][1] = 1.0-eps;
+
+    if (SB_boiled_out(len_ox, mnal.C, z_b.bulk_rock)){ SS_ref_db.d_em[0] = 1.0; SS_ref_db.z_em[0] = 0.0; SS_ref_db.bounds_ref[0][0] = 0.0; SS_ref_db.bounds_ref[0][1] = 0.0; }
+    if (SB_boiled_out(len_ox, fnal.C, z_b.bulk_rock)){ SS_ref_db.d_em[1] = 1.0; SS_ref_db.z_em[1] = 0.0; SS_ref_db.bounds_ref[1][0] = 0.0; SS_ref_db.bounds_ref[1][1] = 0.0; }
+    if (SB_boiled_out(len_ox, nnal.C, z_b.bulk_rock)){ SS_ref_db.d_em[2] = 1.0; SS_ref_db.z_em[2] = 0.0; SS_ref_db.bounds_ref[2][0] = 0.0; SS_ref_db.bounds_ref[2][1] = 0.0; }
 
 
     return SS_ref_db;
@@ -2822,6 +3010,7 @@ SS_ref G_SS_sb21_EM_function(       global_variable          gv,
         for (int j = 0; j < SS_ref_db.n_em; j++){
             SS_ref_db.mu_array[FD][j] = SS_ref_db.gbase[j];
         }
+        store_FD_interactions(&SS_ref_db, FD);
     }
 
     for (int j = 0; j < SS_ref_db.n_em; j++){
@@ -2867,6 +3056,7 @@ SS_ref G_SS_sb21_EM_function(       global_variable          gv,
     Solution phase data for sb24_plg
 */
 SS_ref G_SS_sb24_plg_function(SS_ref SS_ref_db, char* research_group, int EM_dataset, int len_ox, bulk_info z_b, double eps){
+    strcpy(SS_ref_db.fName,"plg_SB24");
 
     int i, j;
     int n_em = SS_ref_db.n_em;
@@ -2925,10 +3115,14 @@ SS_ref G_SS_sb24_plg_function(SS_ref SS_ref_db, char* research_group, int EM_dat
 
     for (i = 0; i < n_em; i++){
         SS_ref_db.z_em[i] = 1.0;
+        SS_ref_db.d_em[i] = 0.0;
     };
 
     SS_ref_db.bounds_ref[0][0] = 0.0+eps;  SS_ref_db.bounds_ref[0][1] = 1.0-eps;
     SS_ref_db.bounds_ref[1][0] = 0.0+eps;  SS_ref_db.bounds_ref[1][1] = 1.0-eps;
+
+    if (SB_boiled_out(len_ox, an.C, z_b.bulk_rock)){ SS_ref_db.d_em[0] = 1.0; SS_ref_db.z_em[0] = 0.0; SS_ref_db.bounds_ref[0][0] = 0.0; SS_ref_db.bounds_ref[0][1] = 0.0; }
+    if (SB_boiled_out(len_ox, ab.C, z_b.bulk_rock)){ SS_ref_db.d_em[1] = 1.0; SS_ref_db.z_em[1] = 0.0; SS_ref_db.bounds_ref[1][0] = 0.0; SS_ref_db.bounds_ref[1][1] = 0.0; }
 
 
     return SS_ref_db;
@@ -2938,6 +3132,7 @@ SS_ref G_SS_sb24_plg_function(SS_ref SS_ref_db, char* research_group, int EM_dat
     Solution phase data for sb24_sp
 */
 SS_ref G_SS_sb24_sp_function(SS_ref SS_ref_db, char* research_group, int EM_dataset, int len_ox, bulk_info z_b, double eps){
+    strcpy(SS_ref_db.fName,"sp_SB24");
 
     int i, j;
     int n_em = SS_ref_db.n_em;
@@ -3034,12 +3229,18 @@ SS_ref G_SS_sb24_sp_function(SS_ref SS_ref_db, char* research_group, int EM_data
 
     for (i = 0; i < n_em; i++){
         SS_ref_db.z_em[i] = 1.0;
+        SS_ref_db.d_em[i] = 0.0;
     };
 
     SS_ref_db.bounds_ref[0][0] = 0.0+eps;  SS_ref_db.bounds_ref[0][1] = 1.0-eps;
     SS_ref_db.bounds_ref[1][0] = 0.0+eps;  SS_ref_db.bounds_ref[1][1] = 1.0-eps;
     SS_ref_db.bounds_ref[2][0] = 0.0+eps;  SS_ref_db.bounds_ref[2][1] = 1.0-eps;
     SS_ref_db.bounds_ref[3][0] = 0.0+eps;  SS_ref_db.bounds_ref[3][1] = 1.0-eps;
+
+    if (SB_boiled_out(len_ox, sp.C, z_b.bulk_rock)){ SS_ref_db.d_em[0] = 1.0; SS_ref_db.z_em[0] = 0.0; SS_ref_db.bounds_ref[0][0] = 0.0; SS_ref_db.bounds_ref[0][1] = 0.0; }
+    if (SB_boiled_out(len_ox, hc.C, z_b.bulk_rock)){ SS_ref_db.d_em[1] = 1.0; SS_ref_db.z_em[1] = 0.0; SS_ref_db.bounds_ref[1][0] = 0.0; SS_ref_db.bounds_ref[1][1] = 0.0; }
+    if (SB_boiled_out(len_ox, smag.C, z_b.bulk_rock)){ SS_ref_db.d_em[2] = 1.0; SS_ref_db.z_em[2] = 0.0; SS_ref_db.bounds_ref[2][0] = 0.0; SS_ref_db.bounds_ref[2][1] = 0.0; }
+    if (SB_boiled_out(len_ox, picr.C, z_b.bulk_rock)){ SS_ref_db.d_em[3] = 1.0; SS_ref_db.z_em[3] = 0.0; SS_ref_db.bounds_ref[3][0] = 0.0; SS_ref_db.bounds_ref[3][1] = 0.0; }
 
 
     return SS_ref_db;
@@ -3049,6 +3250,7 @@ SS_ref G_SS_sb24_sp_function(SS_ref SS_ref_db, char* research_group, int EM_data
     Solution phase data for sb24_ol
 */
 SS_ref G_SS_sb24_ol_function(SS_ref SS_ref_db, char* research_group, int EM_dataset, int len_ox, bulk_info z_b, double eps){
+    strcpy(SS_ref_db.fName,"ol_SB24");
 
     int i, j;
     int n_em = SS_ref_db.n_em;
@@ -3107,10 +3309,14 @@ SS_ref G_SS_sb24_ol_function(SS_ref SS_ref_db, char* research_group, int EM_data
 
     for (i = 0; i < n_em; i++){
         SS_ref_db.z_em[i] = 1.0;
+        SS_ref_db.d_em[i] = 0.0;
     };
 
     SS_ref_db.bounds_ref[0][0] = 0.0+eps;  SS_ref_db.bounds_ref[0][1] = 1.0-eps;
     SS_ref_db.bounds_ref[1][0] = 0.0+eps;  SS_ref_db.bounds_ref[1][1] = 1.0-eps;
+
+    if (SB_boiled_out(len_ox, fo.C, z_b.bulk_rock)){ SS_ref_db.d_em[0] = 1.0; SS_ref_db.z_em[0] = 0.0; SS_ref_db.bounds_ref[0][0] = 0.0; SS_ref_db.bounds_ref[0][1] = 0.0; }
+    if (SB_boiled_out(len_ox, fa.C, z_b.bulk_rock)){ SS_ref_db.d_em[1] = 1.0; SS_ref_db.z_em[1] = 0.0; SS_ref_db.bounds_ref[1][0] = 0.0; SS_ref_db.bounds_ref[1][1] = 0.0; }
 
 
     return SS_ref_db;
@@ -3120,6 +3326,7 @@ SS_ref G_SS_sb24_ol_function(SS_ref SS_ref_db, char* research_group, int EM_data
     Solution phase data for sb24_wa
 */
 SS_ref G_SS_sb24_wa_function(SS_ref SS_ref_db, char* research_group, int EM_dataset, int len_ox, bulk_info z_b, double eps){
+    strcpy(SS_ref_db.fName,"wa_SB24");
 
     int i, j;
     int n_em = SS_ref_db.n_em;
@@ -3178,10 +3385,14 @@ SS_ref G_SS_sb24_wa_function(SS_ref SS_ref_db, char* research_group, int EM_data
 
     for (i = 0; i < n_em; i++){
         SS_ref_db.z_em[i] = 1.0;
+        SS_ref_db.d_em[i] = 0.0;
     };
 
     SS_ref_db.bounds_ref[0][0] = 0.0+eps;  SS_ref_db.bounds_ref[0][1] = 1.0-eps;
     SS_ref_db.bounds_ref[1][0] = 0.0+eps;  SS_ref_db.bounds_ref[1][1] = 1.0-eps;
+
+    if (SB_boiled_out(len_ox, mgwa.C, z_b.bulk_rock)){ SS_ref_db.d_em[0] = 1.0; SS_ref_db.z_em[0] = 0.0; SS_ref_db.bounds_ref[0][0] = 0.0; SS_ref_db.bounds_ref[0][1] = 0.0; }
+    if (SB_boiled_out(len_ox, fewa.C, z_b.bulk_rock)){ SS_ref_db.d_em[1] = 1.0; SS_ref_db.z_em[1] = 0.0; SS_ref_db.bounds_ref[1][0] = 0.0; SS_ref_db.bounds_ref[1][1] = 0.0; }
 
 
     return SS_ref_db;
@@ -3191,6 +3402,7 @@ SS_ref G_SS_sb24_wa_function(SS_ref SS_ref_db, char* research_group, int EM_data
     Solution phase data for sb24_ri
 */
 SS_ref G_SS_sb24_ri_function(SS_ref SS_ref_db, char* research_group, int EM_dataset, int len_ox, bulk_info z_b, double eps){
+    strcpy(SS_ref_db.fName,"ri_SB24");
 
     int i, j;
     int n_em = SS_ref_db.n_em;
@@ -3249,10 +3461,14 @@ SS_ref G_SS_sb24_ri_function(SS_ref SS_ref_db, char* research_group, int EM_data
 
     for (i = 0; i < n_em; i++){
         SS_ref_db.z_em[i] = 1.0;
+        SS_ref_db.d_em[i] = 0.0;
     };
 
     SS_ref_db.bounds_ref[0][0] = 0.0+eps;  SS_ref_db.bounds_ref[0][1] = 1.0-eps;
     SS_ref_db.bounds_ref[1][0] = 0.0+eps;  SS_ref_db.bounds_ref[1][1] = 1.0-eps;
+
+    if (SB_boiled_out(len_ox, mgri.C, z_b.bulk_rock)){ SS_ref_db.d_em[0] = 1.0; SS_ref_db.z_em[0] = 0.0; SS_ref_db.bounds_ref[0][0] = 0.0; SS_ref_db.bounds_ref[0][1] = 0.0; }
+    if (SB_boiled_out(len_ox, feri.C, z_b.bulk_rock)){ SS_ref_db.d_em[1] = 1.0; SS_ref_db.z_em[1] = 0.0; SS_ref_db.bounds_ref[1][0] = 0.0; SS_ref_db.bounds_ref[1][1] = 0.0; }
 
 
     return SS_ref_db;
@@ -3262,6 +3478,7 @@ SS_ref G_SS_sb24_ri_function(SS_ref SS_ref_db, char* research_group, int EM_data
     Solution phase data for sb24_opx
 */
 SS_ref G_SS_sb24_opx_function(SS_ref SS_ref_db, char* research_group, int EM_dataset, int len_ox, bulk_info z_b, double eps){
+    strcpy(SS_ref_db.fName,"opx_SB24");
 
     int i, j;
     int n_em = SS_ref_db.n_em;
@@ -3359,12 +3576,18 @@ SS_ref G_SS_sb24_opx_function(SS_ref SS_ref_db, char* research_group, int EM_dat
 
     for (i = 0; i < n_em; i++){
         SS_ref_db.z_em[i] = 1.0;
+        SS_ref_db.d_em[i] = 0.0;
     };
 
     SS_ref_db.bounds_ref[0][0] = 0.0+eps;  SS_ref_db.bounds_ref[0][1] = 1.0-eps;
     SS_ref_db.bounds_ref[1][0] = 0.0+eps;  SS_ref_db.bounds_ref[1][1] = 1.0-eps;
     SS_ref_db.bounds_ref[2][0] = 0.0+eps;  SS_ref_db.bounds_ref[2][1] = 1.0-eps;
     SS_ref_db.bounds_ref[3][0] = 0.0+eps;  SS_ref_db.bounds_ref[3][1] = 1.0-eps;
+
+    if (SB_boiled_out(len_ox, en.C, z_b.bulk_rock)){ SS_ref_db.d_em[0] = 1.0; SS_ref_db.z_em[0] = 0.0; SS_ref_db.bounds_ref[0][0] = 0.0; SS_ref_db.bounds_ref[0][1] = 0.0; }
+    if (SB_boiled_out(len_ox, fs.C, z_b.bulk_rock)){ SS_ref_db.d_em[1] = 1.0; SS_ref_db.z_em[1] = 0.0; SS_ref_db.bounds_ref[1][0] = 0.0; SS_ref_db.bounds_ref[1][1] = 0.0; }
+    if (SB_boiled_out(len_ox, mgts.C, z_b.bulk_rock)){ SS_ref_db.d_em[2] = 1.0; SS_ref_db.z_em[2] = 0.0; SS_ref_db.bounds_ref[2][0] = 0.0; SS_ref_db.bounds_ref[2][1] = 0.0; }
+    if (SB_boiled_out(len_ox, odi.C, z_b.bulk_rock)){ SS_ref_db.d_em[3] = 1.0; SS_ref_db.z_em[3] = 0.0; SS_ref_db.bounds_ref[3][0] = 0.0; SS_ref_db.bounds_ref[3][1] = 0.0; }
 
 
     return SS_ref_db;
@@ -3374,6 +3597,7 @@ SS_ref G_SS_sb24_opx_function(SS_ref SS_ref_db, char* research_group, int EM_dat
     Solution phase data for sb24_cpx
 */
 SS_ref G_SS_sb24_cpx_function(SS_ref SS_ref_db, char* research_group, int EM_dataset, int len_ox, bulk_info z_b, double eps){
+    strcpy(SS_ref_db.fName,"cpx_SB24");
 
     int i, j;
     int n_em = SS_ref_db.n_em;
@@ -3389,9 +3613,10 @@ SS_ref G_SS_sb24_cpx_function(SS_ref SS_ref_db, char* research_group, int EM_dat
     SS_ref_db.C[2][0] = 0.0;    SS_ref_db.C[2][1] = 0.0;    SS_ref_db.C[2][2] = 0.0;    SS_ref_db.C[2][3] = 0.0;    SS_ref_db.C[2][4] = 1.0;    SS_ref_db.C[2][5] = 1.0;
     SS_ref_db.C[3][0] = 0.0;    SS_ref_db.C[3][1] = 0.0;    SS_ref_db.C[3][2] = 0.0;    SS_ref_db.C[3][3] = 1.0;    SS_ref_db.C[3][4] = 1.0;    SS_ref_db.C[3][5] = 0.0;
     SS_ref_db.C[4][0] = 1.0;    SS_ref_db.C[4][1] = 0.0;    SS_ref_db.C[4][2] = 1.0;    SS_ref_db.C[4][3] = 0.0;    SS_ref_db.C[4][4] = 0.0;    SS_ref_db.C[4][5] = 0.0;
-    SS_ref_db.C[5][0] = 0.0;    SS_ref_db.C[5][1] = 1.0;    SS_ref_db.C[5][2] = 0.0;    SS_ref_db.C[5][3] = 0.0;    SS_ref_db.C[5][4] = 0.0;    SS_ref_db.C[5][5] = 1.0;
-    SS_ref_db.C[6][0] = 1.0;    SS_ref_db.C[6][1] = 1.0;    SS_ref_db.C[6][2] = 1.0;    SS_ref_db.C[6][3] = 0.5;    SS_ref_db.C[6][4] = 1.0;    SS_ref_db.C[6][5] = 1.0;
-    SS_ref_db.C[7][0] = 0.0;    SS_ref_db.C[7][1] = 0.0;    SS_ref_db.C[7][2] = 0.0;    SS_ref_db.C[7][3] = 0.5;    SS_ref_db.C[7][4] = 0.0;    SS_ref_db.C[7][5] = 0.0;
+    SS_ref_db.C[5][0] = 0.0;    SS_ref_db.C[5][1] = 1.0;    SS_ref_db.C[5][2] = 0.0;    SS_ref_db.C[5][3] = 0.0;    SS_ref_db.C[5][4] = 0.0;    SS_ref_db.C[5][5] = 0.0;
+    SS_ref_db.C[6][0] = 0.0;    SS_ref_db.C[6][1] = 0.0;    SS_ref_db.C[6][2] = 0.0;    SS_ref_db.C[6][3] = 0.0;    SS_ref_db.C[6][4] = 0.0;    SS_ref_db.C[6][5] = 1.0;
+    SS_ref_db.C[7][0] = 1.0;    SS_ref_db.C[7][1] = 1.0;    SS_ref_db.C[7][2] = 1.0;    SS_ref_db.C[7][3] = 0.5;    SS_ref_db.C[7][4] = 1.0;    SS_ref_db.C[7][5] = 1.0;
+    SS_ref_db.C[8][0] = 0.0;    SS_ref_db.C[8][1] = 0.0;    SS_ref_db.C[8][2] = 0.0;    SS_ref_db.C[8][3] = 0.5;    SS_ref_db.C[8][4] = 0.0;    SS_ref_db.C[8][5] = 0.0;
 
     // pre-computed Nullspace;
     SS_ref_db.N[0][0] = -0.4082482904638631;    SS_ref_db.N[0][1] = -0.4082482904638631;    SS_ref_db.N[0][2] = -0.4082482904638631;    SS_ref_db.N[0][3] = -0.4082482904638631;    SS_ref_db.N[0][4] = -0.4082482904638631;
@@ -3518,6 +3743,7 @@ SS_ref G_SS_sb24_cpx_function(SS_ref SS_ref_db, char* research_group, int EM_dat
 
     for (i = 0; i < n_em; i++){
         SS_ref_db.z_em[i] = 1.0;
+        SS_ref_db.d_em[i] = 0.0;
     };
 
     SS_ref_db.bounds_ref[0][0] = 0.0+eps;  SS_ref_db.bounds_ref[0][1] = 1.0-eps;
@@ -3527,6 +3753,13 @@ SS_ref G_SS_sb24_cpx_function(SS_ref SS_ref_db, char* research_group, int EM_dat
     SS_ref_db.bounds_ref[4][0] = 0.0+eps;  SS_ref_db.bounds_ref[4][1] = 1.0-eps;
     SS_ref_db.bounds_ref[5][0] = 0.0+eps;  SS_ref_db.bounds_ref[5][1] = 1.0-eps;
 
+    if (SB_boiled_out(len_ox, di.C, z_b.bulk_rock)){ SS_ref_db.d_em[0] = 1.0; SS_ref_db.z_em[0] = 0.0; SS_ref_db.bounds_ref[0][0] = 0.0; SS_ref_db.bounds_ref[0][1] = 0.0; }
+    if (SB_boiled_out(len_ox, he.C, z_b.bulk_rock)){ SS_ref_db.d_em[1] = 1.0; SS_ref_db.z_em[1] = 0.0; SS_ref_db.bounds_ref[1][0] = 0.0; SS_ref_db.bounds_ref[1][1] = 0.0; }
+    if (SB_boiled_out(len_ox, cen.C, z_b.bulk_rock)){ SS_ref_db.d_em[2] = 1.0; SS_ref_db.z_em[2] = 0.0; SS_ref_db.bounds_ref[2][0] = 0.0; SS_ref_db.bounds_ref[2][1] = 0.0; }
+    if (SB_boiled_out(len_ox, cats.C, z_b.bulk_rock)){ SS_ref_db.d_em[3] = 1.0; SS_ref_db.z_em[3] = 0.0; SS_ref_db.bounds_ref[3][0] = 0.0; SS_ref_db.bounds_ref[3][1] = 0.0; }
+    if (SB_boiled_out(len_ox, jd.C, z_b.bulk_rock)){ SS_ref_db.d_em[4] = 1.0; SS_ref_db.z_em[4] = 0.0; SS_ref_db.bounds_ref[4][0] = 0.0; SS_ref_db.bounds_ref[4][1] = 0.0; }
+    if (SB_boiled_out(len_ox, acm.C, z_b.bulk_rock)){ SS_ref_db.d_em[5] = 1.0; SS_ref_db.z_em[5] = 0.0; SS_ref_db.bounds_ref[5][0] = 0.0; SS_ref_db.bounds_ref[5][1] = 0.0; }
+
 
     return SS_ref_db;
 }
@@ -3535,6 +3768,7 @@ SS_ref G_SS_sb24_cpx_function(SS_ref SS_ref_db, char* research_group, int EM_dat
     Solution phase data for sb24_hpcpx
 */
 SS_ref G_SS_sb24_hpcpx_function(SS_ref SS_ref_db, char* research_group, int EM_dataset, int len_ox, bulk_info z_b, double eps){
+    strcpy(SS_ref_db.fName,"hpcpx_SB24");
 
     int i, j;
     int n_em = SS_ref_db.n_em;
@@ -3593,10 +3827,14 @@ SS_ref G_SS_sb24_hpcpx_function(SS_ref SS_ref_db, char* research_group, int EM_d
 
     for (i = 0; i < n_em; i++){
         SS_ref_db.z_em[i] = 1.0;
+        SS_ref_db.d_em[i] = 0.0;
     };
 
     SS_ref_db.bounds_ref[0][0] = 0.0+eps;  SS_ref_db.bounds_ref[0][1] = 1.0-eps;
     SS_ref_db.bounds_ref[1][0] = 0.0+eps;  SS_ref_db.bounds_ref[1][1] = 1.0-eps;
+
+    if (SB_boiled_out(len_ox, mgc2.C, z_b.bulk_rock)){ SS_ref_db.d_em[0] = 1.0; SS_ref_db.z_em[0] = 0.0; SS_ref_db.bounds_ref[0][0] = 0.0; SS_ref_db.bounds_ref[0][1] = 0.0; }
+    if (SB_boiled_out(len_ox, fec2.C, z_b.bulk_rock)){ SS_ref_db.d_em[1] = 1.0; SS_ref_db.z_em[1] = 0.0; SS_ref_db.bounds_ref[1][0] = 0.0; SS_ref_db.bounds_ref[1][1] = 0.0; }
 
 
     return SS_ref_db;
@@ -3606,6 +3844,7 @@ SS_ref G_SS_sb24_hpcpx_function(SS_ref SS_ref_db, char* research_group, int EM_d
     Solution phase data for sb24_ak
 */
 SS_ref G_SS_sb24_ak_function(SS_ref SS_ref_db, char* research_group, int EM_dataset, int len_ox, bulk_info z_b, double eps){
+    strcpy(SS_ref_db.fName,"ak_SB24");
 
     int i, j;
     int n_em = SS_ref_db.n_em;
@@ -3619,11 +3858,12 @@ SS_ref G_SS_sb24_ak_function(SS_ref SS_ref_db, char* research_group, int EM_data
     SS_ref_db.C[0][0] = 0.0;    SS_ref_db.C[0][1] = 0.0;    SS_ref_db.C[0][2] = 1.0;    SS_ref_db.C[0][3] = 0.0;    SS_ref_db.C[0][4] = 0.0;
     SS_ref_db.C[1][0] = 1.0;    SS_ref_db.C[1][1] = 0.0;    SS_ref_db.C[1][2] = 0.0;    SS_ref_db.C[1][3] = 0.0;    SS_ref_db.C[1][4] = 0.0;
     SS_ref_db.C[2][0] = 0.0;    SS_ref_db.C[2][1] = 0.0;    SS_ref_db.C[2][2] = 0.0;    SS_ref_db.C[2][3] = 0.0;    SS_ref_db.C[2][4] = 1.0;
-    SS_ref_db.C[3][0] = 0.0;    SS_ref_db.C[3][1] = 1.0;    SS_ref_db.C[3][2] = 0.0;    SS_ref_db.C[3][3] = 1.0;    SS_ref_db.C[3][4] = 0.0;
-    SS_ref_db.C[4][0] = 1.0;    SS_ref_db.C[4][1] = 1.0;    SS_ref_db.C[4][2] = 0.0;    SS_ref_db.C[4][3] = 0.0;    SS_ref_db.C[4][4] = 0.0;
-    SS_ref_db.C[5][0] = 0.0;    SS_ref_db.C[5][1] = 0.0;    SS_ref_db.C[5][2] = 1.0;    SS_ref_db.C[5][3] = 0.0;    SS_ref_db.C[5][4] = 0.0;
-    SS_ref_db.C[6][0] = 0.0;    SS_ref_db.C[6][1] = 0.0;    SS_ref_db.C[6][2] = 0.0;    SS_ref_db.C[6][3] = 0.0;    SS_ref_db.C[6][4] = 1.0;
-    SS_ref_db.C[7][0] = 0.0;    SS_ref_db.C[7][1] = 0.0;    SS_ref_db.C[7][2] = 0.0;    SS_ref_db.C[7][3] = 1.0;    SS_ref_db.C[7][4] = 0.0;
+    SS_ref_db.C[3][0] = 0.0;    SS_ref_db.C[3][1] = 1.0;    SS_ref_db.C[3][2] = 0.0;    SS_ref_db.C[3][3] = 0.0;    SS_ref_db.C[3][4] = 0.0;
+    SS_ref_db.C[4][0] = 0.0;    SS_ref_db.C[4][1] = 0.0;    SS_ref_db.C[4][2] = 0.0;    SS_ref_db.C[4][3] = 1.0;    SS_ref_db.C[4][4] = 0.0;
+    SS_ref_db.C[5][0] = 1.0;    SS_ref_db.C[5][1] = 1.0;    SS_ref_db.C[5][2] = 0.0;    SS_ref_db.C[5][3] = 0.0;    SS_ref_db.C[5][4] = 0.0;
+    SS_ref_db.C[6][0] = 0.0;    SS_ref_db.C[6][1] = 0.0;    SS_ref_db.C[6][2] = 1.0;    SS_ref_db.C[6][3] = 0.0;    SS_ref_db.C[6][4] = 0.0;
+    SS_ref_db.C[7][0] = 0.0;    SS_ref_db.C[7][1] = 0.0;    SS_ref_db.C[7][2] = 0.0;    SS_ref_db.C[7][3] = 0.0;    SS_ref_db.C[7][4] = 1.0;
+    SS_ref_db.C[8][0] = 0.0;    SS_ref_db.C[8][1] = 0.0;    SS_ref_db.C[8][2] = 0.0;    SS_ref_db.C[8][3] = 1.0;    SS_ref_db.C[8][4] = 0.0;
 
     // pre-computed Nullspace;
     SS_ref_db.N[0][0] = -0.44721359549995787;    SS_ref_db.N[0][1] = -0.44721359549995787;    SS_ref_db.N[0][2] = -0.44721359549995787;    SS_ref_db.N[0][3] = -0.44721359549995787;
@@ -3729,6 +3969,7 @@ SS_ref G_SS_sb24_ak_function(SS_ref SS_ref_db, char* research_group, int EM_data
 
     for (i = 0; i < n_em; i++){
         SS_ref_db.z_em[i] = 1.0;
+        SS_ref_db.d_em[i] = 0.0;
     };
 
     SS_ref_db.bounds_ref[0][0] = 0.0+eps;  SS_ref_db.bounds_ref[0][1] = 1.0-eps;
@@ -3736,6 +3977,12 @@ SS_ref G_SS_sb24_ak_function(SS_ref SS_ref_db, char* research_group, int EM_data
     SS_ref_db.bounds_ref[2][0] = 0.0+eps;  SS_ref_db.bounds_ref[2][1] = 1.0-eps;
     SS_ref_db.bounds_ref[3][0] = 0.0+eps;  SS_ref_db.bounds_ref[3][1] = 1.0-eps;
     SS_ref_db.bounds_ref[4][0] = 0.0+eps;  SS_ref_db.bounds_ref[4][1] = 1.0-eps;
+
+    if (SB_boiled_out(len_ox, mgak.C, z_b.bulk_rock)){ SS_ref_db.d_em[0] = 1.0; SS_ref_db.z_em[0] = 0.0; SS_ref_db.bounds_ref[0][0] = 0.0; SS_ref_db.bounds_ref[0][1] = 0.0; }
+    if (SB_boiled_out(len_ox, feak.C, z_b.bulk_rock)){ SS_ref_db.d_em[1] = 1.0; SS_ref_db.z_em[1] = 0.0; SS_ref_db.bounds_ref[1][0] = 0.0; SS_ref_db.bounds_ref[1][1] = 0.0; }
+    if (SB_boiled_out(len_ox, co.C, z_b.bulk_rock)){ SS_ref_db.d_em[2] = 1.0; SS_ref_db.z_em[2] = 0.0; SS_ref_db.bounds_ref[2][0] = 0.0; SS_ref_db.bounds_ref[2][1] = 0.0; }
+    if (SB_boiled_out(len_ox, hem.C, z_b.bulk_rock)){ SS_ref_db.d_em[3] = 1.0; SS_ref_db.z_em[3] = 0.0; SS_ref_db.bounds_ref[3][0] = 0.0; SS_ref_db.bounds_ref[3][1] = 0.0; }
+    if (SB_boiled_out(len_ox, esk.C, z_b.bulk_rock)){ SS_ref_db.d_em[4] = 1.0; SS_ref_db.z_em[4] = 0.0; SS_ref_db.bounds_ref[4][0] = 0.0; SS_ref_db.bounds_ref[4][1] = 0.0; }
 
 
     return SS_ref_db;
@@ -3745,6 +3992,7 @@ SS_ref G_SS_sb24_ak_function(SS_ref SS_ref_db, char* research_group, int EM_data
     Solution phase data for sb24_gtmj
 */
 SS_ref G_SS_sb24_gtmj_function(SS_ref SS_ref_db, char* research_group, int EM_dataset, int len_ox, bulk_info z_b, double eps){
+    strcpy(SS_ref_db.fName,"gtmj_SB24");
 
     int i, j;
     int n_em = SS_ref_db.n_em;
@@ -3756,7 +4004,7 @@ SS_ref G_SS_sb24_gtmj_function(SS_ref SS_ref_db, char* research_group, int EM_da
 
     // Site mixing composition;
     SS_ref_db.C[0][0] = 0.0;    SS_ref_db.C[0][1] = 0.0;    SS_ref_db.C[0][2] = 1.0;    SS_ref_db.C[0][3] = 0.0;    SS_ref_db.C[0][4] = 0.0;    SS_ref_db.C[0][5] = 0.0;    SS_ref_db.C[0][6] = 1.0;
-    SS_ref_db.C[1][0] = 0.0;    SS_ref_db.C[1][1] = 0.0;    SS_ref_db.C[1][2] = 0.0;    SS_ref_db.C[1][3] = 0.0;    SS_ref_db.C[1][4] = 0.3333333333333333;    SS_ref_db.C[1][5] = 0.0;    SS_ref_db.C[1][6] = 0.0;
+    SS_ref_db.C[1][0] = 0.0;    SS_ref_db.C[1][1] = 0.0;    SS_ref_db.C[1][2] = 0.0;    SS_ref_db.C[1][3] = 0.0;    SS_ref_db.C[1][4] = 1.0/3.03;    SS_ref_db.C[1][5] = 0.0;    SS_ref_db.C[1][6] = 0.0;
     SS_ref_db.C[2][0] = 1.0;    SS_ref_db.C[2][1] = 0.0;    SS_ref_db.C[2][2] = 0.0;    SS_ref_db.C[2][3] = 1.0;    SS_ref_db.C[2][4] = 0.0;    SS_ref_db.C[2][5] = 1.0;    SS_ref_db.C[2][6] = 0.0;
     SS_ref_db.C[3][0] = 0.0;    SS_ref_db.C[3][1] = 0.0;    SS_ref_db.C[3][2] = 0.0;    SS_ref_db.C[3][3] = 0.0;    SS_ref_db.C[3][4] = 0.6666666666666666;    SS_ref_db.C[3][5] = 0.0;    SS_ref_db.C[3][6] = 0.0;
     SS_ref_db.C[4][0] = 0.0;    SS_ref_db.C[4][1] = 1.0;    SS_ref_db.C[4][2] = 0.0;    SS_ref_db.C[4][3] = 0.0;    SS_ref_db.C[4][4] = 0.0;    SS_ref_db.C[4][5] = 0.0;    SS_ref_db.C[4][6] = 0.0;
@@ -3779,7 +4027,7 @@ SS_ref G_SS_sb24_gtmj_function(SS_ref SS_ref_db, char* research_group, int EM_da
     SS_ref_db.N[6][0] = -0.10367258783179546;    SS_ref_db.N[6][1] = -0.10367258783179546;    SS_ref_db.N[6][2] = -0.10367258783179546;    SS_ref_db.N[6][3] = -0.10367258783179546;    SS_ref_db.N[6][4] = -0.10367258783179546;    SS_ref_db.N[6][5] = 0.8963274121682046;
 
     SS_ref_db.W[0] = 0.0 ;
-    SS_ref_db.W[1] = 19090.0 + 1.03e-5 * SS_ref_db.P;
+    SS_ref_db.W[1] = 19090.0 + 103.0 * SS_ref_db.P;
     SS_ref_db.W[2] = 23160.0 ;
     SS_ref_db.W[3] = 23160.0 ;
     SS_ref_db.W[4] = 0.0 ;
@@ -3789,7 +4037,7 @@ SS_ref G_SS_sb24_gtmj_function(SS_ref SS_ref_db, char* research_group, int EM_da
     SS_ref_db.W[8] = 23160.0 ;
     SS_ref_db.W[9] = 10000.0 ;
     SS_ref_db.W[10] = 44000.0 ;
-    SS_ref_db.W[11] = 64680.0 + 1.03e-5 * SS_ref_db.P;
+    SS_ref_db.W[11] = 64680.0 + 103.0 * SS_ref_db.P;
     SS_ref_db.W[12] = 66468.0 ;
     SS_ref_db.W[13] = -20000.0 ;
     SS_ref_db.W[14] = 0.0 ;
@@ -3909,6 +4157,7 @@ SS_ref G_SS_sb24_gtmj_function(SS_ref SS_ref_db, char* research_group, int EM_da
 
     for (i = 0; i < n_em; i++){
         SS_ref_db.z_em[i] = 1.0;
+        SS_ref_db.d_em[i] = 0.0;
     };
 
     SS_ref_db.bounds_ref[0][0] = 0.0+eps;  SS_ref_db.bounds_ref[0][1] = 1.0-eps;
@@ -3919,6 +4168,14 @@ SS_ref G_SS_sb24_gtmj_function(SS_ref SS_ref_db, char* research_group, int EM_da
     SS_ref_db.bounds_ref[5][0] = 0.0+eps;  SS_ref_db.bounds_ref[5][1] = 1.0-eps;
     SS_ref_db.bounds_ref[6][0] = 0.0+eps;  SS_ref_db.bounds_ref[6][1] = 1.0-eps;
 
+    if (SB_boiled_out(len_ox, py.C, z_b.bulk_rock)){ SS_ref_db.d_em[0] = 1.0; SS_ref_db.z_em[0] = 0.0; SS_ref_db.bounds_ref[0][0] = 0.0; SS_ref_db.bounds_ref[0][1] = 0.0; }
+    if (SB_boiled_out(len_ox, alm.C, z_b.bulk_rock)){ SS_ref_db.d_em[1] = 1.0; SS_ref_db.z_em[1] = 0.0; SS_ref_db.bounds_ref[1][0] = 0.0; SS_ref_db.bounds_ref[1][1] = 0.0; }
+    if (SB_boiled_out(len_ox, gr.C, z_b.bulk_rock)){ SS_ref_db.d_em[2] = 1.0; SS_ref_db.z_em[2] = 0.0; SS_ref_db.bounds_ref[2][0] = 0.0; SS_ref_db.bounds_ref[2][1] = 0.0; }
+    if (SB_boiled_out(len_ox, mgmj.C, z_b.bulk_rock)){ SS_ref_db.d_em[3] = 1.0; SS_ref_db.z_em[3] = 0.0; SS_ref_db.bounds_ref[3][0] = 0.0; SS_ref_db.bounds_ref[3][1] = 0.0; }
+    if (SB_boiled_out(len_ox, jdmj.C, z_b.bulk_rock)){ SS_ref_db.d_em[4] = 1.0; SS_ref_db.z_em[4] = 0.0; SS_ref_db.bounds_ref[4][0] = 0.0; SS_ref_db.bounds_ref[4][1] = 0.0; }
+    if (SB_boiled_out(len_ox, knor.C, z_b.bulk_rock)){ SS_ref_db.d_em[5] = 1.0; SS_ref_db.z_em[5] = 0.0; SS_ref_db.bounds_ref[5][0] = 0.0; SS_ref_db.bounds_ref[5][1] = 0.0; }
+    if (SB_boiled_out(len_ox, andr.C, z_b.bulk_rock)){ SS_ref_db.d_em[6] = 1.0; SS_ref_db.z_em[6] = 0.0; SS_ref_db.bounds_ref[6][0] = 0.0; SS_ref_db.bounds_ref[6][1] = 0.0; }
+
 
     return SS_ref_db;
 }
@@ -3927,6 +4184,7 @@ SS_ref G_SS_sb24_gtmj_function(SS_ref SS_ref_db, char* research_group, int EM_da
     Solution phase data for sb24_pv
 */
 SS_ref G_SS_sb24_pv_function(SS_ref SS_ref_db, char* research_group, int EM_dataset, int len_ox, bulk_info z_b, double eps){
+    strcpy(SS_ref_db.fName,"pv_SB24");
 
     int i, j;
     int n_em = SS_ref_db.n_em;
@@ -3940,11 +4198,13 @@ SS_ref G_SS_sb24_pv_function(SS_ref SS_ref_db, char* research_group, int EM_data
     SS_ref_db.C[0][0] = 0.0;    SS_ref_db.C[0][1] = 0.0;    SS_ref_db.C[0][2] = 1.0;    SS_ref_db.C[0][3] = 0.0;    SS_ref_db.C[0][4] = 0.0;    SS_ref_db.C[0][5] = 0.0;    SS_ref_db.C[0][6] = 0.0;
     SS_ref_db.C[1][0] = 1.0;    SS_ref_db.C[1][1] = 0.0;    SS_ref_db.C[1][2] = 0.0;    SS_ref_db.C[1][3] = 0.0;    SS_ref_db.C[1][4] = 0.0;    SS_ref_db.C[1][5] = 0.0;    SS_ref_db.C[1][6] = 0.0;
     SS_ref_db.C[2][0] = 0.0;    SS_ref_db.C[2][1] = 0.0;    SS_ref_db.C[2][2] = 0.0;    SS_ref_db.C[2][3] = 0.0;    SS_ref_db.C[2][4] = 0.0;    SS_ref_db.C[2][5] = 0.0;    SS_ref_db.C[2][6] = 1.0;
-    SS_ref_db.C[3][0] = 0.0;    SS_ref_db.C[3][1] = 1.0;    SS_ref_db.C[3][2] = 0.0;    SS_ref_db.C[3][3] = 1.0;    SS_ref_db.C[3][4] = 1.0;    SS_ref_db.C[3][5] = 1.0;    SS_ref_db.C[3][6] = 0.0;
-    SS_ref_db.C[4][0] = 1.0;    SS_ref_db.C[4][1] = 1.0;    SS_ref_db.C[4][2] = 0.0;    SS_ref_db.C[4][3] = 0.0;    SS_ref_db.C[4][4] = 0.0;    SS_ref_db.C[4][5] = 0.0;    SS_ref_db.C[4][6] = 0.0;
-    SS_ref_db.C[5][0] = 0.0;    SS_ref_db.C[5][1] = 0.0;    SS_ref_db.C[5][2] = 1.0;    SS_ref_db.C[5][3] = 0.0;    SS_ref_db.C[5][4] = 0.0;    SS_ref_db.C[5][5] = 1.0;    SS_ref_db.C[5][6] = 0.0;
-    SS_ref_db.C[6][0] = 0.0;    SS_ref_db.C[6][1] = 0.0;    SS_ref_db.C[6][2] = 0.0;    SS_ref_db.C[6][3] = 0.0;    SS_ref_db.C[6][4] = 0.0;    SS_ref_db.C[6][5] = 0.0;    SS_ref_db.C[6][6] = 1.0;
-    SS_ref_db.C[7][0] = 0.0;    SS_ref_db.C[7][1] = 0.0;    SS_ref_db.C[7][2] = 0.0;    SS_ref_db.C[7][3] = 1.0;    SS_ref_db.C[7][4] = 1.0;    SS_ref_db.C[7][5] = 0.0;    SS_ref_db.C[7][6] = 0.0;
+    SS_ref_db.C[3][0] = 0.0;    SS_ref_db.C[3][1] = 1.0;    SS_ref_db.C[3][2] = 0.0;    SS_ref_db.C[3][3] = 0.0;    SS_ref_db.C[3][4] = 0.0;    SS_ref_db.C[3][5] = 0.0;    SS_ref_db.C[3][6] = 0.0;
+    SS_ref_db.C[4][0] = 0.0;    SS_ref_db.C[4][1] = 0.0;    SS_ref_db.C[4][2] = 0.0;    SS_ref_db.C[4][3] = 1.0;    SS_ref_db.C[4][4] = 1.0;    SS_ref_db.C[4][5] = 1.0;    SS_ref_db.C[4][6] = 0.0;
+    SS_ref_db.C[5][0] = 1.0;    SS_ref_db.C[5][1] = 1.0;    SS_ref_db.C[5][2] = 0.0;    SS_ref_db.C[5][3] = 0.0;    SS_ref_db.C[5][4] = 0.0;    SS_ref_db.C[5][5] = 0.0;    SS_ref_db.C[5][6] = 0.0;
+    SS_ref_db.C[6][0] = 0.0;    SS_ref_db.C[6][1] = 0.0;    SS_ref_db.C[6][2] = 1.0;    SS_ref_db.C[6][3] = 0.0;    SS_ref_db.C[6][4] = 0.0;    SS_ref_db.C[6][5] = 1.0;    SS_ref_db.C[6][6] = 0.0;
+    SS_ref_db.C[7][0] = 0.0;    SS_ref_db.C[7][1] = 0.0;    SS_ref_db.C[7][2] = 0.0;    SS_ref_db.C[7][3] = 0.0;    SS_ref_db.C[7][4] = 0.0;    SS_ref_db.C[7][5] = 0.0;    SS_ref_db.C[7][6] = 1.0;
+    SS_ref_db.C[8][0] = 0.0;    SS_ref_db.C[8][1] = 0.0;    SS_ref_db.C[8][2] = 0.0;    SS_ref_db.C[8][3] = 1.0;    SS_ref_db.C[8][4] = 0.0;    SS_ref_db.C[8][5] = 0.0;    SS_ref_db.C[8][6] = 0.0;
+    SS_ref_db.C[9][0] = 0.0;    SS_ref_db.C[9][1] = 0.0;    SS_ref_db.C[9][2] = 0.0;    SS_ref_db.C[9][3] = 0.0;    SS_ref_db.C[9][4] = 1.0;    SS_ref_db.C[9][5] = 0.0;    SS_ref_db.C[9][6] = 0.0;
 
     // pre-computed Nullspace;
     SS_ref_db.N[0][0] = -0.37796447300922725;    SS_ref_db.N[0][1] = -0.37796447300922725;    SS_ref_db.N[0][2] = -0.37796447300922725;    SS_ref_db.N[0][3] = -0.37796447300922725;    SS_ref_db.N[0][4] = -0.37796447300922725;    SS_ref_db.N[0][5] = -0.37796447300922725;
@@ -4086,6 +4346,7 @@ SS_ref G_SS_sb24_pv_function(SS_ref SS_ref_db, char* research_group, int EM_data
 
     for (i = 0; i < n_em; i++){
         SS_ref_db.z_em[i] = 1.0;
+        SS_ref_db.d_em[i] = 0.0;
     };
 
     SS_ref_db.bounds_ref[0][0] = 0.0+eps;  SS_ref_db.bounds_ref[0][1] = 1.0-eps;
@@ -4096,6 +4357,14 @@ SS_ref G_SS_sb24_pv_function(SS_ref SS_ref_db, char* research_group, int EM_data
     SS_ref_db.bounds_ref[5][0] = 0.0+eps;  SS_ref_db.bounds_ref[5][1] = 1.0-eps;
     SS_ref_db.bounds_ref[6][0] = 0.0+eps;  SS_ref_db.bounds_ref[6][1] = 1.0-eps;
 
+    if (SB_boiled_out(len_ox, mgpv.C, z_b.bulk_rock)){ SS_ref_db.d_em[0] = 1.0; SS_ref_db.z_em[0] = 0.0; SS_ref_db.bounds_ref[0][0] = 0.0; SS_ref_db.bounds_ref[0][1] = 0.0; }
+    if (SB_boiled_out(len_ox, fepv.C, z_b.bulk_rock)){ SS_ref_db.d_em[1] = 1.0; SS_ref_db.z_em[1] = 0.0; SS_ref_db.bounds_ref[1][0] = 0.0; SS_ref_db.bounds_ref[1][1] = 0.0; }
+    if (SB_boiled_out(len_ox, alpv.C, z_b.bulk_rock)){ SS_ref_db.d_em[2] = 1.0; SS_ref_db.z_em[2] = 0.0; SS_ref_db.bounds_ref[2][0] = 0.0; SS_ref_db.bounds_ref[2][1] = 0.0; }
+    if (SB_boiled_out(len_ox, hepv.C, z_b.bulk_rock)){ SS_ref_db.d_em[3] = 1.0; SS_ref_db.z_em[3] = 0.0; SS_ref_db.bounds_ref[3][0] = 0.0; SS_ref_db.bounds_ref[3][1] = 0.0; }
+    if (SB_boiled_out(len_ox, hlpv.C, z_b.bulk_rock)){ SS_ref_db.d_em[4] = 1.0; SS_ref_db.z_em[4] = 0.0; SS_ref_db.bounds_ref[4][0] = 0.0; SS_ref_db.bounds_ref[4][1] = 0.0; }
+    if (SB_boiled_out(len_ox, fapv.C, z_b.bulk_rock)){ SS_ref_db.d_em[5] = 1.0; SS_ref_db.z_em[5] = 0.0; SS_ref_db.bounds_ref[5][0] = 0.0; SS_ref_db.bounds_ref[5][1] = 0.0; }
+    if (SB_boiled_out(len_ox, crpv.C, z_b.bulk_rock)){ SS_ref_db.d_em[6] = 1.0; SS_ref_db.z_em[6] = 0.0; SS_ref_db.bounds_ref[6][0] = 0.0; SS_ref_db.bounds_ref[6][1] = 0.0; }
+
 
     return SS_ref_db;
 }
@@ -4104,6 +4373,7 @@ SS_ref G_SS_sb24_pv_function(SS_ref SS_ref_db, char* research_group, int EM_data
     Solution phase data for sb24_ppv
 */
 SS_ref G_SS_sb24_ppv_function(SS_ref SS_ref_db, char* research_group, int EM_dataset, int len_ox, bulk_info z_b, double eps){
+    strcpy(SS_ref_db.fName,"ppv_SB24");
 
     int i, j;
     int n_em = SS_ref_db.n_em;
@@ -4117,11 +4387,12 @@ SS_ref G_SS_sb24_ppv_function(SS_ref SS_ref_db, char* research_group, int EM_dat
     SS_ref_db.C[0][0] = 0.0;    SS_ref_db.C[0][1] = 0.0;    SS_ref_db.C[0][2] = 1.0;    SS_ref_db.C[0][3] = 0.0;    SS_ref_db.C[0][4] = 0.0;
     SS_ref_db.C[1][0] = 1.0;    SS_ref_db.C[1][1] = 0.0;    SS_ref_db.C[1][2] = 0.0;    SS_ref_db.C[1][3] = 0.0;    SS_ref_db.C[1][4] = 0.0;
     SS_ref_db.C[2][0] = 0.0;    SS_ref_db.C[2][1] = 0.0;    SS_ref_db.C[2][2] = 0.0;    SS_ref_db.C[2][3] = 0.0;    SS_ref_db.C[2][4] = 1.0;
-    SS_ref_db.C[3][0] = 0.0;    SS_ref_db.C[3][1] = 1.0;    SS_ref_db.C[3][2] = 0.0;    SS_ref_db.C[3][3] = 1.0;    SS_ref_db.C[3][4] = 0.0;
-    SS_ref_db.C[4][0] = 1.0;    SS_ref_db.C[4][1] = 1.0;    SS_ref_db.C[4][2] = 0.0;    SS_ref_db.C[4][3] = 0.0;    SS_ref_db.C[4][4] = 0.0;
-    SS_ref_db.C[5][0] = 0.0;    SS_ref_db.C[5][1] = 0.0;    SS_ref_db.C[5][2] = 1.0;    SS_ref_db.C[5][3] = 0.0;    SS_ref_db.C[5][4] = 0.0;
-    SS_ref_db.C[6][0] = 0.0;    SS_ref_db.C[6][1] = 0.0;    SS_ref_db.C[6][2] = 0.0;    SS_ref_db.C[6][3] = 0.0;    SS_ref_db.C[6][4] = 1.0;
-    SS_ref_db.C[7][0] = 0.0;    SS_ref_db.C[7][1] = 0.0;    SS_ref_db.C[7][2] = 0.0;    SS_ref_db.C[7][3] = 1.0;    SS_ref_db.C[7][4] = 0.0;
+    SS_ref_db.C[3][0] = 0.0;    SS_ref_db.C[3][1] = 1.0;    SS_ref_db.C[3][2] = 0.0;    SS_ref_db.C[3][3] = 0.0;    SS_ref_db.C[3][4] = 0.0;
+    SS_ref_db.C[4][0] = 0.0;    SS_ref_db.C[4][1] = 0.0;    SS_ref_db.C[4][2] = 0.0;    SS_ref_db.C[4][3] = 1.0;    SS_ref_db.C[4][4] = 0.0;
+    SS_ref_db.C[5][0] = 1.0;    SS_ref_db.C[5][1] = 1.0;    SS_ref_db.C[5][2] = 0.0;    SS_ref_db.C[5][3] = 0.0;    SS_ref_db.C[5][4] = 0.0;
+    SS_ref_db.C[6][0] = 0.0;    SS_ref_db.C[6][1] = 0.0;    SS_ref_db.C[6][2] = 1.0;    SS_ref_db.C[6][3] = 0.0;    SS_ref_db.C[6][4] = 0.0;
+    SS_ref_db.C[7][0] = 0.0;    SS_ref_db.C[7][1] = 0.0;    SS_ref_db.C[7][2] = 0.0;    SS_ref_db.C[7][3] = 0.0;    SS_ref_db.C[7][4] = 1.0;
+    SS_ref_db.C[8][0] = 0.0;    SS_ref_db.C[8][1] = 0.0;    SS_ref_db.C[8][2] = 0.0;    SS_ref_db.C[8][3] = 1.0;    SS_ref_db.C[8][4] = 0.0;
 
     // pre-computed Nullspace;
     SS_ref_db.N[0][0] = -0.44721359549995787;    SS_ref_db.N[0][1] = -0.44721359549995787;    SS_ref_db.N[0][2] = -0.44721359549995787;    SS_ref_db.N[0][3] = -0.44721359549995787;
@@ -4222,6 +4493,7 @@ SS_ref G_SS_sb24_ppv_function(SS_ref SS_ref_db, char* research_group, int EM_dat
 
     for (i = 0; i < n_em; i++){
         SS_ref_db.z_em[i] = 1.0;
+        SS_ref_db.d_em[i] = 0.0;
     };
 
     SS_ref_db.bounds_ref[0][0] = 0.0+eps;  SS_ref_db.bounds_ref[0][1] = 1.0-eps;
@@ -4229,6 +4501,12 @@ SS_ref G_SS_sb24_ppv_function(SS_ref SS_ref_db, char* research_group, int EM_dat
     SS_ref_db.bounds_ref[2][0] = 0.0+eps;  SS_ref_db.bounds_ref[2][1] = 1.0-eps;
     SS_ref_db.bounds_ref[3][0] = 0.0+eps;  SS_ref_db.bounds_ref[3][1] = 1.0-eps;
     SS_ref_db.bounds_ref[4][0] = 0.0+eps;  SS_ref_db.bounds_ref[4][1] = 1.0-eps;
+
+    if (SB_boiled_out(len_ox, mppv.C, z_b.bulk_rock)){ SS_ref_db.d_em[0] = 1.0; SS_ref_db.z_em[0] = 0.0; SS_ref_db.bounds_ref[0][0] = 0.0; SS_ref_db.bounds_ref[0][1] = 0.0; }
+    if (SB_boiled_out(len_ox, fppv.C, z_b.bulk_rock)){ SS_ref_db.d_em[1] = 1.0; SS_ref_db.z_em[1] = 0.0; SS_ref_db.bounds_ref[1][0] = 0.0; SS_ref_db.bounds_ref[1][1] = 0.0; }
+    if (SB_boiled_out(len_ox, appv.C, z_b.bulk_rock)){ SS_ref_db.d_em[2] = 1.0; SS_ref_db.z_em[2] = 0.0; SS_ref_db.bounds_ref[2][0] = 0.0; SS_ref_db.bounds_ref[2][1] = 0.0; }
+    if (SB_boiled_out(len_ox, hppv.C, z_b.bulk_rock)){ SS_ref_db.d_em[3] = 1.0; SS_ref_db.z_em[3] = 0.0; SS_ref_db.bounds_ref[3][0] = 0.0; SS_ref_db.bounds_ref[3][1] = 0.0; }
+    if (SB_boiled_out(len_ox, cppv.C, z_b.bulk_rock)){ SS_ref_db.d_em[4] = 1.0; SS_ref_db.z_em[4] = 0.0; SS_ref_db.bounds_ref[4][0] = 0.0; SS_ref_db.bounds_ref[4][1] = 0.0; }
 
 
     return SS_ref_db;
@@ -4238,6 +4516,7 @@ SS_ref G_SS_sb24_ppv_function(SS_ref SS_ref_db, char* research_group, int EM_dat
     Solution phase data for sb24_cf
 */
 SS_ref G_SS_sb24_cf_function(SS_ref SS_ref_db, char* research_group, int EM_dataset, int len_ox, bulk_info z_b, double eps){
+    strcpy(SS_ref_db.fName,"cf_SB24");
 
     int i, j;
     int n_em = SS_ref_db.n_em;
@@ -4363,6 +4642,7 @@ SS_ref G_SS_sb24_cf_function(SS_ref SS_ref_db, char* research_group, int EM_data
 
     for (i = 0; i < n_em; i++){
         SS_ref_db.z_em[i] = 1.0;
+        SS_ref_db.d_em[i] = 0.0;
     };
 
     SS_ref_db.bounds_ref[0][0] = 0.0+eps;  SS_ref_db.bounds_ref[0][1] = 1.0-eps;
@@ -4371,6 +4651,11 @@ SS_ref G_SS_sb24_cf_function(SS_ref SS_ref_db, char* research_group, int EM_data
     SS_ref_db.bounds_ref[3][0] = 0.0+eps;  SS_ref_db.bounds_ref[3][1] = 1.0-eps;
     SS_ref_db.bounds_ref[4][0] = 0.0+eps;  SS_ref_db.bounds_ref[4][1] = 1.0-eps;
 
+    if (SB_boiled_out(len_ox, mgcf.C, z_b.bulk_rock)){ SS_ref_db.d_em[0] = 1.0; SS_ref_db.z_em[0] = 0.0; SS_ref_db.bounds_ref[0][0] = 0.0; SS_ref_db.bounds_ref[0][1] = 0.0; }
+    if (SB_boiled_out(len_ox, fecf.C, z_b.bulk_rock)){ SS_ref_db.d_em[1] = 1.0; SS_ref_db.z_em[1] = 0.0; SS_ref_db.bounds_ref[1][0] = 0.0; SS_ref_db.bounds_ref[1][1] = 0.0; }
+    if (SB_boiled_out(len_ox, nacf.C, z_b.bulk_rock)){ SS_ref_db.d_em[2] = 1.0; SS_ref_db.z_em[2] = 0.0; SS_ref_db.bounds_ref[2][0] = 0.0; SS_ref_db.bounds_ref[2][1] = 0.0; }
+    if (SB_boiled_out(len_ox, hmag.C, z_b.bulk_rock)){ SS_ref_db.d_em[3] = 1.0; SS_ref_db.z_em[3] = 0.0; SS_ref_db.bounds_ref[3][0] = 0.0; SS_ref_db.bounds_ref[3][1] = 0.0; }
+    if (SB_boiled_out(len_ox, crcf.C, z_b.bulk_rock)){ SS_ref_db.d_em[4] = 1.0; SS_ref_db.z_em[4] = 0.0; SS_ref_db.bounds_ref[4][0] = 0.0; SS_ref_db.bounds_ref[4][1] = 0.0; }
 
     return SS_ref_db;
 }
@@ -4379,6 +4664,7 @@ SS_ref G_SS_sb24_cf_function(SS_ref SS_ref_db, char* research_group, int EM_data
     Solution phase data for sb24_mw
 */
 SS_ref G_SS_sb24_mw_function(SS_ref SS_ref_db, char* research_group, int EM_dataset, int len_ox, bulk_info z_b, double eps){
+    strcpy(SS_ref_db.fName,"mw_SB24");
 
     int i, j;
     int n_em = SS_ref_db.n_em;
@@ -4391,10 +4677,13 @@ SS_ref G_SS_sb24_mw_function(SS_ref SS_ref_db, char* research_group, int EM_data
     // Site mixing composition;
     SS_ref_db.C[0][0] = 1.0;    SS_ref_db.C[0][1] = 0.0;    SS_ref_db.C[0][2] = 0.0;    SS_ref_db.C[0][3] = 0.0;    SS_ref_db.C[0][4] = 0.0;
     SS_ref_db.C[1][0] = 0.0;    SS_ref_db.C[1][1] = 0.0;    SS_ref_db.C[1][2] = 0.0;    SS_ref_db.C[1][3] = 0.0;    SS_ref_db.C[1][4] = 1.0;
-    SS_ref_db.C[2][0] = 0.0;    SS_ref_db.C[2][1] = 1.0;    SS_ref_db.C[2][2] = 1.0;    SS_ref_db.C[2][3] = 0.5;    SS_ref_db.C[2][4] = 0.0;
-    SS_ref_db.C[3][0] = 0.0;    SS_ref_db.C[3][1] = 0.0;    SS_ref_db.C[3][2] = 0.0;    SS_ref_db.C[3][3] = 0.0;    SS_ref_db.C[3][4] = 1.0;
-    SS_ref_db.C[4][0] = 1.0;    SS_ref_db.C[4][1] = 0.0;    SS_ref_db.C[4][2] = 0.0;    SS_ref_db.C[4][3] = 0.0;    SS_ref_db.C[4][4] = 0.0;
-    SS_ref_db.C[5][0] = 0.0;    SS_ref_db.C[5][1] = 1.0;    SS_ref_db.C[5][2] = 1.0;    SS_ref_db.C[5][3] = 0.0;    SS_ref_db.C[5][4] = 0.0;
+    SS_ref_db.C[2][0] = 0.0;    SS_ref_db.C[2][1] = 1.0;    SS_ref_db.C[2][2] = 0.0;    SS_ref_db.C[2][3] = 0.0;    SS_ref_db.C[2][4] = 0.0;
+    SS_ref_db.C[3][0] = 0.0;    SS_ref_db.C[3][1] = 0.0;    SS_ref_db.C[3][2] = 1.0;    SS_ref_db.C[3][3] = 0.0;    SS_ref_db.C[3][4] = 0.0;
+    SS_ref_db.C[4][0] = 0.0;    SS_ref_db.C[4][1] = 0.0;    SS_ref_db.C[4][2] = 0.0;    SS_ref_db.C[4][3] = 0.0;    SS_ref_db.C[4][4] = 1.0;
+    SS_ref_db.C[5][0] = 1.0;    SS_ref_db.C[5][1] = 0.0;    SS_ref_db.C[5][2] = 0.0;    SS_ref_db.C[5][3] = 0.0;    SS_ref_db.C[5][4] = 0.0;
+    SS_ref_db.C[6][0] = 0.0;    SS_ref_db.C[6][1] = 1.0;    SS_ref_db.C[6][2] = 0.0;    SS_ref_db.C[6][3] = 0.0;    SS_ref_db.C[6][4] = 0.0;
+    SS_ref_db.C[7][0] = 0.0;    SS_ref_db.C[7][1] = 0.0;    SS_ref_db.C[7][2] = 0.0;    SS_ref_db.C[7][3] = 1.0;    SS_ref_db.C[7][4] = 0.0;
+    SS_ref_db.C[8][0] = 0.0;    SS_ref_db.C[8][1] = 0.0;    SS_ref_db.C[8][2] = 1.0;    SS_ref_db.C[8][3] = 0.0;    SS_ref_db.C[8][4] = 0.0;
 
     // pre-computed Nullspace;
     SS_ref_db.N[0][0] = -0.44721359549995787;    SS_ref_db.N[0][1] = -0.44721359549995787;    SS_ref_db.N[0][2] = -0.44721359549995787;    SS_ref_db.N[0][3] = -0.44721359549995787;
@@ -4403,7 +4692,7 @@ SS_ref G_SS_sb24_mw_function(SS_ref SS_ref_db, char* research_group, int EM_data
     SS_ref_db.N[3][0] = -0.13819660112501048;    SS_ref_db.N[3][1] = -0.13819660112501048;    SS_ref_db.N[3][2] = 0.8618033988749895;    SS_ref_db.N[3][3] = -0.13819660112501048;
     SS_ref_db.N[4][0] = -0.13819660112501048;    SS_ref_db.N[4][1] = -0.13819660112501048;    SS_ref_db.N[4][2] = -0.13819660112501048;    SS_ref_db.N[4][3] = 0.8618033988749895;
 
-    SS_ref_db.W[0] = 44000.0 + 4.4e-6 * SS_ref_db.P;
+    SS_ref_db.W[0] = 44000.0 + 44.0 * SS_ref_db.P;
     SS_ref_db.W[1] = -87120.0 ;
     SS_ref_db.W[2] = 302800.0 ;
     SS_ref_db.W[3] = 120000.0 ;
@@ -4500,6 +4789,7 @@ SS_ref G_SS_sb24_mw_function(SS_ref SS_ref_db, char* research_group, int EM_data
 
     for (i = 0; i < n_em; i++){
         SS_ref_db.z_em[i] = 1.0;
+        SS_ref_db.d_em[i] = 0.0;
     };
 
     SS_ref_db.bounds_ref[0][0] = 0.0+eps;  SS_ref_db.bounds_ref[0][1] = 1.0-eps;
@@ -4507,6 +4797,12 @@ SS_ref G_SS_sb24_mw_function(SS_ref SS_ref_db, char* research_group, int EM_data
     SS_ref_db.bounds_ref[2][0] = 0.0+eps;  SS_ref_db.bounds_ref[2][1] = 1.0-eps;
     SS_ref_db.bounds_ref[3][0] = 0.0+eps;  SS_ref_db.bounds_ref[3][1] = 1.0-eps;
     SS_ref_db.bounds_ref[4][0] = 0.0+eps;  SS_ref_db.bounds_ref[4][1] = 1.0-eps;
+
+    if (SB_boiled_out(len_ox, pe.C, z_b.bulk_rock)){ SS_ref_db.d_em[0] = 1.0; SS_ref_db.z_em[0] = 0.0; SS_ref_db.bounds_ref[0][0] = 0.0; SS_ref_db.bounds_ref[0][1] = 0.0; }
+    if (SB_boiled_out(len_ox, wu.C, z_b.bulk_rock)){ SS_ref_db.d_em[1] = 1.0; SS_ref_db.z_em[1] = 0.0; SS_ref_db.bounds_ref[1][0] = 0.0; SS_ref_db.bounds_ref[1][1] = 0.0; }
+    if (SB_boiled_out(len_ox, wuls.C, z_b.bulk_rock)){ SS_ref_db.d_em[2] = 1.0; SS_ref_db.z_em[2] = 0.0; SS_ref_db.bounds_ref[2][0] = 0.0; SS_ref_db.bounds_ref[2][1] = 0.0; }
+    if (SB_boiled_out(len_ox, mag.C, z_b.bulk_rock)){ SS_ref_db.d_em[3] = 1.0; SS_ref_db.z_em[3] = 0.0; SS_ref_db.bounds_ref[3][0] = 0.0; SS_ref_db.bounds_ref[3][1] = 0.0; }
+    if (SB_boiled_out(len_ox, anao.C, z_b.bulk_rock)){ SS_ref_db.d_em[4] = 1.0; SS_ref_db.z_em[4] = 0.0; SS_ref_db.bounds_ref[4][0] = 0.0; SS_ref_db.bounds_ref[4][1] = 0.0; }
 
 
     return SS_ref_db;
@@ -4516,6 +4812,7 @@ SS_ref G_SS_sb24_mw_function(SS_ref SS_ref_db, char* research_group, int EM_data
     Solution phase data for sb24_nal
 */
 SS_ref G_SS_sb24_nal_function(SS_ref SS_ref_db, char* research_group, int EM_dataset, int len_ox, bulk_info z_b, double eps){
+    strcpy(SS_ref_db.fName,"nal_SB24");
 
     int i, j;
     int n_em = SS_ref_db.n_em;
@@ -4595,11 +4892,16 @@ SS_ref G_SS_sb24_nal_function(SS_ref SS_ref_db, char* research_group, int EM_dat
 
     for (i = 0; i < n_em; i++){
         SS_ref_db.z_em[i] = 1.0;
+        SS_ref_db.d_em[i] = 0.0;
     };
 
     SS_ref_db.bounds_ref[0][0] = 0.0+eps;  SS_ref_db.bounds_ref[0][1] = 1.0-eps;
     SS_ref_db.bounds_ref[1][0] = 0.0+eps;  SS_ref_db.bounds_ref[1][1] = 1.0-eps;
     SS_ref_db.bounds_ref[2][0] = 0.0+eps;  SS_ref_db.bounds_ref[2][1] = 1.0-eps;
+
+    if (SB_boiled_out(len_ox, mnal.C, z_b.bulk_rock)){ SS_ref_db.d_em[0] = 1.0; SS_ref_db.z_em[0] = 0.0; SS_ref_db.bounds_ref[0][0] = 0.0; SS_ref_db.bounds_ref[0][1] = 0.0; }
+    if (SB_boiled_out(len_ox, fnal.C, z_b.bulk_rock)){ SS_ref_db.d_em[1] = 1.0; SS_ref_db.z_em[1] = 0.0; SS_ref_db.bounds_ref[1][0] = 0.0; SS_ref_db.bounds_ref[1][1] = 0.0; }
+    if (SB_boiled_out(len_ox, nnal.C, z_b.bulk_rock)){ SS_ref_db.d_em[2] = 1.0; SS_ref_db.z_em[2] = 0.0; SS_ref_db.bounds_ref[2][0] = 0.0; SS_ref_db.bounds_ref[2][1] = 0.0; }
 
 
     return SS_ref_db;
@@ -4668,6 +4970,7 @@ SS_ref G_SS_sb24_nal_function(SS_ref SS_ref_db, char* research_group, int EM_dat
         for (int j = 0; j < SS_ref_db.n_em; j++){
             SS_ref_db.mu_array[FD][j] = SS_ref_db.gbase[j];
         }
+        store_FD_interactions(&SS_ref_db, FD);
     }
 
     for (int j = 0; j < SS_ref_db.n_em; j++){

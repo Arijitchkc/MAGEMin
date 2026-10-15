@@ -3,7 +3,7 @@
  **   Project      : MAGEMin
  **   License      : GNU GENERAL PUBLIC LICENSE Version 3, 29 June 2007
  **   Developers   : Nicolas Riel, Boris Kaus
- **   Contributors : Nickolas B. Moccetti, Dominguez, H., Assunção J., Green E., Berlie N., and Rummel L.
+ **   Contributors : Moccetti, N. B., Dominguez, H., Assunção J., Green E., Dolejš, D., Berlie N., and Rummel L.
  **   Organization : Institute of Geosciences, Johannes-Gutenberg University, Mainz
  **   Contact      : nriel[at]uni-mainz.de, kaus[at]uni-mainz.de
  **
@@ -57,6 +57,7 @@
 #include "phase_update_function.h"
 #include "all_solution_phases.h"
 #include "MAGEMin.h"
+#include "TC_database/NS_opt_function.h"
 
 /** 
   Main routine
@@ -293,8 +294,14 @@ int runMAGEMin(			int    argc,
 	if (gv.output_matlab >= 1){
 		mergeParallel_matlab(gv);
 	}
-	/* free memory allocated to solution and pure phases */
-	FreeDatabases(gv, DB, z_b);
+	/* free memory allocated to the input file data, if one was provided (must run
+	   before FreeDatabases, which frees gv.File itself) */
+	if (strcmp( gv.File, "none") != 0){
+		free_input_data(input_data, gv.n_points);
+	}
+
+	/* free memory allocated to solution and pure phases, and to the simplex levelling structures */
+	FreeDatabases(gv, DB, z_b, &splx_data);
 
 	/* print the time */
 	u = clock() - u; 
@@ -382,6 +389,30 @@ int runMAGEMin(			int    argc,
 								gv,
 								SS_ref_db						);
 	}
+	else if ( strcmp(gv.research_group, "gh") 	== 0 ){
+		gv = init_em_db_gh(		EM_database,
+								z_b,											/** bulk rock informations 			*/
+								gv,												/** global variables (e.g. Gamma) 	*/
+								PP_ref_db						);
+
+		/* Calculate solution phase data at given P-T conditions (G0 based on G0 of endmembers) */
+		gv = init_ss_db_gh(		EM_database,
+								z_b,
+								gv,
+								SS_ref_db						);
+	}
+	else if ( strcmp(gv.research_group, "br") 	== 0 ){
+		gv = init_em_db_br(		EM_database,
+								z_b,											/** bulk rock informations 			*/
+								gv,												/** global variables (e.g. Gamma) 	*/
+								PP_ref_db						);
+
+		/* Calculate solution phase data at given P-T conditions (G0 based on G0 of endmembers) */
+		gv = init_ss_db_br(		EM_database,
+								z_b,
+								gv,
+								SS_ref_db						);
+	}
 
 
 
@@ -389,7 +420,45 @@ int runMAGEMin(			int    argc,
 }
 
 
-/** 
+static atomic_int ds62_placeholder_warned = 0;
+
+static void warn_ds62_placeholder_phases(	global_variable 	 gv,
+											SS_ref  			*SS_ref_db		){
+
+	static const char *ds62_placeholder_ss[] = {"liq_S26", "liq_G25w", "liqmn_R27", "fl_G25"};
+	const int n_placeholder = sizeof(ds62_placeholder_ss) / sizeof(ds62_placeholder_ss[0]);
+
+	if (gv.verbose == -1 || gv.EM_database != 8 || gv.EM_dataset != 62 || strcmp(gv.research_group, "tc") != 0){
+		return;
+	}
+	if (atomic_load_explicit(&ds62_placeholder_warned, memory_order_relaxed) != 0){
+		return;
+	}
+
+	char active[64] = "";
+	for (int iss = 0; iss < gv.len_ss; iss++){
+		if (SS_ref_db[iss].ss_flags[0] != 1){ continue; }
+		for (int k = 0; k < n_placeholder; k++){
+			if (strcmp(gv.SS_list[iss], ds62_placeholder_ss[k]) == 0){
+				if (active[0] != '\0'){ strcat(active, ", "); }
+				strcat(active, ds62_placeholder_ss[k]);
+			}
+		}
+	}
+	if (active[0] == '\0'){
+		return;
+	}
+	if (atomic_exchange_explicit(&ds62_placeholder_warned, 1, memory_order_relaxed) != 0){
+		return;
+	}
+	fprintf(stderr, "\n MAGEMin WARNING: solution phase(s) %s active with the \"all\" database and dataset ds62.\n", active);
+	fprintf(stderr, " These models are calibrated for ds633+ and rely on liquid end-members (eskL, hemL, ruL) absent from ds62;\n");
+	fprintf(stderr, " ds633 placeholder values are used for them. Results involving these phases are not thermodynamically consistent.\n");
+	fprintf(stderr, " Deactivate them, or use dataset ds633 or newer. (This warning is printed once per session.)\n\n");
+}
+
+
+/**
   Compute stable equilibrium at given Pressure, Temperature and bulk-rock composition
 */
 	global_variable ComputeEquilibrium_Point( 	int 				 EM_database,
@@ -430,11 +499,50 @@ int runMAGEMin(			int    argc,
 
 		SB_PC_init(	                    		PC_read,
 												gv								);
-	}								
+	}
+	else if (strcmp(gv.research_group, "gh") 	== 0 ){
+		GH_SS_objective_init_function(			SS_objective,
+												gv								);
+
+		GH_NLopt_opt_init(	        			NLopt_opt,
+												gv								);
+
+		GH_PC_init(	                    		PC_read,
+												gv								);
+
+		GH_P2X_init(	                		P2X_read,
+												gv								);
+		/* "sb" still has no P2X_read map: every codepath that reads it is
+		   gated to exclude "sb" explicitly - see simplex_levelling.c */
+	}
+	else if (strcmp(gv.research_group, "br") 	== 0 ){
+		BR_SS_objective_init_function(			SS_objective,
+												gv								);
+
+		BR_NLopt_opt_init(	        			NLopt_opt,
+												gv								);
+
+		BR_PC_init(	                    		PC_read,
+												gv								);
+
+		BR_P2X_init(	                		P2X_read,
+												gv								);
+	}
+
+	/* DEW warm start: SS_ref_db is allocated once for the whole run (InitializeDatabases,
+	   called before the point loop) and reused across every point, so a stale
+	   dew_warm_ok==1 left over from the PREVIOUS point would wrongly let this point's very
+	   first outer iteration skip the full multistart grid and warm-start from a different
+	   point's converged composition. Cross-point continuity is not trusted here (P-T-X can
+	   jump arbitrarily between points); only within-point, across-outer-iteration continuity
+	   is - see NLopt_opt_DEW_function. */
+	for (int iss = 0; iss < gv.len_ss; iss++){ SS_ref_db[iss].dew_warm_ok = 0; }
+
+	warn_ds62_placeholder_phases(gv, SS_ref_db);
 
 	/****************************************************************************************/
 	/**                                   LEVELLING                                        **/
-	/****************************************************************************************/	
+	/****************************************************************************************/
 	// leveling mode = 0 is default, without using initial guess
 	// leveling mode = 1 uses initial guess
 	if (gv.leveling_mode == 0){
@@ -567,7 +675,9 @@ int runMAGEMin(			int    argc,
 		for (int i = 0; i < gv.len_cp; i++){ 
 			if (cp[i].ss_flags[1] == 1){
 				gv.n_ss_array[cp[i].id] += 1;
-				if (strcmp( gv.SS_list[cp[i].id], "liq")  == 0){
+				if (strcmp( gv.SS_list[cp[i].id], "liq")  == 0
+				 || strcmp( gv.SS_list[cp[i].id], "liq_W14") == 0 || strcmp( gv.SS_list[cp[i].id], "liq_G16") == 0
+				 || strcmp( gv.SS_list[cp[i].id], "liq_G25w") == 0 || strcmp( gv.SS_list[cp[i].id], "liqmn_R27") == 0 || strcmp( gv.SS_list[cp[i].id], "liq_S26") == 0){
 					ig_liq += cp[i].ss_n;
 					n_liq  += 1;
 				}
@@ -685,6 +795,13 @@ int runMAGEMin(			int    argc,
 		printf("  Wrong solver option: should be 0 (legacy) or 1 (PGE & legacy)");
 	}
 
+	gv = final_Newton(					z_b,
+										gv,
+										PC_read,
+										PP_ref_db,
+										SS_ref_db,
+										cp						);
+
 	if (gv.verbose == 1){
 		gv = check_PC_driving_force( 	z_b,							/** bulk rock constraint 			*/ 
 										gv,								/** global variables (e.g. Gamma) 	*/
@@ -731,6 +848,109 @@ int runMAGEMin(			int    argc,
 	return gv;
 }
 
+	global_variable ComputeEquilibrium_FromState(	bulk_info 	 		 z_b,
+													global_variable 	 gv,
+													PP_ref  			*PP_ref_db,
+													SS_ref  			*SS_ref_db,
+													csd_phase_set  		*cp,
+													int 				 n_ss,
+													int 				*ss_ids,
+													double 				*ss_x,
+													double 				*ss_n,
+													int 				 n_pp,
+													int 				*pp_ids,
+													double 				*pp_n,
+													double 				*gam				){
+
+	PC_type 								PC_read[gv.len_ss];
+
+	if (strcmp(gv.research_group, "tc") 	== 0 ){
+		TC_PC_init(	                    		PC_read,
+												gv								);
+	}
+	else if (strcmp(gv.research_group, "sb") 	== 0 ){
+		SB_PC_init(	                    		PC_read,
+												gv								);
+	}
+	else{
+		gv.status = -1;
+		return gv;
+	}
+
+	gv.fn_from_state = 1;
+	gv.status 		 = 0;
+	gv.div 			 = 0;
+	for (int j = 0; j < gv.len_ox; j++){
+		gv.gam_tot[j] 	= gam[j];
+		gv.gam_tot_0[j] = gam[j];
+	}
+
+	int off = 0;
+	for (int q = 0; q < n_ss && q < gv.max_n_cp; q++){
+		int ph_id = ss_ids[q];
+
+		for (int k = 0; k < SS_ref_db[ph_id].n_xeos; k++){
+			SS_ref_db[ph_id].iguess[k] = ss_x[off + k];
+		}
+		off += SS_ref_db[ph_id].n_xeos;
+
+		SS_ref_db[ph_id] = rotate_hyperplane(			gv,
+														SS_ref_db[ph_id]				);
+		SS_ref_db[ph_id] = PC_function(					gv,
+														PC_read,
+														SS_ref_db[ph_id],
+														z_b,
+														ph_id							);
+		SS_ref_db[ph_id] = SS_UPDATE_function(			gv,
+														SS_ref_db[ph_id],
+														z_b,
+														gv.SS_list[ph_id]				);
+
+		strcpy(cp[q].name,gv.SS_list[ph_id]);
+		cp[q].split 		= 0;
+		cp[q].id 			= ph_id;
+		cp[q].n_xeos		= SS_ref_db[ph_id].n_xeos;
+		cp[q].n_em			= SS_ref_db[ph_id].n_em;
+		cp[q].n_sf			= SS_ref_db[ph_id].n_sf;
+		cp[q].ss_flags[0] 	= 1;
+		cp[q].ss_flags[1] 	= 1;
+		cp[q].ss_flags[2] 	= 0;
+		for (int k = 0; k < SS_ref_db[ph_id].n_xeos; k++){
+			cp[q].xeos[k]   = SS_ref_db[ph_id].iguess[k];
+			cp[q].dguess[k] = SS_ref_db[ph_id].iguess[k];
+		}
+		copy_to_cp(										q,
+														ph_id,
+														gv,
+														SS_ref_db,
+														cp								);
+		cp[q].ss_n 			= ss_n[q];
+
+		gv.n_solvi[ph_id]  += 1;
+		gv.len_cp 		   += 1;
+		gv.n_cp_phase 	   += 1;
+		gv.n_phase 		   += 1;
+	}
+
+	for (int q = 0; q < n_pp; q++){
+		gv.pp_flags[pp_ids[q]][1] 	= 1;
+		gv.pp_flags[pp_ids[q]][2] 	= 0;
+		gv.pp_n[pp_ids[q]] 			= pp_n[q];
+		gv.n_pp_phase 			   += 1;
+		gv.n_phase 				   += 1;
+	}
+
+	gv = final_Newton(								z_b,
+													gv,
+													PC_read,
+													PP_ref_db,
+													SS_ref_db,
+													cp								);
+	if (gv.fn_status <= 0){ gv.status = -1; }
+
+	return gv;
+}
+
 
 /** 
   	Get command line options
@@ -769,6 +989,15 @@ global_variable ReadCommandLineOptions(	global_variable 	 gv,
 		{ "mpSp",  		ko_optional_argument, 327 },
 		{ "mpIlm",  	ko_optional_argument, 328 },
 		{ "ig_ed",  	ko_optional_argument, 329 },
+		{ "SB_eos",  	ko_optional_argument, 330 },
+		{ "SB_eos_cor", ko_optional_argument, 331 },
+		{ "DEW_solve_algorithm", ko_optional_argument, 333 },
+		{ "warm_start", ko_optional_argument, 334 },
+		{ "n_mu_fix",   ko_optional_argument, 335 },
+		{ "mu_fix_idx", ko_optional_argument, 336 },
+		{ "mu_fix_val", ko_optional_argument, 337 },
+		{ "ss_solver",  ko_optional_argument, 338 },
+		{ "final_Newton_step", ko_optional_argument, 339 },
     	{ NULL, 0, 0 }
 	};
 	ketopt_t opt = KETOPT_INIT;
@@ -786,8 +1015,31 @@ global_variable ReadCommandLineOptions(	global_variable 	 gv,
 		else if (c == 324){ gv.mbIlm   			= atoi(opt.arg);			} 
 		else if (c == 327){ gv.mpSp   			= atoi(opt.arg);			} 	
 		else if (c == 328){ gv.mpIlm   			= atoi(opt.arg);			} 		
-		else if (c == 329){ gv.ig_ed   			= atoi(opt.arg);			} 		
-		else if (c == 316){ gv.solver   		= atoi(opt.arg);			}																		
+		else if (c == 329){ gv.ig_ed   			= atoi(opt.arg);			}
+		else if (c == 330){ gv.SB_eos   			= atoi(opt.arg);			}
+		else if (c == 331){ gv.SB_eos_cor			= atoi(opt.arg);			}
+		else if (c == 333){ gv.DEW_solve_algorithm	= atoi(opt.arg);			}
+		else if (c == 334){ gv.warm_start			= atoi(opt.arg);			}
+		else if (c == 335){ gv.n_mu_fix			= atoi(opt.arg);			}
+		else if (c == 336){
+			char *p = strtok(opt.arg,",");
+			size_t i = 0;
+			while(p && i<(size_t)gv.maxlen_ox) {
+					gv.mu_fix_idx[i++] = atoi(p);
+					p = strtok(NULL, ",");
+			}
+		}
+		else if (c == 337){
+			char *p = strtok(opt.arg,",");
+			size_t i = 0;
+			while(p && i<(size_t)gv.maxlen_ox) {
+					gv.mu_fix_val[i++] = strtold(p,NULL);
+					p = strtok(NULL, ",");
+			}
+		}
+		else if (c == 316){ gv.solver   		= atoi(opt.arg);			}
+		else if (c == 338){ gv.ss_solver   		= atoi(opt.arg);			}																		
+		else if (c == 339){ gv.final_Newton_step = atoi(opt.arg);			}
 		else if (c == 318){ gv.output_matlab   	= atoi(opt.arg); 			}																		
 		else if (c == 304){ gv.n_points 		= atoi(opt.arg); 	 		}
 		else if (c == 305){ gv.test  			= atoi(opt.arg); 			}
@@ -795,39 +1047,39 @@ global_variable ReadCommandLineOptions(	global_variable 	 gv,
 		else if (c == 306){ z_b->T				= strtold(opt.arg,NULL)+273.15;}
 		else if (c == 307){ z_b->P 				= strtold(opt.arg,NULL); 	}
 
-		else if (c == 312){ strcpy(gv.research_group,opt.arg); 				}
-		else if (c == 319){ strcpy(gv.buffer,opt.arg);						} 	
-		else if (c == 303){ strcpy(gv.File,opt.arg);		 				}
-		else if (c == 302){ strcpy(gv.db,opt.arg);		 					}
-		else if (c == 317){ strcpy(gv.sys_in,opt.arg);		 				}
+		else if (c == 312){ snprintf(gv.research_group, len_gv_research_group, "%s", opt.arg);	}
+		else if (c == 319){ snprintf(gv.buffer, len_gv_buffer, "%s", opt.arg);					} 	
+		else if (c == 303){ snprintf(gv.File, len_gv_file, "%s", opt.arg);		 				}
+		else if (c == 302){ snprintf(gv.db, len_gv_db, "%s", opt.arg);		 					}
+		else if (c == 317){ snprintf(gv.sys_in, len_gv_sys_in, "%s", opt.arg);		 			}
 
 		else if (c == 310){
 			char *p = strtok(opt.arg,",");
 			size_t i = 0;
-			while(p && i<11) {
+			while(p && i<(size_t)gv.maxlen_ox) {
 					gv.arg_gamma[i++] = atof(p);
 					p = strtok(NULL, ",");
 			}
 			if (gv.verbose == 1){
 				printf("--Gam  	      : Gamma           = ");
-				for (int j = 0; j < 11; j++){
-					printf("%g ", gv.arg_gamma[j]);	
-				} 
+				for (int j = 0; j < gv.maxlen_ox; j++){
+					printf("%g ", gv.arg_gamma[j]);
+				}
 				printf(" dG \n");
 			}
 		 }
 		else if (c == 311){
 			char *p  = strtok(opt.arg,",");
 			size_t i = 0;
-			while(p && i<11) {
+			while(p && i<(size_t)gv.maxlen_ox) {
 					gv.arg_bulk[i++] = atof(p);
 					p = strtok(NULL, ",");
 			}
 			if (gv.verbose == 1){
 				printf("--Bulk  	 : Bulk         = ");
-				for (int j = 0; j < 11; j++){
-					printf("%g ", gv.arg_bulk[j]);	
-				} 
+				for (int j = 0; j < gv.maxlen_ox; j++){
+					printf("%g ", gv.arg_bulk[j]);
+				}
 				printf(" \n");
 			}
 		 }
@@ -844,7 +1096,7 @@ global_variable SetupDatabase(			global_variable 	 gv,
 
 
 	// checks if research group is correct, otherwise sets to default
-	if 	( strcmp(gv.research_group, "tc") 	== 0 || strcmp(gv.research_group, "sb") == 0 ){
+	if 	( strcmp(gv.research_group, "tc") 	== 0 || strcmp(gv.research_group, "sb") == 0 || strcmp(gv.research_group, "gh") == 0 || strcmp(gv.research_group, "br") == 0 ){
 	}
 	else{
 		printf(" WARNING: Unknown research group '%s' has been provided, setting default one 'tc'\n",gv.research_group);
@@ -879,6 +1131,9 @@ global_variable SetupDatabase(			global_variable 	 gv,
 		else if (strcmp(gv.db, "ig") 	== 0){
 			gv.EM_database = 2;
 		}
+		else if (strcmp(gv.db, "igd") 	== 0){
+			gv.EM_database = 22;
+		}
 		else if (strcmp(gv.db, "igad") 	== 0){
 			gv.EM_database = 3;
 		}
@@ -893,6 +1148,9 @@ global_variable SetupDatabase(			global_variable 	 gv,
 		}
 		else if (strcmp(gv.db, "mpe") 	== 0){
 			gv.EM_database = 7;
+		}
+		else if (strcmp(gv.db, "all") 	== 0){
+			gv.EM_database = 8;
 		}
 		else {
 			printf(" No or wrong database acronym has been provided, using default (metapelite [mp])\n");
@@ -935,9 +1193,60 @@ global_variable SetupDatabase(			global_variable 	 gv,
 			gv.EM_database = 0;
 		}
 
+		SB_set_eos_formulation(gv.SB_eos);
+		SB_set_eos_correction(gv.SB_eos_cor);
+	}
+	else if( strcmp(gv.research_group, "gh") == 0 ){
+		/* Beta testt: solved via the same LP-only path as "sb" */
+		if (gv.solver != 0){
+			gv.solver = 0;
+			if (gv.verbose == 1){
+				printf(" INFO: Solver option is not available for the 'gh' (Ghiorso/MELTS) database -> LP is used\n");
+			}
+		}
+
+		gv.EM_dataset = 1;
+
+		if 		(strcmp(gv.db, "xMELTS") 	== 0){
+			gv.EM_database = 0;
+		}
+		else if (strcmp(gv.db, "rMELTS") 	== 0){
+			gv.EM_database = 1;
+		}
+		else if (strcmp(gv.db, "pMELTS") 	== 0){
+			gv.EM_database = 2;
+		}
+		else {
+			if (gv.verbose == 1){
+				printf(" No or wrong database acronym has been provided, using default Ghiorso xMELTS([xMELTS])\n");
+			}
+			strcpy(gv.db, "xMELTS");
+			gv.EM_database = 0;
+		}
+	}
+	else if( strcmp(gv.research_group, "br") == 0 ){
+		if (gv.solver != 0){
+			gv.solver = 0;
+			if (gv.verbose == 1){
+				printf(" INFO: Solver option is not available for the 'br' (Berman) database -> LP is used\n");
+			}
+		}
+
+		gv.EM_dataset = 1;
+
+		if 		(strcmp(gv.db, "po") 	== 0){
+			gv.EM_database = 0;
+		}
+		else {
+			if (gv.verbose == 1){
+				printf(" No or wrong database acronym has been provided, using default Pourteau et al. 2014 ([po])\n");
+			}
+			strcpy(gv.db, "po");
+			gv.EM_database = 0;
+		}
 	}
 
-	if (gv.verbose == 2){	
+	if (gv.verbose == 2){
 		printf("\n");	
 		printf("--verbose     : verbose              = %i \n", 	 	   		gv.verbose			);
 		printf("--rg          : research group       = %s \n", 	 	  		gv.research_group	);
@@ -955,6 +1264,8 @@ global_variable SetupDatabase(			global_variable 	 gv,
 		printf("--buffer_n    : buffer_n             = %f \n", 				gv.buffer_n			);
 
 		printf("--solver      : solver               = %i \n", 	 	   		gv.solver			);
+		printf("--ss_solver   : ss_solver            = %i \n", 	 	   		gv.ss_solver		);
+		printf("--final_Newton_step: final_Newton_step = %i \n", 	 	   	gv.final_Newton_step	);
 
 		printf("--limitCaOpx  : limitCaOpx           = %i \n", 	 	   		gv.limitCaOpx		);
 		printf("--CaOpxLim    : CaOpxLim             = %f \n", 	 	   		gv.CaOpxLim			);
@@ -964,6 +1275,8 @@ global_variable SetupDatabase(			global_variable 	 gv,
 		printf("--mpSp        : mpSp                 = %i \n", 	 	   		gv.mpSp				);
 		printf("--mpIlm       : mpIlm                = %i \n", 	 	   		gv.mpIlm			);
 		printf("--ig_ed       : ig_ed                = %i \n", 	 	   		gv.ig_ed			);
+		printf("--DEW_solve_algorithm: DEW_solve_algorithm = %i \n", 	 	   	gv.DEW_solve_algorithm	);
+		printf("--warm_start  : warm_start            = %i \n", 	 	   		gv.warm_start		);
 
 		printf("--out_matlab  : out_matlab           = %i \n", 	 	   		gv.output_matlab	);
 	}
@@ -978,7 +1291,7 @@ Databases InitializeDatabases(	global_variable gv,
 	Databases 	DB;
 
 	/* Allocate pure-phase database (to get gbase, comp and factor) 				*/
-	DB.PP_ref_db = malloc ((gv.len_pp) 		* sizeof(PP_ref)); 
+	DB.PP_ref_db = malloc ((gv.len_pp) 		* sizeof(PP_ref));
 	
 	/** 
 		Allocate memory for each solution phase according to their specificities (n_em, sf etc) 
@@ -995,8 +1308,16 @@ Databases InitializeDatabases(	global_variable gv,
 		SB_SS_init(	        	    SS_init,
 									gv				);
 	}
+	else if (strcmp(gv.research_group, "gh") == 0 ){
+		GH_SS_init(	        	    SS_init,
+									gv				);
+	}
+	else if (strcmp(gv.research_group, "br") == 0 ){
+		BR_SS_init(	        	    SS_init,
+									gv				);
+	}
 
-	DB.SS_ref_db = malloc ((gv.len_ss) 		* sizeof(SS_ref)); 
+	DB.SS_ref_db = calloc ((gv.len_ss), 		  sizeof(SS_ref));
 	for (int iss = 0; iss < gv.len_ss; iss++){
 
 		DB.SS_ref_db[iss] = G_SS_init_EM_function(		SS_init,	
@@ -1004,6 +1325,15 @@ Databases InitializeDatabases(	global_variable gv,
 														DB.SS_ref_db[iss],
 														gv.SS_list[iss], 
 														gv						);
+	}
+
+	if (strcmp(gv.research_group, "tc") == 0){
+		TC_NS_init(										gv,
+														DB.SS_ref_db			);
+	}
+	else if (strcmp(gv.research_group, "sb") == 0){
+		SB_NS_init(										gv,
+														DB.SS_ref_db			);
 	}
 
 	/* Allocate memory of the considered set of phases 								*/
@@ -1024,43 +1354,22 @@ Databases InitializeDatabases(	global_variable gv,
 	else if (strcmp(gv.research_group, "sb") == 0){
 		DB.EM_names  =	get_EM_DB_names_sb(		gv									);
 	}
+	else if (strcmp(gv.research_group, "gh") == 0){
+		DB.EM_names  =	get_EM_DB_names_gh(		gv									);
+	}
+	else if (strcmp(gv.research_group, "br") == 0){
+		DB.EM_names  =	get_EM_DB_names_br(		gv									);
+	}
 
 
-	/* Endmember names */
-	DB.FS_names  =	get_FS_DB_names(		gv									);
+	/* DEW2019 aqueous species names */
+	DB.DEW_names =	get_DEW_DB_names(		gv									);
 
 	/* Create endmember Hashtable */
-	EM2id *p_s, *tmp_p;
-	EM_db EM_return;
-	int n_em_db = gv.n_em_db;
-    for (int i = 0; i < n_em_db; ++i) {
-		char EM_name[20];
-        p_s = (EM2id *)malloc(sizeof *p_s);
-        strcpy(p_s->EM_tag, DB.EM_names[i]);
-        p_s->id = i;
-        HASH_ADD_STR( EM, EM_tag, p_s );
-    }
+	register_EM_table(gv.research_group, gv.EM_dataset, DB.EM_names, gv.n_em_db);
 
-	/* Create pure-phase hashtable */
-	PP2id *pp_s, *tmp_pp;
-    for (int i = 0; i < sizeof(gv.PP_list); ++i) {
-        pp_s = (PP2id *)malloc(sizeof *pp_s);
-        strcpy(pp_s->PP_tag, gv.PP_list[i]);
-        pp_s->id = i;
-        HASH_ADD_STR( PP, PP_tag, pp_s );
-    }
-
-	/* Create fluid species Hashtable */
-	FS2id *fs_s, *tmp_fs;
-	FS_db FS_return;
-	int n_fs_db = gv.n_fs_db;
-    for (int i = 0; i < n_fs_db; ++i) {
-		char EM_name[20];
-        fs_s = (FS2id *)malloc(sizeof *fs_s);
-        strcpy(fs_s->FS_tag, DB.FS_names[i]);
-        fs_s->id = i;
-        HASH_ADD_STR( FS, FS_tag, fs_s );
-    }
+	/* Create DEW2019 aqueous species Hashtable */
+	register_DEW_table(DB.DEW_names, gv.n_dew_db);
 
 	return DB;
 }
@@ -1068,9 +1377,10 @@ Databases InitializeDatabases(	global_variable gv,
 /** 
   Free the memory associated with the databases
 **/
-void FreeDatabases(		global_variable gv, 
+void FreeDatabases(		global_variable gv,
 						Databases 		DB,
-						bulk_info 	 	z_b			){
+						bulk_info 	 	z_b,
+						simplex_data   *splx_data	){
 	int i, j, n_cat, n_xeos, n_em, n_sf, n_ox, n_pc, n_Ppc, n_cp, sym, ndif, pp, ss;
 
 	/*  ==================== SP ==============================  */
@@ -1089,16 +1399,20 @@ void FreeDatabases(		global_variable gv,
 		if  (DB.sp[0].PP[i].Comp_apfu		!=NULL)  free( DB.sp[0].PP[i].Comp_apfu		);	
 	}
 
+	int n_max_pc_free = (gv.len_ox*3 > gv.max_ss_size_cp) ? gv.len_ox*3 : gv.max_ss_size_cp;
+
 	for ( i = 0; i < n_ox; i++){
-		if  (DB.sp[0].SS[i].Comp			!=NULL)  free( DB.sp[0].SS[i].Comp 			);	
-		if  (DB.sp[0].SS[i].Comp_wt			!=NULL)  free( DB.sp[0].SS[i].Comp_wt 		);	
-		if  (DB.sp[0].SS[i].Comp_apfu		!=NULL)  free( DB.sp[0].SS[i].Comp_apfu		);	
-		if  (DB.sp[0].SS[i].compVariables	!=NULL)  free( DB.sp[0].SS[i].compVariables );	
-		if  (DB.sp[0].SS[i].siteFractions	!=NULL)  free( DB.sp[0].SS[i].siteFractions );	
-		if  (DB.sp[0].SS[i].emFrac			!=NULL)  free( DB.sp[0].SS[i].emFrac 		);	
-		if  (DB.sp[0].SS[i].emFrac_wt		!=NULL)  free( DB.sp[0].SS[i].emFrac_wt 	);	
-		if  (DB.sp[0].SS[i].emChemPot		!=NULL)  free( DB.sp[0].SS[i].emChemPot 	);	
-		for ( j = 0; j < n_ox*3; j++){
+		if  (DB.sp[0].SS[i].Comp			!=NULL)  free( DB.sp[0].SS[i].Comp 			);
+		if  (DB.sp[0].SS[i].Comp_wt			!=NULL)  free( DB.sp[0].SS[i].Comp_wt 		);
+		if  (DB.sp[0].SS[i].Comp_apfu		!=NULL)  free( DB.sp[0].SS[i].Comp_apfu		);
+		if  (DB.sp[0].SS[i].compVariables	!=NULL)  free( DB.sp[0].SS[i].compVariables );
+		if  (DB.sp[0].SS[i].siteFractions	!=NULL)  free( DB.sp[0].SS[i].siteFractions );
+		if  (DB.sp[0].SS[i].emFrac			!=NULL)  free( DB.sp[0].SS[i].emFrac 		);
+		if  (DB.sp[0].SS[i].emFrac_wt		!=NULL)  free( DB.sp[0].SS[i].emFrac_wt 	);
+		if  (DB.sp[0].SS[i].emChemPot		!=NULL)  free( DB.sp[0].SS[i].emChemPot 	);
+		if  (DB.sp[0].SS[i].molality		!=NULL)  free( DB.sp[0].SS[i].molality 	);
+		if  (DB.sp[0].SS[i].activity		!=NULL)  free( DB.sp[0].SS[i].activity 	);
+		for ( j = 0; j < n_max_pc_free; j++){
 			if  (DB.sp[0].SS[i].compVariablesNames[j]	!=NULL)  free( DB.sp[0].SS[i].compVariablesNames[j] 	);	
 			if  (DB.sp[0].SS[i].siteFractionsNames[j]	!=NULL)  free( DB.sp[0].SS[i].siteFractionsNames[j] 	);	
 			if  (DB.sp[0].SS[i].emNames[j]				!=NULL)  free( DB.sp[0].SS[i].emNames[j] 				);	
@@ -1120,6 +1434,7 @@ void FreeDatabases(		global_variable gv,
 		if  (DB.sp[0].mSS[i].p_Ppc			!=NULL)  free( DB.sp[0].mSS[i].p_Ppc		);
 		if  (DB.sp[0].mSS[i].mu_Ppc			!=NULL)  free( DB.sp[0].mSS[i].mu_Ppc		);
 		if  (DB.sp[0].mSS[i].xeos_Ppc		!=NULL)  free( DB.sp[0].mSS[i].xeos_Ppc		);
+		if  (DB.sp[0].mSS[i].info			!=NULL)  free( DB.sp[0].mSS[i].info			);
 		if  (DB.sp[0].mSS[i].ph_name		!=NULL)  free( DB.sp[0].mSS[i].ph_name		);
 		if  (DB.sp[0].mSS[i].ph_type		!=NULL)  free( DB.sp[0].mSS[i].ph_type		);
 	}
@@ -1131,6 +1446,7 @@ void FreeDatabases(		global_variable gv,
 	free(DB.sp[0].oxides);
 	free(DB.sp[0].elements);
 	free(DB.sp[0].ph);
+	free(DB.sp[0].sol_name);
 
 	free(DB.sp[0].bulk);
 	free(DB.sp[0].gamma);
@@ -1182,11 +1498,6 @@ void FreeDatabases(		global_variable gv,
 	for (i = 0; i < n_em_db; i++) {
 		free(DB.EM_names[i]);
 	}
-	int n_fs_db = gv.n_fs_db;
-	for (i = 0; i < n_fs_db; i++) {
-		free(DB.FS_names[i]);
-	}
-
 	/*  ==================== SS_ref_db ==============================  */
 	ndif 	= gv.n_Diff;
 	n_Ppc  	= gv.n_Ppc;
@@ -1197,6 +1508,8 @@ void FreeDatabases(		global_variable gv,
 		n_em 	= DB.SS_ref_db[i].n_em;
 		n_sf 	= DB.SS_ref_db[i].n_sf;
 		n_xeos 	= DB.SS_ref_db[i].n_xeos;
+
+		NS_free(&DB.SS_ref_db[i]);
 
 		if (DB.SS_ref_db[i].n_cat > 0){
 			n_cat = DB.SS_ref_db[i].n_cat;
@@ -1250,6 +1563,12 @@ void FreeDatabases(		global_variable gv,
 		}
 
 		for (j = 0; j < ndif; j++) {	free(DB.SS_ref_db[i].mu_array[j]);}	free(DB.SS_ref_db[i].mu_array);
+		if (DB.SS_ref_db[i].W_array != NULL){
+			for (j = 0; j < ndif; j++) {	free(DB.SS_ref_db[i].W_array[j]);}	free(DB.SS_ref_db[i].W_array);
+		}
+		if (DB.SS_ref_db[i].v_array != NULL){
+			for (j = 0; j < ndif; j++) {	free(DB.SS_ref_db[i].v_array[j]);}	free(DB.SS_ref_db[i].v_array);
+		}
 
 		free(DB.SS_ref_db[i].G_pc);
 		free(DB.SS_ref_db[i].DF_pc);
@@ -1271,7 +1590,7 @@ void FreeDatabases(		global_variable gv,
 		free(DB.SS_ref_db[i].xeos_pc);
 
 		/** free Ppc */
-		for (j = 0; j < n_em; j++){ 
+		for (j = 0; j < n_em; j++){
 			free(DB.SS_ref_db[i].EM_list[j]);
 			free(DB.SS_ref_db[i].eye[j]);
 			free(DB.SS_ref_db[i].Comp[j]);
@@ -1282,6 +1601,11 @@ void FreeDatabases(		global_variable gv,
 		free(DB.SS_ref_db[i].eye);
 		free(DB.SS_ref_db[i].Comp);
 		free(DB.SS_ref_db[i].dp_dx);
+
+		if (strcmp(gv.SS_list[i], "DEW") == 0 || strcmp(gv.SS_list[i], "DEW_S24") == 0){
+			for (j = 0; j < n_em; j++){ free(DB.SS_ref_db[i].mu_comp[j]); }
+			free(DB.SS_ref_db[i].mu_comp);
+		}
 
 		for (j = 0; j < n_xeos; j++){ 
 			free(DB.SS_ref_db[i].CV_list[j]);
@@ -1313,16 +1637,27 @@ void FreeDatabases(		global_variable gv,
 	}
 
 	/*  ==================== GV ==============================  */
-	/* It seems like unwrapped pointers using Julia creates conflicts when de-allocating memory */
-	// free(gv.outpath);
-	// free(gv.version);
-	// free(gv.File);
-	// free(gv.db);
-	// free(gv.sys_in);
-	// free(gv.buffer);	
-	// free(gv.arg_bulk);
-	// free(gv.arg_gamma);
-	// free(gv.bulk_rock);
+	/* Re-enabled 2026-07-19. Root cause of the earlier SIGABRT found: gv.buffer
+	   was being repointed at Julia-GC-owned memory by MAGEMinApp's
+	   refine_MAGEMin (AMR/MAGEMin_utils.jl, "gv[i].buffer = pointer(bufferType)")
+	   instead of being written into in place - freeing that was an invalid
+	   free on memory C never allocated. Fixed on the Julia side (now copies
+	   bytes into gv.buffer's original malloc'd buffer instead of repointing
+	   it), so gv.buffer stays a real, C-owned allocation for its whole
+	   lifetime again, same as the other fields below. None of the other 9
+	   fields are ever repointed like this anywhere in the Julia wrapper/app. */
+	free(gv.outpath);
+	free(gv.version);
+	free(gv.File);
+	free(gv.db);
+	free(gv.sys_in);
+	free(gv.buffer);
+	free(gv.research_group);
+	free(gv.arg_bulk);
+	free(gv.arg_gamma);
+	free(gv.mu_fix_idx);
+	free(gv.mu_fix_val);
+	free(gv.bulk_rock);
 
 	n_ox 	= gv.len_ox;
 	pp 		= gv.len_pp;
@@ -1369,6 +1704,10 @@ void FreeDatabases(		global_variable gv,
 	free(gv.delta_pp_xi);
 
 	free(gv.A_PGE);
+	free(gv.fn_A);
+	free(gv.fn_b);
+	free(gv.fn_ipiv);
+	fn_kkt_free(gv.fn_sys);
 	free(gv.A0_PGE);
 	free(gv.b_PGE);
 	free(gv.cp_id);
@@ -1397,11 +1736,14 @@ void FreeDatabases(		global_variable gv,
 
 	/* ================ final free ============= */
 	free(DB.EM_names);
-	free(DB.FS_names);
 	free(DB.PP_ref_db);
 	free(DB.SS_ref_db);
 	free(DB.sp);
 	free(DB.cp);
+
+	/* ================ simplex levelling ============= */
+	destroy_simplex_A(splx_data);
+	destroy_simplex_B(splx_data);
 }
 
 /** 
@@ -1437,10 +1779,10 @@ void PrintOutput(	global_variable 	gv,
 		printf("\n");
 		printf(" SOL = [G: %.3f] (%i iterations, %.2f ms)\n",gv.G_system,gv.global_ite,time_taken*1000.0);
 		printf(" GAM = [");
-		for (i = 0; i < z_b.nzEl_val; i++){
+		for (i = 0; i < z_b.nzEl_val - 1; i++){
 			printf("%+8f,",gv.gam_tot[z_b.nzEl_array[i]]);
 		}
-		printf("%+8f",gv.gam_tot[z_b.nzEl_val-1]);
+		printf("%+8f",gv.gam_tot[z_b.nzEl_array[z_b.nzEl_val-1]]);
 		printf("]\n\n");
 
 		printf(" Phase : ");
@@ -1466,7 +1808,7 @@ void PrintOutput(	global_variable 	gv,
 				printf(" %.5f ", gv.pp_n[i]);
 			}
 		}
-		printf("\n");	
+		printf("\n");
 	}
 }
 

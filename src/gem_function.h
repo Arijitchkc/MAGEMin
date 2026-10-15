@@ -3,7 +3,7 @@
  **   Project      : MAGEMin
  **   License      : GNU GENERAL PUBLIC LICENSE Version 3, 29 June 2007
  **   Developers   : Nicolas Riel, Boris Kaus
- **   Contributors : Nickolas B. Moccetti, Dominguez, H., Assunção J., Green E., Berlie N., and Rummel L.
+ **   Contributors : Moccetti, N. B., Dominguez, H., Assunção J., Green E., Dolejš, D., Berlie N., and Rummel L.
  **   Organization : Institute of Geosciences, Johannes-Gutenberg University, Mainz
  **   Contact      : nriel[at]uni-mainz.de, kaus[at]uni-mainz.de
  **
@@ -26,6 +26,7 @@ typedef struct PP_refs {
     double  phase_bulkModulus;
     double  phase_cp;			    /** molar cp of the phase                   */
 	double  phase_expansivity;
+    double  phase_compressibility;
 	double  phase_isoTbulkModulus;
 	// double  volume_P0;
 	double  thetaExp;

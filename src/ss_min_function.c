@@ -3,7 +3,7 @@
  **   Project      : MAGEMin
  **   License      : GNU GENERAL PUBLIC LICENSE Version 3, 29 June 2007
  **   Developers   : Nicolas Riel, Boris Kaus
- **   Contributors : Nickolas B. Moccetti, Dominguez, H., Assunção J., Green E., Berlie N., and Rummel L.
+ **   Contributors : Moccetti, N. B., Dominguez, H., Assunção J., Green E., Dolejš, D., Berlie N., and Rummel L.
  **   Organization : Institute of Geosciences, Johannes-Gutenberg University, Mainz
  **   Contact      : nriel[at]uni-mainz.de, kaus[at]uni-mainz.de
  **
@@ -14,7 +14,6 @@ Function to call solution phase Minimization
 
 #include <math.h>
 #include <stdio.h>
-#include <stdlib.h>
 #include <time.h>
 #include <string.h>
 #include <complex.h> 
@@ -28,8 +27,15 @@ Function to call solution phase Minimization
 #include "gem_function.h"
 #include "dump_function.h"
 #include "toolkit.h"
+#include "GH_database/GH_gem_function.h"
 #include "phase_update_function.h"
 #include "all_solution_phases.h"
+#include "TC_database/NS_opt_function.h"
+
+#define LIQ_PC_SYNTH_MAX_DIM 16
+#define PC_SYNTH_MAX_EM 32
+#define MAX_LIQ_PHASES 8
+
 /** 
 Function to update xi and sum_xi during local minimization.
 */
@@ -50,9 +56,9 @@ SS_ref SS_UPDATE_function(		global_variable 	 gv,
 		}
 
 		/* xi calculation (phase fraction expression for PGE) */
-		SS_ref_db.sum_xi 	= 0.0;	
-		for (int i = 0; i < SS_ref_db.n_em; i++){ 
-			SS_ref_db.xi_em[i] = exp(-SS_ref_db.mu[i]/(SS_ref_db.R*SS_ref_db.T));
+		SS_ref_db.sum_xi 	= 0.0;
+		for (int i = 0; i < SS_ref_db.n_em; i++){
+			SS_ref_db.xi_em[i] = exp(fmin(-SS_ref_db.mu[i]/(SS_ref_db.R*SS_ref_db.T), 700.0));
 			SS_ref_db.sum_xi  += SS_ref_db.xi_em[i]*SS_ref_db.p[i]*SS_ref_db.z_em[i];
 		}
 
@@ -67,12 +73,192 @@ SS_ref SS_UPDATE_function(		global_variable 	 gv,
 	else if (strcmp(gv.research_group, "sb") 	== 0 ){
 		SS_ref_db.sf_ok = 1;
 	}
+	else if (strcmp(gv.research_group, "gh") 	== 0 ){
+		SS_ref_db.sf_ok = 1;
+	}
+	else if (strcmp(gv.research_group, "br") 	== 0 ){
+		SS_ref_db.sf_ok = 1;
+	}
 
 	return SS_ref_db;
 };
 
 
-/** 
+/**
+  Convert endmember fractions (p, length SS_ref_db.n_em, in gv.SS_list[ph_id]'s
+  own EM_list order) to compositional variables (xeos), for one solution
+  phase. See ss_min_function.h for the full contract.
+*/
+SS_ref P2X_convert_function(		global_variable 	 gv,
+									SS_ref 				 SS_ref_db,
+									int 				 ph_id,
+									double 				*p,
+									int 				 n_p			){
+
+	if (n_p != SS_ref_db.n_em){
+		printf(" ERROR: P2X_convert_function: '%s' has %d endmembers, got %d fractions\n", gv.SS_list[ph_id], SS_ref_db.n_em, n_p);
+		return SS_ref_db;
+	}
+
+	for (int i = 0; i < n_p; i++){
+		SS_ref_db.p[i] = p[i];
+	}
+
+	/* .bounds is a working copy of .bounds_ref, normally refreshed by
+	   reset_SS() *before* ComputeG0_point() runs (the latter is what
+	   actually computes fresh, correct .bounds_ref values per phase, e.g.
+	   via G_SS_mpe_fsp_function) - harmless in the normal minimization
+	   pipeline (ss_min_LP/ss_min_PGE re-derive .bounds again from .iguess
+	   before ever using it), but this function reads .bounds immediately
+	   (P2X clamps its output against it), so refresh it here to not depend
+	   on caller ordering. */
+	for (int i = 0; i < SS_ref_db.n_xeos; i++){
+		SS_ref_db.bounds[i][0] = SS_ref_db.bounds_ref[i][0];
+		SS_ref_db.bounds[i][1] = SS_ref_db.bounds_ref[i][1];
+	}
+
+	P2X_type P2X_read[gv.len_ss];
+	if 		(strcmp(gv.research_group, "tc") == 0){ TC_P2X_init(P2X_read, gv); }
+	else if (strcmp(gv.research_group, "gh") == 0){ GH_P2X_init(P2X_read, gv); }
+	else if (strcmp(gv.research_group, "br") == 0){ BR_P2X_init(P2X_read, gv); }
+	else{
+		printf(" ERROR: P2X_convert_function: no p->xeos mapping for research_group '%s'\n", gv.research_group);
+		return SS_ref_db;
+	}
+
+	(*P2X_read[ph_id])( &SS_ref_db, gv.bnd_val );
+
+	/* P2X writes directly into .iguess[] (the field PC_convert_function/
+	   PC_function actually reads) - mirror it into .xeos[] too so both
+	   fields agree for callers inspecting either one */
+	for (int i = 0; i < SS_ref_db.n_xeos; i++){
+		SS_ref_db.xeos[i] = SS_ref_db.iguess[i];
+	}
+
+	return SS_ref_db;
+}
+
+/**
+  Given a solution phase's compositional variables (xeos, e.g. from
+  P2X_convert_function) and its endmembers' reference energies at the
+  desired P,T (already computed via ComputeG0_point on z_b/DB.SS_ref_db),
+  compute the phase's Gibbs energy (.df) and full thermodynamic properties
+  (entropy/enthalpy/volume/density/...), matching the same PC_function +
+  SS_UPDATE_function pipeline used internally during a normal minimization.
+  See ss_min_function.h for the full contract.
+*/
+SS_ref PC_convert_function(		global_variable 	 gv,
+									SS_ref 				 SS_ref_db,
+									bulk_info 	 		 z_b,
+									int 				 ph_id			){
+
+	PC_type PC_read[gv.len_ss];
+	if 		(strcmp(gv.research_group, "tc") == 0){ TC_PC_init(PC_read, gv); }
+	else if (strcmp(gv.research_group, "sb") == 0){ SB_PC_init(PC_read, gv); }
+	else if (strcmp(gv.research_group, "gh") == 0){ GH_PC_init(PC_read, gv); }
+	else if (strcmp(gv.research_group, "br") == 0){ BR_PC_init(PC_read, gv); }
+	else{
+		printf(" ERROR: PC_convert_function: no xeos->G mapping for research_group '%s'\n", gv.research_group);
+		return SS_ref_db;
+	}
+
+	SS_ref_db = non_rot_hyperplane(gv, SS_ref_db);
+
+	SS_ref_db = PC_function(		gv,
+									PC_read,
+									SS_ref_db,
+									z_b,
+									ph_id			);
+
+	SS_ref_db = SS_UPDATE_function(	gv,
+										SS_ref_db,
+										z_b,
+										gv.SS_list[ph_id]		);
+
+	return SS_ref_db;
+}
+
+
+/**
+  Given a solution phase's initial compositional-variable guess (xeos) and a
+  caller-supplied Gamma (chemical potential of components, same convention
+  and length gv.len_ox as gv.gam_tot), run MAGEMin's own per-model local
+  minimization (NLopt) for that phase starting from xeos, with its
+  endmembers' reference energies rotated against the supplied Gamma - the
+  same rotate_hyperplane + NLopt_opt + PC_function + SS_UPDATE_function
+  pipeline ss_min_PGE/ss_min_LP run internally during a normal
+  minimization, but for a single phase driven by an externally-supplied
+  Gamma instead of the solver's own, and without restricting the search
+  hypervolume (uses the phase's full bounds_ref). research_group must be
+  "tc". See ss_min_function.h for the full contract.
+*/
+SS_ref LM_convert_function(			global_variable 	 gv,
+									SS_ref 				 SS_ref_db,
+									bulk_info 	 		 z_b,
+									int 				 ph_id,
+									double 				*gamma,
+									int 				 n_gamma,
+									double 				*xeos,
+									int 				 n_xeos			){
+
+	if (strcmp(gv.research_group, "tc") != 0){
+		printf(" ERROR: LM_convert_function: research_group '%s' not supported (only 'tc')\n", gv.research_group);
+		return SS_ref_db;
+	}
+	if (n_gamma != gv.len_ox){
+		printf(" ERROR: LM_convert_function: expected %d Gamma entries (gv.len_ox), got %d\n", gv.len_ox, n_gamma);
+		return SS_ref_db;
+	}
+	if (n_xeos != SS_ref_db.n_xeos){
+		printf(" ERROR: LM_convert_function: '%s' has %d compositional variables, got %d\n", gv.SS_list[ph_id], SS_ref_db.n_xeos, n_xeos);
+		return SS_ref_db;
+	}
+
+	for (int i = 0; i < n_gamma; i++){
+		gv.gam_tot[i] = gamma[i];
+	}
+	for (int i = 0; i < n_xeos; i++){
+		SS_ref_db.iguess[i] = xeos[i];
+	}
+
+	/* full bounds_ref, no restrict_SS_HyperVolume - see P2X_convert_function
+	   for why .bounds needs refreshing here rather than relying on caller
+	   ordering */
+	for (int i = 0; i < SS_ref_db.n_xeos; i++){
+		SS_ref_db.bounds[i][0] = SS_ref_db.bounds_ref[i][0];
+		SS_ref_db.bounds[i][1] = SS_ref_db.bounds_ref[i][1];
+	}
+
+	SS_ref_db = rotate_hyperplane(		gv,
+										SS_ref_db			);
+
+	NLopt_type NLopt_opt[gv.len_ss];
+	TC_NLopt_opt_init(					NLopt_opt,
+										gv					);
+
+	SS_ref_db = (*NLopt_opt[ph_id])(	gv,
+										SS_ref_db			);
+
+	PC_type PC_read[gv.len_ss];
+	TC_PC_init(							PC_read,
+										gv					);
+
+	SS_ref_db = PC_function(			gv,
+										PC_read,
+										SS_ref_db,
+										z_b,
+										ph_id				);
+
+	SS_ref_db = SS_UPDATE_function(		gv,
+										SS_ref_db,
+										z_b,
+										gv.SS_list[ph_id]	);
+
+	return SS_ref_db;
+}
+
+
+/**
 Function to update xi and sum_xi for the considered phases list (during the inner loop of the PGE stage).
 NOTE: When the phase is "liq", the normalization factor is also updated as it depends on the endmember fractions
 */
@@ -89,9 +275,10 @@ csd_phase_set CP_UPDATE_function(		global_variable 	gv,
 			break;
 		}
 	}
-	cp.sum_xi 	= 0.0;	
-	for (int i = 0; i < cp.n_em; i++){ 
-		cp.xi_em[i] = exp(-cp.mu[i]/(SS_ref_db.R*SS_ref_db.T));
+	cp.sum_xi 	= 0.0;
+	for (int i = 0; i < cp.n_em; i++){
+		/* see the matching clamp + comment in SS_UPDATE_function above */
+		cp.xi_em[i] = exp(fmin(-cp.mu[i]/(SS_ref_db.R*SS_ref_db.T), 700.0));
 		cp.sum_xi  += cp.xi_em[i]*cp.p_em[i]*SS_ref_db.z_em[i];
 	}
 
@@ -126,7 +313,7 @@ global_variable split_cp(		global_variable 	 gv,
 			
 			distance 	= euclidean_distance( cp[i].xeos, cp[i].dguess, SS_ref_db[ph_id].n_xeos);
 
-			if (distance > 2.0*gv.SS_PC_stp[ph_id]*pow((double)SS_ref_db[ph_id].n_xeos,0.5) && cp[i].split == 0){
+			if (distance > 2.0*gv.SS_PC_stp[ph_id]*pow((double)SS_ref_db[ph_id].n_xeos,0.5) && cp[i].split == 0 && gv.len_cp < gv.max_n_cp){
 				id_cp 					= gv.len_cp;
 						
 				cp[id_cp].split 		= 1;							/* set split number to one */
@@ -248,7 +435,6 @@ void copy_to_Ppc(		int 				 pc_check,
 
 		/* check where to add the new phase PC */
 		if (SS_ref_db[ph_id].id_Ppc >= SS_ref_db[ph_id].n_Ppc){ SS_ref_db[ph_id].id_Ppc = 0; printf("SS_LP, MAXIMUM STORAGE SPACE FOR PC IS REACHED for %4s, INCREASED #PC_MAX\n",gv.SS_list[ph_id]);}
-		
 		m_Ppc = SS_ref_db[ph_id].id_Ppc;
 
 		if (save_mSS == 1){
@@ -275,7 +461,12 @@ void copy_to_Ppc(		int 				 pc_check,
 		SS_ref_db[ph_id].G_Ppc[m_Ppc] = G;
 		
 		/* add increment to the number of considered phases */
-		SS_ref_db[ph_id].tot_Ppc += 1;
+		if (SS_ref_db[ph_id].tot_Ppc < SS_ref_db[ph_id].n_Ppc){
+			SS_ref_db[ph_id].tot_Ppc += 1;
+		}
+		else{
+			SS_ref_db[ph_id].tot_Ppc = SS_ref_db[ph_id].n_Ppc;
+		}
 		SS_ref_db[ph_id].id_Ppc  += 1;
 }
 
@@ -300,9 +491,9 @@ void ss_min_PGE(		global_variable 	 gv,
 			pc_check = gv.PC_checked;
 			ph_id = cp[i].id;
 			cp[i].min_time		  		= 0.0;								/** reset local minimization time to 0.0 */
-			u = clock(); 
+			if (gv.verbose == 1){ u = clock(); }
 			/**
-				set the iguess of the solution phase to the one of the considered phase 
+				set the iguess of the solution phase to the one of the considered phase
 			*/
 			for (int k = 0; k < cp[i].n_xeos; k++) {
 				SS_ref_db[ph_id].iguess[k] = cp[i].xeos[k];
@@ -346,8 +537,7 @@ void ss_min_PGE(		global_variable 	 gv,
 														z_b, 
 														gv.SS_list[ph_id]		);
 
-			u = clock() - u;
-			SS_ref_db[ph_id].LM_time = ((double)u)/CLOCKS_PER_SEC*1000.0; 
+			if (gv.verbose == 1){ u = clock() - u; SS_ref_db[ph_id].LM_time = ((double)u)/CLOCKS_PER_SEC*1000.0; } else { SS_ref_db[ph_id].LM_time = 0.0; } 
 
 			;
 			/** 
@@ -446,9 +636,98 @@ void init_PGE_from_LP(	global_variable 	 gv,
 
 };
 
-/** 
-	Minimization function for PGE 
+
+/**
+	Minimization function for PGE
 */
+static void add_linear_pc(			global_variable 	 gv,
+								PC_type				*PC_read,
+								obj_type 			*SS_objective,
+								bulk_info 	 		 z_b,
+								SS_ref 			    *SS_ref_db,
+								int 				 ph_id,
+								int 				 pc_check,
+								double 				*x_star,
+								double 				*x_end
+){
+	double steps[3] = {0.3, 0.6, 0.9};
+	int    n_xeos   = SS_ref_db[ph_id].n_xeos;
+
+	for (int si = 0; si < 3; si++){
+		int ok = 1;
+		for (int k = 0; k < n_xeos; k++){
+			double x_syn = x_star[k] + steps[si] * (x_end[k] - x_star[k]);
+			if (x_syn < SS_ref_db[ph_id].bounds_ref[k][0] || x_syn > SS_ref_db[ph_id].bounds_ref[k][1]){ ok = 0; break; }
+			SS_ref_db[ph_id].iguess[k] = x_syn;
+		}
+		if (!ok){ continue; }
+
+		SS_ref_db[ph_id] = PC_function(gv, PC_read, SS_ref_db[ph_id], z_b, ph_id);
+		SS_ref_db[ph_id] = SS_UPDATE_function(gv, SS_ref_db[ph_id], z_b, gv.SS_list[ph_id]);
+
+		if (SS_ref_db[ph_id].sf_ok == 1){
+			copy_to_Ppc(pc_check, 1, ph_id, gv, SS_objective, SS_ref_db);
+		}
+	}
+}
+
+SS_ref ss_local_min(			global_variable 	 gv,
+								NLopt_type 			*NLopt_opt,
+								int 				 ph_id,
+								SS_ref 				 SS_ref_db,
+								double 				 box_size
+){
+	if (gv.ss_solver > 0 && gv.solver == 0 && SS_ref_db.ns_ok == 1){
+		int    n_x = SS_ref_db.n_xeos;
+		double x_ns[n_x];
+
+		SS_ref_db = NS_opt_function(				gv,
+													SS_ref_db				);
+
+		if (gv.verbose == 1){
+			printf(" NS %4s: status %3d, ite %4d, df %+.10f\n", gv.SS_list[ph_id], SS_ref_db.ns_status, SS_ref_db.ns_ite, SS_ref_db.df);
+		}
+		if ((SS_ref_db.ns_status == 3 || SS_ref_db.ns_absent == 1) && gv.ss_solver == 1){
+			return SS_ref_db;
+		}
+		if (gv.ss_solver == 2){
+			int    st_ns = SS_ref_db.ns_status;
+			double df_ns = SS_ref_db.df;
+			for (int k = 0; k < n_x; k++){ x_ns[k] = SS_ref_db.xeos[k]; }
+
+			SS_ref_db = restrict_SS_HyperVolume(	gv,
+													SS_ref_db,
+													box_size				);
+			SS_ref_db = (*NLopt_opt[ph_id])(		gv,
+													SS_ref_db				);
+
+			if (gv.verbose == 1){
+				printf(" NL %4s: status %3d,            df %+.10f, df_ns - df_nl %+.3e\n", gv.SS_list[ph_id], SS_ref_db.status, SS_ref_db.df, df_ns - SS_ref_db.df);
+			}
+			if (st_ns == 3 && (SS_ref_db.status != 3 || df_ns < SS_ref_db.df)){
+				for (int k = 0; k < n_x; k++){ SS_ref_db.xeos[k] = x_ns[k]; }
+				SS_ref_db.df     = df_ns;
+				SS_ref_db.status = 3;
+			}
+			return SS_ref_db;
+		}
+	}
+
+	SS_ref_db = restrict_SS_HyperVolume(			gv,
+													SS_ref_db,
+													box_size				);
+	SS_ref_db = (*NLopt_opt[ph_id])(				gv,
+													SS_ref_db				);
+
+	if (gv.solver == 0 && ns_pc_mode(gv, &SS_ref_db) == 1){
+		int    n_x = SS_ref_db.n_xeos;
+		double x_pr[n_x];
+		for (int k = 0; k < n_x; k++){ x_pr[k] = SS_ref_db.xeos[k]; }
+		ns_project_x(gv, &SS_ref_db, x_pr);
+	}
+	return SS_ref_db;
+}
+
 void ss_min_LP(			global_variable 	 gv,
 						PC_type				*PC_read,
 
@@ -463,36 +742,132 @@ void ss_min_LP(			global_variable 	 gv,
 	int 	ph_id;
 	int     pc_check;
 	int 	act;
+	int 	candidate_ok, is_liq_synth_candidate;
 	clock_t u;
-	for (int i = 0; i < gv.len_ss; i++){ 
+	for (int i = 0; i < gv.len_ss; i++){
 		gv.n_min[i] = 0;
+	}
+	int    is_gh            = (strcmp(gv.research_group, "gh") == 0);
+	int    is_tc            = (strcmp(gv.research_group, "tc") == 0);
+
+	int    n_liq_ph          = 0;
+	int    ph_id_liq[MAX_LIQ_PHASES];
+	int    liq_synth_active[MAX_LIQ_PHASES];
+	int    liq_real_min_found[MAX_LIQ_PHASES];
+	int    liq_candidate_index[MAX_LIQ_PHASES]; /* index of cp[] entry with the successful minimization */
+
+	if (gv.liq_pc_synth_active && (is_gh || is_tc)){
+		for (int iss = 0; iss < gv.len_ss && n_liq_ph < MAX_LIQ_PHASES; iss++){
+			if (SS_ref_db[iss].is_liq == 1){ ph_id_liq[n_liq_ph++] = iss; }
+		}
+	}
+
+	for (int l = 0; l < n_liq_ph; l++){
+		int N_liq = 0;
+		for (int i = 0; i < gv.len_ox; i++){
+			if (cp[i].ss_flags[0] == 1 && cp[i].id == ph_id_liq[l]){ N_liq += 1; }
+		}
+		liq_synth_active[l]    = (N_liq >= gv.gh_liq_pc_synth_threshold);
+		liq_real_min_found[l]  = 0;
+		liq_candidate_index[l] = -1;
+	}
+
+	int    syn_on   = (gv.liq_pc_synth_active == 2 && gv.global_ite >= 1 && strcmp(gv.research_group, "br") != 0);
+	int    n_syn_cl = 0;
+	int    n_cp_vla = (gv.len_cp > 0) ? gv.len_cp : 1;
+	int    syn_cl[n_cp_vla], syn_rep[n_cp_vla], syn_multi[n_cp_vla], syn_found[n_cp_vla], syn_skip[n_cp_vla];
+	double syn_x[n_cp_vla][LIQ_PC_SYNTH_MAX_DIM];
+	double syn_p[n_cp_vla][PC_SYNTH_MAX_EM];
+	for (int i = 0; i < gv.len_cp; i++){ syn_cl[i] = -1; syn_multi[i] = 0; syn_found[i] = 0; syn_skip[i] = 0; }
+
+	if (syn_on){
+		for (int iss = 0; iss < gv.len_ss; iss++){
+			if (SS_ref_db[iss].is_liq == 1 || SS_ref_db[iss].n_xeos > LIQ_PC_SYNTH_MAX_DIM || SS_ref_db[iss].n_em > PC_SYNTH_MAX_EM){ continue; }
+
+			int idx[n_cp_vla], k = 0;
+			for (int i = 0; i < gv.len_cp; i++){ if (cp[i].ss_flags[0] == 1 && cp[i].id == iss){ idx[k++] = i; } }
+			if (k < 2){ continue; }
+
+			int first = n_syn_cl;
+			for (int a = 0; a < k; a++){
+				int i = idx[a], c = -1;
+				for (int r = first; r < n_syn_cl; r++){
+					if (euclidean_distance(cp[i].p_em, cp[syn_rep[r]].p_em, SS_ref_db[iss].n_em) < gv.merge_value){ c = r; break; }
+				}
+				if (c < 0){ c = n_syn_cl++; syn_rep[c] = i; }
+				syn_cl[i] = c;
+			}
+			for (int a = 0; a < k; a++){
+				int c = syn_cl[idx[a]], cnt = 0;
+				for (int b = 0; b < k; b++){ if (syn_cl[idx[b]] == c){ cnt++; } }
+				syn_multi[c] = (cnt >= 2);
+			}
+		}
 	}
 
 	pc_check = gv.PC_checked;
-	for (int i = 0; i < gv.len_cp; i++){ 
-	
-		if (cp[i].ss_flags[0] == 1){
-			ph_id = cp[i].id;
+	for (int i = 0; i < gv.len_cp; i++){
 
-			// deactivating the next part helps for IGAD database at VHT
-			if ( strcmp( gv.SS_list[ph_id], "liq") == 0 && gv.n_min[ph_id] > 2){
-				act = 0;
+		if (cp[i].ss_flags[0] == 1){
+			candidate_ok 	= 1;
+			is_liq_synth_candidate = 0;
+			ph_id 			= cp[i].id;
+
+			int liq_l = -1;
+			for (int l = 0; l < n_liq_ph; l++){ if (ph_id_liq[l] == ph_id){ liq_l = l; break; } }
+
+			/* NR-17/07/26
+				Here I added a target rule for rMELTS. The liquid model including H2O and CO2 leads to a large number of local minimum. Brute force exploration is needed to lead the minimization toward the global minimum.
+				This is something that is not needed for the other databases, as the Gibbs surface of other liquid models have smoother landscape.
+			*/
+			if (strcmp(gv.db, "rMELTS") == 0){
+				if (gv.global_ite < gv.act_rMELTS_liq_pc_synth){
+					act = 1;
+					is_liq_synth_candidate = (liq_l >= 0 && liq_synth_active[liq_l] && !liq_real_min_found[liq_l]);
+				}
+				else{
+					is_liq_synth_candidate = (liq_l >= 0 && liq_synth_active[liq_l] && !liq_real_min_found[liq_l]);
+					if (liq_l >= 0 && liq_synth_active[liq_l]){
+						act = is_liq_synth_candidate ? 1 : 0;
+					}
+					else if ( SS_ref_db[ph_id].is_liq == 1 && gv.n_min[ph_id] > gv.n_max_val){
+						act = 0;
+					}
+					else{
+						act = 1;
+					}
+				}
+
 			}
 			else{
-				act = 1;
+				// deactivating the next part helps for IGAD database at VHT
+				is_liq_synth_candidate = (liq_l >= 0 && liq_synth_active[liq_l] && !liq_real_min_found[liq_l]);
+				if (liq_l >= 0 && liq_synth_active[liq_l]){
+					act = is_liq_synth_candidate ? 1 : 0;
+				}
+				else if ( SS_ref_db[ph_id].is_liq == 1 && gv.n_min[ph_id] > gv.n_max_val){
+					act = 0;
+				}
+				else{
+					act = 1;
+				}
 			}
-			gv.n_min[ph_id] += 1;
 
+			if (syn_cl[i] >= 0 && syn_multi[syn_cl[i]] && syn_found[syn_cl[i]] && euclidean_distance(syn_p[syn_cl[i]], cp[i].p_em, SS_ref_db[ph_id].n_em) < gv.merge_value){
+				act 		= 0;
+				syn_skip[i] = 1;
+			}
+
+			gv.n_min[ph_id] += 1;
 			if (act == 1){
 				cp[i].min_time		  		= 0.0;								/** reset local minimization time to 0.0 */
-				u = clock(); 
+				if (gv.verbose == 1){ u = clock(); } 
 				/**
 					set the iguess of the solution phase to the one of the considered phase 
 				*/
 				for (int k = 0; k < cp[i].n_xeos; k++) {
 					SS_ref_db[ph_id].iguess[k] 	= cp[i].xeos[k];
 					cp[i].xeos_0[k] 			= cp[i].xeos[k];
-					// SS_ref_db[ph_id].dguess[k] = cp[i].xeos[k];			//dguess can be used of LP, it is used for PGE to check for drifting
 				}
 
 				/**
@@ -501,26 +876,18 @@ void ss_min_LP(			global_variable 	 gv,
 				SS_ref_db[ph_id] = rotate_hyperplane(		gv, 
 															SS_ref_db[ph_id]		);
 
-				/**
-					Define a sub-hypervolume for the solution phases bounds
-				*/
-				SS_ref_db[ph_id] = restrict_SS_HyperVolume(	gv, 
+				SS_ref_db[ph_id] = ss_local_min(			gv,
+															NLopt_opt,
+															ph_id,
 															SS_ref_db[ph_id],
 															gv.box_size_mode_LP		);
 
-				/**
-					call to NLopt for non-linear + inequality constraints optimization
-				*/
-				SS_ref_db[ph_id] = (*NLopt_opt[ph_id])(		gv,
-															SS_ref_db[ph_id]		);			
-				/** 
-					print solution phase informations (print has to occur before saving PC)
-				*/
-			
-				u = clock() - u;
-				SS_ref_db[ph_id].LM_time = ((double)u)/CLOCKS_PER_SEC*1000.0; 
+
+				if (gv.verbose == 1){ u = clock() - u; SS_ref_db[ph_id].LM_time = ((double)u)/CLOCKS_PER_SEC*1000.0; } else { SS_ref_db[ph_id].LM_time = 0.0; } 
 
 				if (gv.verbose == 1){
+
+					printf(" NLopt status: %d\n", SS_ref_db[ph_id].status);
 					SS_ref_db[ph_id] = SS_UPDATE_function(		gv, 
 																SS_ref_db[ph_id], 
 																z_b, 
@@ -530,55 +897,34 @@ void ss_min_LP(			global_variable 	 gv,
 															SS_ref_db[ph_id],
 															ph_id					);
 				}
-				if (SS_ref_db[ph_id].status == -4){
+				if (strcmp(gv.research_group, "gh") == 0){
+					if (SS_ref_db[ph_id].status != 3){
+						double sum_x = 0.0;
+						for (int k = 0; k < SS_ref_db[ph_id].n_xeos; k++){
+							sum_x += SS_ref_db[ph_id].xeos[k];
+						}
+						if (fabs(sum_x - 1.0) > 1.0e-4 && sum_x > 0.0){
+							for (int k = 0; k < SS_ref_db[ph_id].n_xeos; k++){
+								SS_ref_db[ph_id].iguess[k] = SS_ref_db[ph_id].xeos[k] / sum_x;
+							}
+							SS_ref_db[ph_id] = (*NLopt_opt[ph_id])(		gv,
+																		SS_ref_db[ph_id]		);
+						}
+					}
+				}
+				if (SS_ref_db[ph_id].status != 3){
+					candidate_ok = 0;
 					if (gv.verbose == 1){
-						printf(" Round-off error in the minimization of %4s\n",gv.SS_list[ph_id]);
-					}
-					for (int k = 0; k < cp[i].n_xeos; k++) {
-						cp[i].xeos_1[k] 			 =  SS_ref_db[ph_id].p[k];
+						printf(" Failed minimization of %4s -> code %d\n",gv.SS_list[ph_id], SS_ref_db[ph_id].status);
 					}
 				}
-				else{
-					for (int k = 0; k < cp[i].n_xeos; k++) {
-						cp[i].xeos_1[k] 			 =  SS_ref_db[ph_id].xeos[k];
-					}
-				}
-				/** 
-					Here if the number of phase occurence in the LP matrix is equal to we add 2 pseudocompounds
+
+				/**
+					This next part is important to check if the minimized phase is valid and can be added to the PC list
 				*/
-				if (gv.n_ss_ph[ph_id] == 1){
-
-					double shift = 0.0;
-					double sh_array[] = {-0.01,0.001,0.001,0.01};
-					for (int add = 0; add < 2; add++){
-						shift = sh_array[add];
-						for (int k = 0; k < cp[i].n_xeos; k++) {
-							SS_ref_db[ph_id].iguess[k]   =  cp[i].xeos_1[k] * (1.0-shift) + cp[i].xeos_0[k] * (shift);
-						}
-
-						SS_ref_db[ph_id] = PC_function(				gv,
-																	PC_read,
-																	SS_ref_db[ph_id], 
-																	z_b,
-																	ph_id 		);
-																
-						SS_ref_db[ph_id] = SS_UPDATE_function(		gv, 
-																	SS_ref_db[ph_id], 
-																	z_b, 
-																	gv.SS_list[ph_id]		);
-
-						if (SS_ref_db[ph_id].sf_ok == 1){
-							copy_to_Ppc(							0,
-																	1,
-																	ph_id,
-																	gv,
-
-																	SS_objective,
-																	SS_ref_db					);	
-						}
-					}
+				for (int k = 0; k < cp[i].n_xeos; k++) {
+					cp[i].xeos_1[k] 			 =  SS_ref_db[ph_id].xeos[k];
 				}
-					
 				for (int k = 0; k < cp[i].n_xeos; k++) {
 					SS_ref_db[ph_id].iguess[k]   =  cp[i].xeos_1[k];
 				}
@@ -588,15 +934,27 @@ void ss_min_LP(			global_variable 	 gv,
 															z_b,
 															ph_id 		);
 														
-				SS_ref_db[ph_id] = SS_UPDATE_function(		gv, 
-															SS_ref_db[ph_id], 
-															z_b, 
+				SS_ref_db[ph_id] = SS_UPDATE_function(		gv,
+															SS_ref_db[ph_id],
+															z_b,
 															gv.SS_list[ph_id]		);
-
 				/**
-					add minimized phase to LP PGE pseudocompound list 
+					add minimized phase to LP PGE pseudocompound list
 				*/
 				if (SS_ref_db[ph_id].sf_ok == 1){
+					for (int k = 0; k < cp[i].n_xeos; k++) {
+						SS_ref_db[ph_id].iguess[k]   =  SS_ref_db[ph_id].xeos[k];
+					}
+					SS_ref_db[ph_id] = PC_function(				gv,
+																PC_read,
+																SS_ref_db[ph_id], 
+																z_b,
+																ph_id 		);
+															
+					SS_ref_db[ph_id] = SS_UPDATE_function(		gv,
+																SS_ref_db[ph_id],
+																z_b,
+																gv.SS_list[ph_id]		);
 					copy_to_Ppc(							pc_check,
 															1,
 															ph_id,
@@ -605,36 +963,72 @@ void ss_min_LP(			global_variable 	 gv,
 															SS_objective,
 															SS_ref_db					);	
 				}
-				else{
-					for (int k = 0; k < cp[i].n_xeos; k++) {
-						SS_ref_db[ph_id].iguess[k]   =  cp[i].xeos_0[k];
-					}
-					
-					SS_ref_db[ph_id] = PC_function(				gv,
-																PC_read,
-																SS_ref_db[ph_id], 
-																z_b,
-																ph_id 		);
-															
-					SS_ref_db[ph_id] = SS_UPDATE_function(		gv, 
-																SS_ref_db[ph_id], 
-																z_b, 
-																gv.SS_list[ph_id]		);
 
-					copy_to_Ppc(								0,
-																1,
-																ph_id,
-																gv,
 
-																SS_objective,
-																SS_ref_db					);	
-			
+				if (candidate_ok == 1 && syn_cl[i] >= 0 && syn_multi[syn_cl[i]] && !syn_found[syn_cl[i]]){
+					int c = syn_cl[i];
+					syn_found[c] = 1;
+					for (int k = 0; k < SS_ref_db[ph_id].n_xeos; k++){ syn_x[c][k] = cp[i].xeos_1[k]; }
+					for (int k = 0; k < SS_ref_db[ph_id].n_em; k++){   syn_p[c][k] = SS_ref_db[ph_id].p[k]; }
 				}
 
+				if (is_liq_synth_candidate && candidate_ok == 1){
+					liq_real_min_found[liq_l] = 1;
+					liq_candidate_index[liq_l] = i;
+				}
 
 			}
 
 		}	
+	}
+
+	for (int i = 0; i < gv.len_cp; i++){
+		if (syn_skip[i]){
+			add_linear_pc(gv, PC_read, SS_objective, z_b, SS_ref_db, cp[i].id, pc_check, syn_x[syn_cl[i]], cp[i].xeos);
+		}
+	}
+
+	/**
+	  	For each liquid phase present that has been minimized successfully,
+		we can try to synthesize new PCs by linear interpolation between the real minimum and the other PCs of the same phase
+	*/
+	for (int l = 0; l < n_liq_ph; l++){
+		if (!(liq_synth_active[l] && liq_real_min_found[l])){ continue; }
+
+		int phid   = ph_id_liq[l];
+		int n_xeos = SS_ref_db[phid].n_xeos;
+		if (n_xeos > LIQ_PC_SYNTH_MAX_DIM){ continue; }
+
+		double x_star[LIQ_PC_SYNTH_MAX_DIM];
+		for (int k = 0; k < n_xeos; k++){ x_star[k] = SS_ref_db[phid].xeos[k]; }
+
+		double steps[3] = {0.3, 0.6, 0.9};
+
+		for (int ic = 0; ic < gv.len_ox; ic++){
+			if (cp[ic].ss_flags[0] == 1 && cp[ic].id == phid && ic != liq_candidate_index[l]){
+				for (int si = 0; si < 3; si++){
+					double s = steps[si];
+					int ok = 1;
+					for (int k = 0; k < n_xeos; k++){
+						double x_syn = x_star[k] + s * (cp[ic].xeos[k] - x_star[k]);
+						if (x_syn < SS_ref_db[phid].bounds[k][0] || x_syn > SS_ref_db[phid].bounds[k][1]){ ok = 0; break; }
+						SS_ref_db[phid].iguess[k] = x_syn;
+					}
+					if (!ok) { continue; }
+
+					SS_ref_db[phid] = PC_function(gv, PC_read, SS_ref_db[phid], z_b, phid);
+					SS_ref_db[phid] = SS_UPDATE_function(gv, SS_ref_db[phid], z_b, gv.SS_list[phid]);
+
+					if (SS_ref_db[phid].sf_ok == 1){
+						copy_to_Ppc(pc_check, 1, phid, gv, SS_objective, SS_ref_db);
+						if (gv.verbose == 1){ printf(" [liq pc synth-linear] added PC for cp#%d step %g\n", ic, s); }
+					}
+					else{
+						if (gv.verbose == 1){ printf(" [liq pc synth-linear] discarded PC (sf fail) for cp#%d step %g\n", ic, s); }
+					}
+				}
+			}
+		}
 	}
 
 };
@@ -711,6 +1105,23 @@ global_variable init_ss_db(		int 				 EM_database,
 			// }
 
 			SS_ref_db[i]    = G_SS_ig_EM_function(	gv, 
+													SS_ref_db[i], 
+													gv.EM_dataset, 
+													z_b, 
+													gv.SS_list[i]		);
+		}
+	}
+	else if (EM_database == 22){
+		for (int i = 0; i < gv.len_ss; i++){
+			SS_ref_db[i].P  = z_b.P;									/** needed to pass to local minimizer, allows for P variation for liq/sol */
+			SS_ref_db[i].T  = z_b.T;		
+			SS_ref_db[i].R  = 0.0083144;
+
+			// if (SS_ref_db[i].is_liq == 1){
+			// 	SS_ref_db[i].P  = z_b.P + gv.melt_pressure;
+			// }
+
+			SS_ref_db[i]    = G_SS_igd_EM_function(	gv, 
 													SS_ref_db[i], 
 													gv.EM_dataset, 
 													z_b, 
@@ -795,11 +1206,32 @@ global_variable init_ss_db(		int 				 EM_database,
 			// 	SS_ref_db[i].P  = z_b.P + gv.melt_pressure;
 			// }
 
-			SS_ref_db[i]    = G_SS_mpe_EM_function(		gv, 
-														SS_ref_db[i], 
-														gv.EM_dataset, 
-														z_b, 
+			SS_ref_db[i]    = G_SS_mpe_EM_function(		gv,
+														SS_ref_db[i],
+														gv.EM_dataset,
+														z_b,
 														gv.SS_list[i]		);
+		}
+	}
+	else if (EM_database == 8 ){
+		for (int i = 0; i < gv.len_ss; i++){
+			SS_ref_db[i].P  = z_b.P;									/** needed to pass to local minimizer, allows for P variation for liq/sol */
+			SS_ref_db[i].T  = z_b.T;
+			SS_ref_db[i].R  = 0.0083144;
+
+			SS_ref_db[i]    = G_SS_all_EM_function(		gv,
+														SS_ref_db[i],
+														gv.EM_dataset,
+														z_b,
+														gv.SS_list[i]		);
+		}
+	}
+
+	if (strcmp(gv.research_group, "tc") == 0){
+		for (int i = 0; i < gv.len_ss; i++){
+			ns_reduce_system(						gv,
+													z_b,
+													&SS_ref_db[i]		);
 		}
 	}
 
@@ -870,12 +1302,69 @@ global_variable init_ss_db_sb(	int 				 EM_database,
 
 			SS_ref_db[i]    = G_SS_sb24_EM_function(	gv, 
 														SS_ref_db[i], 
-														gv.EM_dataset, 
-														z_b, 
+														gv.EM_dataset,
+														z_b,
 														gv.SS_list[i]		);
-											
+
 										/** can become a global variable instead */
 		}
+	}
+	for (int i = 0; i < gv.len_ss; i++){
+		for (int k = 0; k < SS_ref_db[i].n_em; k++){
+			if (SS_ref_db[i].z_em[k] == 0.0 && SS_ref_db[i].bounds_ref[k][0] == 0.0 && SS_ref_db[i].bounds_ref[k][1] == 0.0){
+				SS_ref_db[i].bounds_ref[k][0] = 1e-12;
+				SS_ref_db[i].bounds_ref[k][1] = 1e-12;
+			}
+		}
+		ns_reduce_system(							gv,
+													z_b,
+													&SS_ref_db[i]		);
+	}
+
+	return gv;
+};
+
+/**
+  initialize solution phase database for the "gh" (Ghiorso/MELTS) research group
+**/
+global_variable init_ss_db_gh(	int 				 EM_database,
+								bulk_info 	 		 z_b,
+								global_variable 	 gv,
+								SS_ref 				*SS_ref_db
+){
+	for (int i = 0; i < gv.len_ss; i++){
+		SS_ref_db[i].P  = z_b.P;
+		SS_ref_db[i].T  = z_b.T;
+		SS_ref_db[i].R  = 0.0083144;
+
+		SS_ref_db[i]    = G_SS_gh_EM_function(	gv,
+												SS_ref_db[i],
+												gv.EM_dataset,
+												z_b,
+												gv.SS_list[i]		);
+	}
+	return gv;
+};
+
+/**
+  initialize solution phase database for the "br" (Berman/Pourteau) research group
+**/
+global_variable init_ss_db_br(	int 				 EM_database,
+								bulk_info 	 		 z_b,
+								global_variable 	 gv,
+								SS_ref 				*SS_ref_db
+){
+	(void) EM_database;
+	for (int i = 0; i < gv.len_ss; i++){
+		SS_ref_db[i].P  = z_b.P;
+		SS_ref_db[i].T  = z_b.T;
+		SS_ref_db[i].R  = 0.0083144;
+
+		SS_ref_db[i]    = G_SS_br_EM_function(	gv,
+												SS_ref_db[i],
+												gv.EM_dataset,
+												z_b,
+												gv.SS_list[i]		);
 	}
 	return gv;
 };

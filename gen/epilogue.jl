@@ -9,6 +9,7 @@ struct SS_data
     deltaG::Cdouble
     V::Cdouble
     alpha::Cdouble
+    beta::Cdouble
     entropy::Cdouble
     enthalpy::Cdouble
     cp::Cdouble
@@ -17,6 +18,10 @@ struct SS_data
     shearMod::Cdouble
     Vp::Cdouble
     Vs::Cdouble
+    pH::Cdouble
+    chargeResidual::Cdouble
+    sumMolality::Cdouble
+    G_water::Cdouble
     Comp::Vector{Cdouble}
     Comp_wt::Vector{Cdouble}
     Comp_apfu::Vector{Cdouble}
@@ -25,6 +30,8 @@ struct SS_data
     siteFractions::Vector{Cdouble}
     siteFractionsNames::Vector{String}
     emNames::Vector{String}
+    molality::Vector{Cdouble}
+    activity::Vector{Cdouble}
     emFrac::Vector{Cdouble}
     emFrac_wt::Vector{Cdouble}
     emChemPot::Vector{Cdouble}
@@ -33,16 +40,19 @@ struct SS_data
     emComp_apfu::Vector{Vector{Float64}}
 end
 
-function Base.convert(::Type{SS_data}, a::stb_SS_phases) 
-    return SS_data(a.f, a.G, a.deltaG, a.V, a.alpha, a.entropy, a.enthalpy, a.cp, a.rho, a.bulkMod, a.shearMod, a.Vp, a.Vs,
+function Base.convert(::Type{SS_data}, a::stb_SS_phases)
+    return SS_data(a.f, a.G, a.deltaG, a.V, a.alpha, a.beta, a.entropy, a.enthalpy, a.cp, a.rho, a.bulkMod, a.shearMod, a.Vp, a.Vs, a.pH,
+                                    a.chargeResidual, a.sumMolality, a.G_water,
                                     unsafe_wrap( Vector{Cdouble},        a.Comp,             a.nOx),
                                     unsafe_wrap( Vector{Cdouble},        a.Comp_wt,          a.nOx),
                                     unsafe_wrap( Vector{Cdouble},        a.Comp_apfu,        a.nOx),
                                     unsafe_wrap( Vector{Cdouble},        a.compVariables,    a.n_xeos),
-                    unsafe_string.( unsafe_wrap( Vector{Ptr{Int8}},      a.compVariablesNames,a.n_xeos)),
+                    unsafe_string.( unsafe_wrap( Vector{Ptr{Cchar}},      a.compVariablesNames,a.n_xeos)),
                                     unsafe_wrap( Vector{Cdouble},        a.siteFractions,    a.n_sf),
-                    unsafe_string.( unsafe_wrap( Vector{Ptr{Int8}},      a.siteFractionsNames,a.n_sf)),
-                    unsafe_string.( unsafe_wrap( Vector{Ptr{Int8}},      a.emNames,          a.n_em)),
+                    unsafe_string.( unsafe_wrap( Vector{Ptr{Cchar}},      a.siteFractionsNames,a.n_sf)),
+                    unsafe_string.( unsafe_wrap( Vector{Ptr{Cchar}},      a.emNames,          a.n_em)),
+                                    unsafe_wrap( Vector{Cdouble},        a.molality,         a.n_em),
+                                    unsafe_wrap( Vector{Cdouble},        a.activity,         a.n_em),
                                     unsafe_wrap( Vector{Cdouble},        a.emFrac,           a.n_em),
                                     unsafe_wrap( Vector{Cdouble},        a.emFrac_wt,        a.n_em),
                                     unsafe_wrap( Vector{Cdouble},        a.emChemPot,        a.n_em),
@@ -51,31 +61,54 @@ function Base.convert(::Type{SS_data}, a::stb_SS_phases)
       unsafe_wrap.(Vector{Cdouble}, unsafe_wrap( Vector{Ptr{Cdouble}},   a.emComp_apfu, a.n_em),  a.nOx)   )
 end
 
+# Fields only ever populated (non-NaN) for the DEW aqueous phase - hidden from the
+# default display for every other solution phase, where they're meaningless NaN filler.
+const _SS_data_dew_only_fields = (:pH, :chargeResidual, :sumMolality, :G_water, :molality, :activity)
+
+function Base.show(io::IO, ::MIME"text/plain", ss::SS_data)
+    is_dew = !isnan(ss.chargeResidual)
+    println(io, "SS_data:")
+    for f in fieldnames(SS_data)
+        (!is_dew && f in _SS_data_dew_only_fields) && continue
+        println(io, "  ", f, " = ", getfield(ss, f))
+    end
+end
+Base.show(io::IO, ss::SS_data) = show(io, MIME("text/plain"), ss)
+
 # metastable phases
 struct mSS_data
-    ph_name::String
-    ph_type::String
-    info::String
-    ph_id::Cint
-    em_id::Cint
-    n_xeos::Cint
-    n_em::Cint
-    G_Ppc::Cdouble
-    DF_Ppc::Cdouble
-    comp_Ppc::Vector{Cdouble}
-    p_Ppc::Vector{Cdouble}
-    mu_Ppc::Vector{Cdouble}
-    xeos_Ppc::Vector{Cdouble}
+    ph_name     ::String
+    ph_type     ::String
+    info        ::String         # tags which mechanism populated this entry:
+                                   # "lpig" = LP-levelling-basis warm-start guess,
+                                   # "ppc" = near-hyperplane candidate (mSS_df_min_add/
+                                   # max_add window), "calib" = calibration_output_struct
+                                   # (gv.calibration==1: every structurally-feasible,
+                                   # locally-minimized, non-duplicate-of-stable phase)
+    ph_id       ::Cint
+    em_id       ::Cint
+    # n_xeos    ::Cint            # unused — SS_ref_db[ph_id].n_xeos used instead
+    # n_em      ::Cint            # unused — SS_ref_db[ph_id].n_em used instead
+    G           ::Cdouble         # candidate's own Gibbs energy at its local minimum
+    deltaG      ::Cdouble         # driving force: distance from the Gibbs hyperplane
+                                   # (same quantity/units as SS_data.deltaG for a stable
+                                   # phase, ~0 there; nonzero here since this phase was
+                                   # NOT selected into the stable assemblage)
+    comp_Ppc    ::Vector{Cdouble}
+    # p_Ppc     ::Vector{Cdouble} # unused
+    # mu_Ppc    ::Vector{Cdouble} # unused
+    xeos_Ppc    ::Vector{Cdouble}
 end
 
-function Base.convert(::Type{mSS_data}, a::mstb_SS_phases) 
+function Base.convert(::Type{mSS_data}, a::mstb_SS_phases)
     return  mSS_data(   unsafe_string(a.ph_name),
                         unsafe_string(a.ph_type),
                         unsafe_string(a.info),
-                        a.ph_id, a.em_id, a.n_xeos, a.n_em, a.G_Ppc, a.DF_Ppc,
+                        a.ph_id, a.em_id,
+                        a.G_Ppc, a.DF_Ppc,
                         unsafe_wrap( Vector{Cdouble},        a.comp_Ppc,           a.nOx),
-                        unsafe_wrap( Vector{Cdouble},        a.p_Ppc,              a.n_em),
-                        unsafe_wrap( Vector{Cdouble},        a.mu_Ppc,             a.n_em),
+                        # unsafe_wrap( Vector{Cdouble},        a.p_Ppc,              a.n_em),
+                        # unsafe_wrap( Vector{Cdouble},        a.mu_Ppc,             a.n_em),
                         unsafe_wrap( Vector{Cdouble},        a.xeos_Ppc,           a.n_xeos)    )
 end
 
@@ -86,6 +119,7 @@ struct PP_data
     deltaG::Cdouble
     V::Cdouble
     alpha::Cdouble
+    beta::Cdouble
     entropy::Cdouble
     enthalpy::Cdouble
     cp::Cdouble
@@ -100,7 +134,7 @@ struct PP_data
 end
 
 function Base.convert(::Type{PP_data}, a::stb_PP_phases) 
-    return PP_data(a.f, a.G, a.deltaG, a.V, a.alpha, a.entropy, a.enthalpy, a.cp, a.rho, a.bulkMod, a.shearMod, a.Vp, a.Vs,
+    return PP_data(a.f, a.G, a.deltaG, a.V, a.alpha, a.beta, a.entropy, a.enthalpy, a.cp, a.rho, a.bulkMod, a.shearMod, a.Vp, a.Vs,
                     unsafe_wrap(Vector{Cdouble},a.Comp, a.nOx),
                     unsafe_wrap(Vector{Cdouble},a.Comp_wt, a.nOx),
                     unsafe_wrap(Vector{Cdouble},a.Comp_apfu, a.nOx))

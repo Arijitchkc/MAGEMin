@@ -3,7 +3,7 @@
  **   Project      : MAGEMin
  **   License      : GNU GENERAL PUBLIC LICENSE Version 3, 29 June 2007
  **   Developers   : Nicolas Riel, Boris Kaus
- **   Contributors : Nickolas B. Moccetti, Dominguez, H., Assunção J., Green E., Berlie N., and Rummel L.
+ **   Contributors : Moccetti, N. B., Dominguez, H., Assunção J., Green E., Dolejš, D., Berlie N., and Rummel L.
  **   Organization : Institute of Geosciences, Johannes-Gutenberg University, Mainz
  **   Contact      : nriel[at]uni-mainz.de, kaus[at]uni-mainz.de
  **
@@ -700,7 +700,7 @@ SS_ref G_SS_sb24_cpx_init_function(SS_ref SS_ref_db,  global_variable gv){
 
     SS_ref_db.is_liq    = 0;
     SS_ref_db.symmetry  = 0;
-    SS_ref_db.n_cat     = 8;
+    SS_ref_db.n_cat     = 9;
     SS_ref_db.n_xeos    = 6;
     SS_ref_db.n_em      = 6;
     SS_ref_db.n_sf      = 3;
@@ -733,7 +733,7 @@ SS_ref G_SS_sb24_ak_init_function(SS_ref SS_ref_db,  global_variable gv){
 
     SS_ref_db.is_liq    = 0;
     SS_ref_db.symmetry  = 0;
-    SS_ref_db.n_cat     = 8;
+    SS_ref_db.n_cat     = 9;
     SS_ref_db.n_xeos    = 5;
     SS_ref_db.n_em      = 5;
     SS_ref_db.n_sf      = 2;
@@ -766,7 +766,7 @@ SS_ref G_SS_sb24_pv_init_function(SS_ref SS_ref_db,  global_variable gv){
 
     SS_ref_db.is_liq    = 0;
     SS_ref_db.symmetry  = 1;
-    SS_ref_db.n_cat     = 8;
+    SS_ref_db.n_cat     = 10;
     SS_ref_db.n_xeos    = 7;
     SS_ref_db.n_em      = 7;
     SS_ref_db.n_sf      = 2;
@@ -782,7 +782,7 @@ SS_ref G_SS_sb24_ppv_init_function(SS_ref SS_ref_db,  global_variable gv){
 
     SS_ref_db.is_liq    = 0;
     SS_ref_db.symmetry  = 1;
-    SS_ref_db.n_cat     = 8;
+    SS_ref_db.n_cat     = 9;
     SS_ref_db.n_xeos    = 5;
     SS_ref_db.n_em      = 5;
     SS_ref_db.n_sf      = 2;
@@ -815,7 +815,7 @@ SS_ref G_SS_sb24_mw_init_function(SS_ref SS_ref_db,  global_variable gv){
 
     SS_ref_db.is_liq    = 0;
     SS_ref_db.symmetry  = 0;
-    SS_ref_db.n_cat     = 6;
+    SS_ref_db.n_cat     = 9;
     SS_ref_db.n_xeos    = 5;
     SS_ref_db.n_em      = 5;
     SS_ref_db.n_sf      = 2;

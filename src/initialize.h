@@ -3,7 +3,7 @@
  **   Project      : MAGEMin
  **   License      : GNU GENERAL PUBLIC LICENSE Version 3, 29 June 2007
  **   Developers   : Nicolas Riel, Boris Kaus
- **   Contributors : Nickolas B. Moccetti, Dominguez, H., Assunção J., Green E., Berlie N., and Rummel L.
+ **   Contributors : Moccetti, N. B., Dominguez, H., Assunção J., Green E., Dolejš, D., Berlie N., and Rummel L.
  **   Organization : Institute of Geosciences, Johannes-Gutenberg University, Mainz
  **   Contact      : nriel[at]uni-mainz.de, kaus[at]uni-mainz.de
  **
@@ -22,7 +22,9 @@
 
 	char** get_EM_DB_names_tc(			global_variable 	gv					);
 	char** get_EM_DB_names_sb(			global_variable 	gv					);
-	char** get_FS_DB_names(				global_variable 	gv					);
+	char** get_EM_DB_names_gh(			global_variable 	gv					);
+	char** get_EM_DB_names_br(			global_variable 	gv					);
+	char** get_DEW_DB_names(			global_variable 	gv					);
 
 	typedef struct em_datas{
 		double C[16];
@@ -42,14 +44,6 @@
 										double       T,
 										char 		*name, 
 										char 		*state			);
-
-	em_data get_fs_data(				int             len_ox,
-										bulk_info 	    z_b,
-										solvent_prop   *wat,
-										double          P,
-										double          T,
-										char 		   *name, 
-										char 		   *state					);
 
 	global_variable global_variable_alloc( bulk_info  	    *z_b 				);
 
@@ -96,6 +90,13 @@
 
 	void reset_simplex_B_em(			simplex_data 		*splx_data,
 										global_variable 	 gv					);
+
+	void store_FD_interactions(			SS_ref 				*SS_ref_db,
+										int 				 FD					);
+
+	fn_kkt *fn_kkt_alloc(				global_variable 	 gv					);
+
+	void fn_kkt_free(					fn_kkt 				*k					);
 
 
 #endif

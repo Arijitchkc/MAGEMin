@@ -8,13 +8,17 @@
  **   Project      : MAGEMin
  **   License      : GNU GENERAL PUBLIC LICENSE Version 3, 29 June 2007
  **   Developers   : Nicolas Riel, Boris Kaus
- **   Contributors : Nickolas B. Moccetti, Dominguez, H., Assunção J., Green E., Berlie N., and Rummel L.
+ **   Contributors : Moccetti, N. B., Dominguez, H., Assunção J., Green E., Dolejš, D., Berlie N., and Rummel L.
  **   Organization : Institute of Geosciences, Johannes-Gutenberg University, Mainz
  **   Contact      : nriel[at]uni-mainz.de, kaus[at]uni-mainz.de
  **
  ** ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ @*/
 /* set of matrix operations */
 void 	print_help(global_variable gv);
+
+int is_core_oxide(						const char 			*research_group,
+										int 				 EM_database,
+										const char 			*ox				);
 
 bulk_info retrieve_bulk_PT(				global_variable      gv,
 										io_data 		    *input_data,
@@ -29,7 +33,7 @@ global_variable get_tests_bulks(		global_variable  	 gv				);
 void 	vector_matrix_multiplication(double* v, double** M, double* result, int vector_size, int matrix_cols);
 void 	matrix_vector_multiplication(double** M, double* v, double* result, int matrix_rows, int matrix_cols);
 void 	get_act_sf_id(int *result, double *A, int n);
-void 	inverseMatrix(int *ipiv, double *A1, int n, double *work, int lwork);
+void 	inverseMatrix(int *ipiv, double *A1, int n, double *work, int lwork, int precond);
 void 	MatMatMul( double **A, int nrowA, double **B, int ncolB, int common, double **C);
 void 	VecMatMul(double *B1, double *A1, double *B, int n);
 void 	MatVecMul(double *A1, double *br, double *n_vec, int n);
@@ -57,6 +61,7 @@ double  AFunction(double x, double *data);
 double  Minimum(double x1,double x2);
 double  Maximum(double x1,double x2);
 double 	norm_vector(double *array ,int n);
+double 	relative_norm_vector(double *array, double *bulk, int n);
 double 	euclidean_distance(double *array1 ,double *array2 ,int n);
 double 	partial_euclidean_distance(double *array1 ,double *array2 ,int n);
 double 	VecVecMul(double *B0, double *B1, int n);

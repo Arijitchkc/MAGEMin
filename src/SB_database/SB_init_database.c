@@ -3,7 +3,7 @@
  **   Project      : MAGEMin
  **   License      : GNU GENERAL PUBLIC LICENSE Version 3, 29 June 2007
  **   Developers   : Nicolas Riel, Boris Kaus
- **   Contributors : Nickolas B. Moccetti, Dominguez, H., Assunção J., Green E., Berlie N., and Rummel L.
+ **   Contributors : Moccetti, N. B., Dominguez, H., Assunção J., Green E., Dolejš, D., Berlie N., and Rummel L.
  **   Organization : Institute of Geosciences, Johannes-Gutenberg University, Mainz
  **   Contact      : nriel[at]uni-mainz.de, kaus[at]uni-mainz.de
  **
@@ -92,10 +92,11 @@ stx21_dataset stx21_db = {
 stx24_dataset stx24_db = {
 	2024,						/* Endmember default dataset number */
 	8,							/* number of oxides */			
-	17,							/* number of pure phases */
+	23,							/* number of pure phases */
 	15,							/* number of solution phases */
 	{"SiO2"	,"CaO"	,"Al2O3", "MgO"	,"Na2O" , "O"   ,"Cr2O3", "Fe"																		},
-	{"neph"	,"ky"	,"st"	,"coe"	,"qtz"	,"capv"	, "O2" 	,  "fea",  "fee",  "feg", "apbo", "wo" , "lppv" , "pwo", "aMgO" ,"aFeO" ,"aAl2O3"					},
+	{"qfm"	, "qif"	,"mw"	,"iw"	,"hm",
+	 "neph"	,"ky"	,"st"	,"coe"	,"qtz"	,"capv"	, "O2" 	,  "fea",  "fee",  "feg", "apbo", "wo" , "lppv" , "pwo", "aMgO" ,"aFeO" ,"aAl2O3"	,"aO2"					},
 	{"plg"	,"sp"	,"ol"	,"wa"	,"ri"	,"opx"	,"cpx"	,"hpcpx", "ak"	,"gtmj"	,"pv"	 ,"ppv"	 ,"cf"	 ,"mw"	  ,"nal"					},
 	
 	{1		,1		,1		,1		,1		,1		,1		,1		,1 		,1 		,1 		,1 		,1		,1		,1						}, // allow solvus?
@@ -125,7 +126,7 @@ global_variable global_variable_SB_init( 	global_variable  	 gv,
 	if (gv.EM_database == 0){
 		stx11_dataset db 	= stx11_db;
 		gv.EM_dataset 		= db.ds_version;	
-		gv.len_pp   		= db.n_pp;		
+		gv.len_pp   		= db.n_pp + gv.n_mu_fix;		
 		gv.len_ss  			= db.n_ss;
 		gv.len_ox  			= db.n_ox;
 
@@ -149,9 +150,18 @@ global_variable global_variable_SB_init( 	global_variable  	 gv,
 		}
 
 		gv.PP_list 			= malloc (gv.len_pp * sizeof(char*)		);
-		for (i = 0; i < (gv.len_pp); i++){	
+		for (i = 0; i < db.n_pp; i++){
 			gv.PP_list[i] 	= malloc(20 * sizeof(char));
 			strcpy(gv.PP_list[i],db.PP[i]);
+		}
+		for (i = 0; i < gv.n_mu_fix; i++){
+			gv.PP_list[db.n_pp+i] = malloc(20 * sizeof(char));
+			if (gv.mu_fix_idx[i] >= 0 && gv.mu_fix_idx[i] < gv.len_ox){
+				sprintf(gv.PP_list[db.n_pp+i], "m%s", gv.ox[gv.mu_fix_idx[i]]);
+			}
+			else{
+				sprintf(gv.PP_list[db.n_pp+i], "mu%d", i);
+			}
 		}
 
 		gv.SS_list 			= malloc ((gv.len_ss) * sizeof (char*)	);
@@ -171,7 +181,7 @@ global_variable global_variable_SB_init( 	global_variable  	 gv,
 	else if (gv.EM_database == 1){
 		stx21_dataset db 	= stx21_db;
 		gv.EM_dataset 		= db.ds_version;	
-		gv.len_pp   		= db.n_pp;		
+		gv.len_pp   		= db.n_pp + gv.n_mu_fix;		
 		gv.len_ss  			= db.n_ss;
 		gv.len_ox  			= db.n_ox;
 
@@ -195,9 +205,18 @@ global_variable global_variable_SB_init( 	global_variable  	 gv,
 		}
 
 		gv.PP_list 			= malloc (gv.len_pp * sizeof(char*)		);
-		for (i = 0; i < (gv.len_pp); i++){	
+		for (i = 0; i < db.n_pp; i++){
 			gv.PP_list[i] 	= malloc(20 * sizeof(char));
 			strcpy(gv.PP_list[i],db.PP[i]);
+		}
+		for (i = 0; i < gv.n_mu_fix; i++){
+			gv.PP_list[db.n_pp+i] = malloc(20 * sizeof(char));
+			if (gv.mu_fix_idx[i] >= 0 && gv.mu_fix_idx[i] < gv.len_ox){
+				sprintf(gv.PP_list[db.n_pp+i], "m%s", gv.ox[gv.mu_fix_idx[i]]);
+			}
+			else{
+				sprintf(gv.PP_list[db.n_pp+i], "mu%d", i);
+			}
 		}
 
 		gv.SS_list 			= malloc ((gv.len_ss) * sizeof (char*)	);
@@ -217,7 +236,7 @@ global_variable global_variable_SB_init( 	global_variable  	 gv,
 	else if (gv.EM_database == 2){
 		stx24_dataset db 	= stx24_db;
 		gv.EM_dataset 		= db.ds_version;	
-		gv.len_pp   		= db.n_pp;		
+		gv.len_pp   		= db.n_pp + gv.n_mu_fix;		
 		gv.len_ss  			= db.n_ss;
 		gv.len_ox  			= db.n_ox;
 
@@ -241,9 +260,18 @@ global_variable global_variable_SB_init( 	global_variable  	 gv,
 		}
 
 		gv.PP_list 			= malloc (gv.len_pp * sizeof(char*)		);
-		for (i = 0; i < (gv.len_pp); i++){	
+		for (i = 0; i < db.n_pp; i++){
 			gv.PP_list[i] 	= malloc(20 * sizeof(char));
 			strcpy(gv.PP_list[i],db.PP[i]);
+		}
+		for (i = 0; i < gv.n_mu_fix; i++){
+			gv.PP_list[db.n_pp+i] = malloc(20 * sizeof(char));
+			if (gv.mu_fix_idx[i] >= 0 && gv.mu_fix_idx[i] < gv.len_ox){
+				sprintf(gv.PP_list[db.n_pp+i], "m%s", gv.ox[gv.mu_fix_idx[i]]);
+			}
+			else{
+				sprintf(gv.PP_list[db.n_pp+i], "mu%d", i);
+			}
 		}
 
 		gv.SS_list 			= malloc ((gv.len_ss) * sizeof (char*)	);
@@ -327,6 +355,12 @@ global_variable global_variable_SB_init( 	global_variable  	 gv,
 	gv.A0_PGE = malloc ((gv.len_ox*gv.len_ox*9) 	* sizeof(double));			
 	gv.b_PGE  = malloc ((gv.len_ox*3) 				* sizeof(double));			
 
+	gv.fn_nz_max = gv.len_ox*20;
+	gv.fn_A    = malloc ((gv.fn_nz_max*gv.fn_nz_max) 	* sizeof(double));
+	gv.fn_b    = malloc ((gv.fn_nz_max) 				* sizeof(double));
+	gv.fn_ipiv = malloc ((gv.fn_nz_max) 				* sizeof(int)	);
+	gv.fn_sys  = fn_kkt_alloc(gv);
+
 	gv.cp_id  = malloc ((gv.len_ox) 				* sizeof(int)	);			
 	gv.pp_id  = malloc ((gv.len_ox) 				* sizeof(int)	);			
 
@@ -372,37 +406,48 @@ global_variable global_variable_SB_init( 	global_variable  	 gv,
 	gv.MgO_id 	= -1;
 	gv.Cr2O3_id = -1;
 	gv.O_id 	= -1;
+
+	/* z_b mirrors gv's oxide ids so G_SS_*_function() (which only receives z_b, not gv)
+	   can test a specific oxide's abundance without hardcoding its positional index */
+	z_b->Al2O3_id = -1;
+	z_b->CaO_id 	= -1;
+	z_b->Na2O_id 	= -1;
+	z_b->FeO_id 	= -1;
+	z_b->MgO_id 	= -1;
+	z_b->Cr2O3_id = -1;
+	z_b->O_id 	= -1;
+
 	oxide_data ox_in 	= oxide_info_sb;
 	for (i = 0; i < gv.len_ox; i++){
 		for (j = 0; j < ox_in.n_ox; j++){
 			if (strcmp( gv.ox[i], ox_in.oxName[j]) == 0){
 				if (strcmp( gv.ox[i], "Al2O3") 	== 0){
-					gv.Al2O3_id = i;
+					gv.Al2O3_id = i; z_b->Al2O3_id = i;
 				}
 				// else if (strcmp( gv.ox[i], "TiO2") 	== 0){
 				// 	gv.TiO2_id = i;
 				// }
 				else if (strcmp( gv.ox[i], "O") 	== 0){
-					gv.O_id = i;
-				}	
+					gv.O_id = i; z_b->O_id = i;
+				}
 				else if (strcmp( gv.ox[i], "CaO") 	== 0){
-					gv.CaO_id = i;
+					gv.CaO_id = i; z_b->CaO_id = i;
 				}
 				else if (strcmp( gv.ox[i], "Na2O") 	== 0){
-					gv.Na2O_id = i;
+					gv.Na2O_id = i; z_b->Na2O_id = i;
 				}
 				else if (strcmp( gv.ox[i], "MgO") 	== 0){
-					gv.MgO_id = i;
-				}	
+					gv.MgO_id = i; z_b->MgO_id = i;
+				}
 				else if (strcmp( gv.ox[i], "FeO") 	== 0){
-					gv.FeO_id = i;
-				}			
+					gv.FeO_id = i; z_b->FeO_id = i;
+				}
 				else if (strcmp( gv.ox[i], "Fe") 	== 0){
 					gv.Fe_id = i;
-				}					
+				}
 				else if (strcmp( gv.ox[i], "Cr2O3") == 0){
-					gv.Cr2O3_id = i;
-				}		
+					gv.Cr2O3_id = i; z_b->Cr2O3_id = i;
+				}
 				z_b->apo[i]     	= ox_in.atPerOx[j];
 				z_b->masspo[i]  	= ox_in.oxMass[j];
 				z_b->opo[i]  		= ox_in.OPerOx[j];

@@ -3,7 +3,7 @@
  **   Project      : MAGEMin
  **   License      : GNU GENERAL PUBLIC LICENSE Version 3, 29 June 2007
  **   Developers   : Nicolas Riel, Boris Kaus
- **   Contributors : Nickolas B. Moccetti, Dominguez, H., Assunção J., Green E., Berlie N., and Rummel L.
+ **   Contributors : Moccetti, N. B., Dominguez, H., Assunção J., Green E., Dolejš, D., Berlie N., and Rummel L.
  **   Organization : Institute of Geosciences, Johannes-Gutenberg University, Mainz
  **   Contact      : nriel[at]uni-mainz.de, kaus[at]uni-mainz.de
  **
@@ -35,7 +35,17 @@
 #include "MAGEMin.h"
 #include "gem_function.h"
 #include "all_solution_phases.h"
+#include "TC_database/DEW_aq_solver.h"
 #include "toolkit.h"
+#include "ss_min_function.h"
+#include "TC_database/objective_functions.h"
+#include "TC_database/NLopt_opt_function.h"
+#include "SB_database/sb_objective_functions.h"
+#include "SB_database/SB_NLopt_opt_function.h"
+#include "GH_database/gh_objective_functions.h"
+#include "GH_database/GH_NLopt_opt_function.h"
+#include "BR_database/br_objective_functions.h"
+#include "BR_database/BR_NLopt_opt_function.h"
 
 /**
   Initialize dumping function by creating needed files
@@ -137,11 +147,34 @@ void reset_output_struct(		global_variable 	 gv,
 	sp[0].buffer_n				 = gv.buffer_n;
 
 	sp[0].alpha				 	 = gv.system_expansivity;
+	sp[0].beta				 	 = gv.system_compressibility;
 	sp[0].V				 	 	 = gv.system_volume_cm3mol;	
 	sp[0].V_cm3				 	 = gv.system_volume*1e6;	
 	sp[0].cp				 	 = gv.system_cp;	
 	sp[0].entropy				 = gv.system_entropy;
 	sp[0].enthalpy				 = gv.system_enthalpy;
+	sp[0].system_oxygen			 = 0.0;
+	sp[0].Fe3_Fe2_ratio			 = 0.0;
+
+	if (gv.O_id != -1 && gv.FeO_id != -1 && z_b.bulk_rock[gv.O_id] != 0.0){
+		double buffer_mol    = 0.0;
+		int    buffer_active = 0;
+		for (int ii = 0; ii < gv.len_pp; ii++){
+			if (gv.pp_flags[ii][1] == 1 && gv.pp_flags[ii][4] == 1){
+				buffer_active = 1;
+				buffer_mol    = gv.pp_n_mol[ii];
+				break;
+			}
+		}
+		if (buffer_active == 0){
+			sp[0].system_oxygen = z_b.bulk_rock[gv.O_id];
+			sp[0].Fe3_Fe2_ratio = z_b.bulk_rock[gv.O_id]*2.0/(z_b.bulk_rock[gv.FeO_id] + z_b.bulk_rock[gv.O_id]*2.0);	
+		}
+		else{
+			sp[0].system_oxygen = z_b.bulk_rock[gv.O_id] - buffer_mol;
+			sp[0].Fe3_Fe2_ratio = sp[0].system_oxygen*2.0/(z_b.bulk_rock[gv.FeO_id] + sp[0].system_oxygen*2.0);
+		}
+	}
 
 	sp[0].bulkMod				 = gv.system_bulkModulus;
 	sp[0].shearMod				 = gv.system_shearModulus;
@@ -218,6 +251,18 @@ void mSS_output_struct(			global_variable 	 gv,
 		SB_PC_init(	    		PC_read,
 								gv			);
 	}
+	else if (strcmp(gv.research_group, "gh") 	== 0 ){
+		GH_PC_init(	    		PC_read,
+								gv			);
+		GH_P2X_init(	    	P2X_read,
+								gv			);
+	}
+	else if (strcmp(gv.research_group, "br") 	== 0 ){
+		BR_PC_init(	    		PC_read,
+								gv			);
+		BR_P2X_init(	    	P2X_read,
+								gv			);
+	}
 
 	int nox  = gv.len_ox;
 	int i, j, k, m, n, em_id, ph_id, pc_id;
@@ -226,8 +271,9 @@ void mSS_output_struct(			global_variable 	 gv,
 	/* get LP assemblage - This routine retrieves the information of the solution phases and pure phase as computed at equilibrium -> to be used as initial guess */
 	m = 0;
 	simplex_data *d  = (simplex_data *) splx_data;
+	int 	n_lp = (gv.fn_from_state == 1) ? 0 : d->n_Ox;
 
-	for (i = 0; i < d->n_Ox; i++){
+	for (i = 0; i < n_lp; i++){
 		ph_id 		= d->ph_id_A[i][1];
 
 
@@ -288,17 +334,24 @@ void mSS_output_struct(			global_variable 	 gv,
 			SS_ref_db[ph_id] = non_rot_hyperplane(	gv, 
 													SS_ref_db[ph_id]			);
 
-			if (strcmp(gv.research_group, "tc") 	== 0 ){									
+			if (strcmp(gv.research_group, "tc") 	== 0 ){
 				SS_ref_db[ph_id] = PC_function(				gv,
 															PC_read,
-															SS_ref_db[ph_id], 
+															SS_ref_db[ph_id],
 															z_b,
 															ph_id 		);
 			}
 			else if (strcmp(gv.research_group, "sb") 	== 0 ){
 				SS_ref_db[ph_id] = SB_PC_function(			gv,
 															PC_read,
-															SS_ref_db[ph_id], 
+															SS_ref_db[ph_id],
+															z_b,
+															ph_id 		);
+			}
+			else if (strcmp(gv.research_group, "gh") 	== 0 ){
+				SS_ref_db[ph_id] = GH_PC_function(			gv,
+															PC_read,
+															SS_ref_db[ph_id],
 															z_b,
 															ph_id 		);
 			}
@@ -356,21 +409,35 @@ void mSS_output_struct(			global_variable 	 gv,
 			SS_ref_db[ph_id] = non_rot_hyperplane(	gv, 
 													SS_ref_db[ph_id]			);
 
-			if (strcmp(gv.research_group, "tc") 	== 0 ){									
+			if (strcmp(gv.research_group, "tc") 	== 0 ){
 				SS_ref_db[ph_id] = PC_function(				gv,
 															PC_read,
-															SS_ref_db[ph_id], 
+															SS_ref_db[ph_id],
 															z_b,
 															ph_id 		);
 			}
 			else if (strcmp(gv.research_group, "sb") 	== 0 ){
 				SS_ref_db[ph_id] = SB_PC_function(			gv,
 															PC_read,
-															SS_ref_db[ph_id], 
+															SS_ref_db[ph_id],
 															z_b,
 															ph_id 		);
 			}
-											
+			else if (strcmp(gv.research_group, "gh") 	== 0 ){
+				SS_ref_db[ph_id] = GH_PC_function(			gv,
+															PC_read,
+															SS_ref_db[ph_id],
+															z_b,
+															ph_id 		);
+			}
+			else if (strcmp(gv.research_group, "br") 	== 0 ){
+				SS_ref_db[ph_id] = BR_PC_function(			gv,
+															PC_read,
+															SS_ref_db[ph_id],
+															z_b,
+															ph_id 		);
+			}
+
 			for (j = 0; j < gv.len_ox; j++){
 				sp[0].mSS[m].comp_Ppc[j] = SS_ref_db[ph_id].ss_comp[j]*SS_ref_db[ph_id].factor;
 			}
@@ -406,6 +473,7 @@ void mSS_output_struct(			global_variable 	 gv,
 	int n_xeos, n_em;
 	for (int i = 0; i < gv.len_ss; i++){
 		if (SS_ref_db[i].ss_flags[0] == 1){
+			if (strcmp(gv.SS_list[i], "DEW") == 0 || strcmp(gv.SS_list[i], "DEW_S24") == 0){ continue; }
 
 			n_em 	 = SS_ref_db[i].n_em;
 			n_xeos 	 = SS_ref_db[i].n_xeos;
@@ -448,8 +516,208 @@ void mSS_output_struct(			global_variable 	 gv,
 	if (m >= gv.max_n_mSS){
 		printf("WARNING: maximum number of metastable pseudocompounds has been reached, increase the value in tc_gss_init_function.c (SP_INIT_function)\n");
 	}
-	
+
 }
+
+/**
+	calibration_output_struct
+
+	Only runs when gv.calibration == 1 (default 0, off). For every solution phase model
+	that is structurally feasible for the current bulk (SS_ref_db[i].ss_flags[0] == 1) --
+	a strictly broader set than the final stable assemblage, and not limited to the
+	narrow near-hyperplane window mSS_output_struct's own near-miss loop uses -- this
+	locally minimizes from ~n_em starting points, sampled by even stride across that
+	model's full tot_Ppc pseudocompound list (not just the best point, and not a fixed
+	percentage: the sample count tracks each model's own compositional dimensionality).
+	The best (lowest driving force) of those converged local minima is kept.
+
+	That candidate is then checked against every phase already in the FINAL stable
+	assemblage (cp[j].ss_flags[1] == 1, not ss_flags[0] which only means "considered
+	during search") of the SAME model: if its compositional variables are within
+	gv.PC_min_dist * gv.SS_PC_stp[i] * sqrt(n_xeos) of an already-stable instance (the
+	same scale-aware distance metric phase_update_function.c already uses for a related
+	purpose), it is rejected as a redundant rediscovery of that stable phase. Otherwise
+	it is APPENDED to sp[0].mSS[] (mSS_output_struct itself is never modified -- this is
+	strictly additive, continuing whatever m/n_mSS it already left), tagged
+	info="calib" so callers can tell these apart from mSS_output_struct's own "lpig"
+	(LP-levelling-basis warm-start) and "ppc" (near-miss) entries. A kept result whose
+	OWN model is already stable elsewhere in the assemblage under a different
+	composition is intentionally NOT rejected -- that is precisely the case (a second,
+	distinct local minimum of an already-stable model) that signals a nearby solvus.
+
+	Self-contained: builds its own local SS_objective/NLopt_opt/PC_read/P2X_read tables
+	(same research-group-branching pattern ComputeEquilibrium_Point and
+	mSS_output_struct already use), rather than threading them through
+	fill_output_struct's signature -- keeps this an additive, low-risk change with no
+	existing function signature touched except the one new call site in
+	fill_output_struct.
+*/
+void calibration_output_struct(		global_variable 	 gv,
+										bulk_info 	 		 z_b,
+										SS_ref 				*SS_ref_db,
+										csd_phase_set  		*cp,
+										stb_system  		*sp
+){
+	obj_type 				SS_objective[gv.len_ss];
+	PC_type 				PC_read[gv.len_ss];
+	P2X_type 				P2X_read[gv.len_ss];
+	NLopt_type 				NLopt_opt[gv.len_ss];
+
+	if (strcmp(gv.research_group, "tc") 	== 0 ){
+		TC_SS_objective_init_function(		SS_objective,	gv	);
+		TC_NLopt_opt_init(					NLopt_opt,		gv	);
+		TC_PC_init(							PC_read,		gv	);
+		TC_P2X_init(						P2X_read,		gv	);
+	}
+	else if (strcmp(gv.research_group, "sb") 	== 0 ){
+		SB_SS_objective_init_function(		SS_objective,	gv	);
+		SB_NLopt_opt_init(					NLopt_opt,		gv	);
+		SB_PC_init(							PC_read,		gv	);
+	}
+	else if (strcmp(gv.research_group, "gh") 	== 0 ){
+		GH_SS_objective_init_function(		SS_objective,	gv	);
+		GH_NLopt_opt_init(					NLopt_opt,		gv	);
+		GH_PC_init(							PC_read,		gv	);
+		GH_P2X_init(						P2X_read,		gv	);
+	}
+	else if (strcmp(gv.research_group, "br") 	== 0 ){
+		BR_SS_objective_init_function(		SS_objective,	gv	);
+		BR_NLopt_opt_init(					NLopt_opt,		gv	);
+		BR_PC_init(							PC_read,		gv	);
+	}
+
+	gv.ns_tol    = fmin(gv.ns_tol,    1e-12);
+	gv.ns_tol_pg = fmin(gv.ns_tol_pg, 1e-9);
+	int ns_only  = (gv.ss_solver == 1 && gv.solver == 0);
+
+	int m = sp[0].n_mSS;		/* continue directly from wherever mSS_output_struct left off */
+
+	for (int i = 0; i < gv.len_ss; i++){
+		if (SS_ref_db[i].ss_flags[0] != 1){ continue; }
+		if (m >= gv.max_n_mSS){ break; }
+
+		int n_em   = SS_ref_db[i].n_em;
+		int n_xeos = SS_ref_db[i].n_xeos;
+		int tot    = SS_ref_db[i].tot_Ppc;
+		if (tot <= 0 || n_em <= 0 || n_xeos <= 0){ continue; }
+
+		int stride = tot / n_em;
+		if (stride < 1){ stride = 1; }
+
+		int    best_found = 0;
+		double best_df    = 0.0;
+		double best_xeos[n_xeos];
+		double best_comp[gv.len_ox];
+		double best_p[n_em];
+		double best_mu[n_em];
+
+		for (int l = 0; l < tot; l += stride){
+			for (int k = 0; k < n_xeos; k++){
+				SS_ref_db[i].iguess[k] = SS_ref_db[i].xeos_Ppc[l][k];
+			}
+
+			SS_ref_db[i] = rotate_hyperplane(				gv,
+															SS_ref_db[i]			);
+
+			SS_ref_db[i] = ss_local_min(					gv,
+															NLopt_opt,
+															i,
+															SS_ref_db[i],
+															gv.box_size_mode_PGE	);
+
+			if (ns_only && SS_ref_db[i].ns_ok == 1 && SS_ref_db[i].ns_absent == 1 && SS_ref_db[i].ns_status != 3){ continue; }
+
+			SS_ref_db[i] = PC_function(					gv,
+															PC_read,
+															SS_ref_db[i],
+															z_b,
+															i						);
+
+			SS_ref_db[i] = SS_UPDATE_function(			gv,
+															SS_ref_db[i],
+															z_b,
+															gv.SS_list[i]			);
+
+			if (SS_ref_db[i].sf_ok != 1){ continue; }
+
+			if (best_found == 0 || SS_ref_db[i].df < best_df){
+				best_found = 1;
+				best_df    = SS_ref_db[i].df;
+				for (int k = 0; k < n_xeos; k++){ best_xeos[k] = SS_ref_db[i].xeos[k]; }
+				for (int j = 0; j < gv.len_ox; j++){ best_comp[j] = SS_ref_db[i].ss_comp[j]*SS_ref_db[i].factor; }
+				for (int k = 0; k < n_em; k++){
+					best_p[k]  = SS_ref_db[i].p[k];
+					best_mu[k] = SS_ref_db[i].mu[k]*SS_ref_db[i].z_em[k];
+				}
+			}
+		}
+
+		if (best_found == 0){ continue; }
+
+		/* reject only if this SPECIFIC converged minimum duplicates an already-stable
+		   instance of THIS model -- a different local minimum of an already-stable
+		   model is kept on purpose (possible nearby solvus) */
+		int is_dup = 0;
+		for (int j = 0; j < gv.len_cp; j++){
+			if (cp[j].ss_flags[1] != 1){ continue; }
+			if (cp[j].id != i){ continue; }
+			if (cp[j].n_xeos != n_xeos){ continue; }
+
+			double dist = 0.0;
+			for (int k = 0; k < n_xeos; k++){
+				double d = best_xeos[k] - cp[j].xeos[k];
+				dist += d*d;
+			}
+			dist = sqrt(dist);
+
+			if (dist < gv.PC_min_dist * gv.SS_PC_stp[i] * sqrt((double)n_xeos)){
+				is_dup = 1;
+				break;
+			}
+		}
+		if (is_dup == 1){ continue; }
+
+		strcpy(sp[0].mSS[m].info,		"calib");
+		strcpy(sp[0].mSS[m].ph_type,	"ss");
+		strcpy(sp[0].mSS[m].ph_name,	gv.SS_list[i]);
+		sp[0].mSS[m].ph_id    = i;
+		sp[0].mSS[m].em_id    = 0;
+		sp[0].mSS[m].nOx      = gv.len_ox;
+		sp[0].mSS[m].n_xeos   = n_xeos;
+		sp[0].mSS[m].n_em     = n_em;
+
+		/* best_df is NLopt_opt[i]'s own returned minf, i.e. SS_ref_db[i].df straight
+		   after the (*NLopt_opt[i])() call above -- unlike the LP-basis/near-miss loops
+		   in mSS_output_struct (which call non_rot_hyperplane, leaving gb_lvl un-
+		   projected, so THEY still need an explicit -comp*gam_tot step afterward), this
+		   function calls rotate_hyperplane first, which already sets
+		   gb_lvl[k] = gbase[k] - sum(Comp[k][j]*gam_tot[j]) -- confirmed directly in
+		   objective_functions.c: obj_ig_g (the NLopt objective for e.g. garnet) reads
+		   gb_lvl, not gbase. So best_df is ALREADY the Gamma-hyperplane driving force;
+		   subtracting comp*gam_tot again here would double-count that projection (this
+		   was tried first and produced deltaG ~899 for a phase whose own G was ~4 --
+		   confirmed as the cause by checking obj_ig_g's source directly, not guessed). */
+		sp[0].mSS[m].G_Ppc  = best_df;
+		sp[0].mSS[m].DF_Ppc = best_df;
+		for (int j = 0; j < gv.len_ox; j++){
+			sp[0].mSS[m].comp_Ppc[j] = best_comp[j];
+		}
+		for (int k = 0; k < n_xeos; k++){
+			sp[0].mSS[m].xeos_Ppc[k] = best_xeos[k];
+		}
+		for (int k = 0; k < n_em; k++){
+			sp[0].mSS[m].p_Ppc[k]  = best_p[k];
+			sp[0].mSS[m].mu_Ppc[k] = best_mu[k];
+		}
+
+		sp[0].n_mSS += 1;
+		m += 1;
+	}
+
+	if (m >= gv.max_n_mSS){
+		printf("WARNING: maximum number of metastable pseudocompounds has been reached during calibration_output_struct, increase the value in tc_gss_init_function.c (SP_INIT_function)\n");
+	}
+};
 
 /**
   Save final result of minimization
@@ -502,8 +770,8 @@ void fill_output_struct(		global_variable 	 gv,
 	for (int i = 0; i < gv.len_cp; i++){
 		if ( cp[i].ss_flags[1] == 1){
 
-			strcpy(sp[0].ph[n],cp[i].name);	
-			strcpy(sp[0].sol_name[n],SS_ref_db[cp[i].id].fName);	
+			strcpy(sp[0].ph[n],cp[i].name);
+			strcpy(sp[0].sol_name[n],SS_ref_db[cp[i].id].fName);
 
 			sp[0].ph_frac[n]  	 = cp[i].ss_n_mol;
 			sp[0].ph_frac_wt[n]  = cp[i].ss_n_wt;
@@ -541,13 +809,64 @@ void fill_output_struct(		global_variable 	 gv,
 			sp[0].cp_wt 		+= sp[0].SS[m].cp* cp[i].ss_n_wt;//cp[i].phase_cp * cp[i].ss_n_wt * cp[i].factor;
 			sp[0].SS[m].rho 	 = cp[i].phase_density;
 			sp[0].SS[m].alpha 	 = cp[i].phase_expansivity;
+			sp[0].SS[m].beta 	 = cp[i].phase_compressibility;
 			sp[0].SS[m].entropy  = cp[i].phase_entropy;
 			sp[0].SS[m].enthalpy = cp[i].phase_entropy*z_b.T + G;
 			sp[0].SS[m].bulkMod  = cp[i].phase_bulkModulus/10.;
 			sp[0].SS[m].shearMod = cp[i].phase_shearModulus/10.;
 			sp[0].SS[m].Vp 		 = sqrt((cp[i].phase_bulkModulus/10. + 4.0/3.0*cp[i].phase_shearModulus/10.)/(cp[i].phase_density/1e3));
-			sp[0].SS[m].Vs 		 = sqrt(cp[i].phase_shearModulus/10.0/(cp[i].phase_density/1e3));	
+			sp[0].SS[m].Vs 		 = sqrt(cp[i].phase_shearModulus/10.0/(cp[i].phase_density/1e3));
 
+			sp[0].SS[m].pH 		 	  = NAN;
+			sp[0].SS[m].chargeResidual = NAN;
+			sp[0].SS[m].sumMolality    = NAN;
+			sp[0].SS[m].G_water        = NAN;
+			for (j = 0; j < cp[i].n_em; j++){
+				sp[0].SS[m].molality[j] = NAN;
+				sp[0].SS[m].activity[j] = NAN;
+			}
+			if (strcmp( cp[i].name, "DEW") == 0 || strcmp( cp[i].name, "DEW_S24") == 0){
+				AQ_data AQ_pH = init_DEW_aqueous_model_at_point(	DEW_N_SPECIES_DB,
+																	gv.EM_dataset,
+																	gv.len_ox,
+																	z_b.id,
+																	z_b.bulk_rock,
+																	z_b.apo,
+																	z_b.ElEntropy,
+																	SS_ref_db[cp[i].id].P,
+																	SS_ref_db[cp[i].id].T			);
+				sp[0].SS[m].pH   = DEW_aq_pH(	&AQ_pH,
+												cp[i].p_em,
+												SS_ref_db[cp[i].id].T,
+												SS_ref_db[cp[i].id].P			);
+
+				int n_sp = AQ_pH.n_sp;
+				double *m_sp    = malloc(n_sp * sizeof(double));
+				double  gamma_e[5];
+				double  a_coef;
+				DEW_aq_activity_state(	&AQ_pH,
+										cp[i].p_em,
+										SS_ref_db[cp[i].id].T,
+										SS_ref_db[cp[i].id].P,
+										m_sp, gamma_e, &a_coef			);
+
+				double z_res = 0.0, sum_m = 0.0;
+				for (j = 0; j < n_sp; j++){
+					int z_id = (int)fabs(AQ_pH.z[j]);
+					sp[0].SS[m].molality[j] = m_sp[j];
+					sp[0].SS[m].activity[j] = m_sp[j]*gamma_e[z_id];
+					z_res += m_sp[j]*AQ_pH.z[j];
+					sum_m += m_sp[j];
+				}
+				sp[0].SS[m].activity[n_sp] = a_coef;
+
+				sp[0].SS[m].chargeResidual = fabs(z_res);
+				sp[0].SS[m].sumMolality    = sum_m;
+				sp[0].SS[m].G_water        = AQ_pH.gb_w;
+
+				free(m_sp);
+				free_DEW_aqueous_model(&AQ_pH);
+			}
 
 			if (gv.O_id != -1){
 				sp[0].SS[m].Comp_apfu[gv.O_id]    += sum_oxygens;
@@ -594,18 +913,34 @@ void fill_output_struct(		global_variable 	 gv,
 				for (k = 0; k < gv.len_ox; k++){
 					sp[0].SS[m].emComp[j][k]	= SS_ref_db[cp[i].id].Comp[j][k];
 					sp[0].SS[m].emComp_wt[j][k]	= sp[0].SS[m].emComp[j][k]*z_b.masspo[k];
-					sp[0].SS[m].emComp_apfu[j][k]	= SS_ref_db[cp[i].id].Comp[j][k]*z_b.cpo[j];;
-					sum_oxygens					   += SS_ref_db[cp[i].id].Comp[j][k]*z_b.opo[j];
+					sp[0].SS[m].emComp_apfu[j][k]	= SS_ref_db[cp[i].id].Comp[j][k]*z_b.cpo[k];;
+					sum_oxygens					   += SS_ref_db[cp[i].id].Comp[j][k]*z_b.opo[k];
 					sum_wt 					   += sp[0].SS[m].emComp_wt[j][k];
 					sum_mol 				   += sp[0].SS[m].emComp[j][k];
 				}
 				if (gv.O_id != -1){
-					sp[0].SS[m].emComp_apfu[j][gv.O_id]    += sum_oxygens;
+					/* sum_oxygens is the endmember's TOTAL oxygen-atom count (summed across every
+					   oxide component's own oxygen contribution, including the O component's).
+					   The generic per-k loop above already wrote a "raw" value into the O_id slot
+					   (Comp[j][O_id]*cpo[O_id], counting only the O component's own term once) -
+					   that value must be REPLACED by the true total, not added to it, otherwise
+					   the O component's contribution is counted twice. */
+					sp[0].SS[m].emComp_apfu[j][gv.O_id]    = sum_oxygens;
 				}
 
+				/* sum_wt/sum_mol are sums of signed formation-reaction coefficients for
+				   DEW's charged aqueous species (Comp[] can be negative there, unlike
+				   every other phase's plain non-negative oxide recipe) and can legitimately
+				   be ~0 or negative for some species. Normalizing by a non-positive sum
+				   either divides by zero (NaN/Inf) or silently flips every sign, so leave
+				   the raw (already-assigned) signed values in that case instead. */
 				for (k = 0; k < gv.len_ox; k++){
-					sp[0].SS[m].emComp_wt[j][k]	/= sum_wt;
-					sp[0].SS[m].emComp[j][k]	/= sum_mol;
+					if (sum_wt > 1e-8){
+						sp[0].SS[m].emComp_wt[j][k]	/= sum_wt;
+					}
+					if (sum_mol > 1e-8){
+						sp[0].SS[m].emComp[j][k]	/= sum_mol;
+					}
 				}
 			}
 			for (j = 0; j < cp[i].n_em; j++){
@@ -613,8 +948,10 @@ void fill_output_struct(		global_variable 	 gv,
 
 			}
 
-			if (strcmp( cp[i].name, "liq") == 0 || strcmp( cp[i].name, "fl") == 0 ){
-				if (strcmp( cp[i].name, "liq") == 0){
+			if (strcmp( cp[i].name, "liq") == 0 || strcmp( cp[i].name, "fl") == 0 || strcmp( cp[i].name, "DEW") == 0
+			 || strcmp( cp[i].name, "liq_W14") == 0 || strcmp( cp[i].name, "liq_G16") == 0 || strcmp( cp[i].name, "liq_G25w") == 0 || strcmp( cp[i].name, "liqmn_R27") == 0 || strcmp( cp[i].name, "liq_S26") == 0
+			 || strcmp( cp[i].name, "fl_G25") == 0 || strcmp( cp[i].name, "fl_EF21") == 0 || strcmp( cp[i].name, "fl_H03") == 0 || strcmp( cp[i].name, "DEW_S24") == 0){
+				if (strcmp( cp[i].name, "liq") == 0 || strcmp( cp[i].name, "liq_W14") == 0 || strcmp( cp[i].name, "liq_G16") == 0 || strcmp( cp[i].name, "liq_G25w") == 0 || strcmp( cp[i].name, "liqmn_R27") == 0 || strcmp( cp[i].name, "liq_S26") == 0){
 					if (gv.n_phase == 1){
 						sp[0].entropy_M 			= cp[i].phase_entropy;
 						sp[0].frac_M 				= 1.0;
@@ -670,6 +1007,18 @@ void fill_output_struct(		global_variable 	 gv,
 			sp[0].ph_frac_1at[n]  = gv.pp_n[i];
 		}
 		if (gv.pp_flags[i][1] == 1 && gv.pp_flags[i][4] == 0){
+			/* native mu-fix fictive phase: has no real physical properties
+			   (phase_density/bulkModulus/shearModulus etc are deliberately
+			   0 at construction, pp_min_function.c) - still gets a real,
+			   uniquely-numbered ph[]/PP[] slot below (name, mode, mass,
+			   composition, G, deltaG are all safe/meaningful for it), but
+			   is excluded from the density-dependent lines (Vp/Vs) and
+			   from the system-wide aggregates (cp_wt, entropy_S/frac_S/
+			   frac_S_wt/rho_S/bulk_S, or the H2O-labelled equivalents),
+			   the same way buffer= phases are already excluded from those
+			   aggregates by never reaching this branch at all. */
+			int is_mu_fix = (gv.n_mu_fix > 0 && i >= gv.len_pp - gv.n_mu_fix);
+
 			strcpy(sp[0].ph[n],gv.PP_list[i]);
 
 			sp[0].ph_frac[n]  	 = gv.pp_n_mol[i];
@@ -688,7 +1037,7 @@ void fill_output_struct(		global_variable 	 gv,
 				sp[0].PP[m].Comp_wt[j]   = PP_ref_db[i].Comp_wt[j];
 			}
 			if (gv.O_id != -1){
-				sp[0].PP[m].Comp_apfu[gv.O_id]    += sum_oxygens;	
+				sp[0].PP[m].Comp_apfu[gv.O_id]    += sum_oxygens;
 			}
 
 			phase_mass = calculate_mass_phase( nox, z_b, sp[0].PP[m].Comp);
@@ -704,7 +1053,6 @@ void fill_output_struct(		global_variable 	 gv,
 			sp[0].PP[m].deltaG	 = PP_ref_db[i].gb_lvl;
 			sp[0].PP[m].V 		 = PP_ref_db[i].volume*10.;
 			sp[0].PP[m].cp 		 = (PP_ref_db[i].phase_cp * PP_ref_db[i].factor)/phase_mass;
-			sp[0].cp_wt 		+= sp[0].PP[m].cp* gv.pp_n_wt[i];//PP_ref_db[i].phase_cp * gv.pp_n_wt[i] * PP_ref_db[i].factor;
 
 			sp[0].PP[m].rho 	 = PP_ref_db[i].phase_density;
 			sp[0].PP[m].alpha 	 = PP_ref_db[i].phase_expansivity;
@@ -712,28 +1060,36 @@ void fill_output_struct(		global_variable 	 gv,
 			sp[0].PP[m].enthalpy = PP_ref_db[i].phase_entropy*z_b.T + G;
 			sp[0].PP[m].bulkMod  = PP_ref_db[i].phase_bulkModulus/10.;
 			sp[0].PP[m].shearMod = PP_ref_db[i].phase_shearModulus/10.;
-			sp[0].PP[m].Vp 		 = sqrt((PP_ref_db[i].phase_bulkModulus/10. + 4.0/3.0*PP_ref_db[i].phase_shearModulus/10.)/(PP_ref_db[i].phase_density/1e3));
-			sp[0].PP[m].Vs 		 = sqrt(PP_ref_db[i].phase_shearModulus/10.0/(PP_ref_db[i].phase_density/1e3));	
 
-			if  (strcmp( gv.PP_list[i], "H2O") != 0){
-				sp[0].entropy_S 	+= PP_ref_db[i].phase_entropy*gv.pp_n_mol[i];
-				sp[0].frac_S 		+= gv.pp_n_mol[i];
-				sp[0].frac_S_wt		+= gv.pp_n_wt[i];
-				sp[0].rho_S  		+= gv.pp_n_wt[i]/PP_ref_db[i].phase_density;
-				for (j = 0; j < gv.len_ox; j++){
-					sp[0].bulk_S[j]	+= gv.pp_n_mol[i]*PP_ref_db[i].Comp_mol[j];
-					sp[0].bulk_S_wt[j]	+= gv.pp_n_wt[i]*PP_ref_db[i].Comp_wt[j];
+			if (!is_mu_fix){
+				sp[0].cp_wt 		+= sp[0].PP[m].cp* gv.pp_n_wt[i];//PP_ref_db[i].phase_cp * gv.pp_n_wt[i] * PP_ref_db[i].factor;
+				sp[0].PP[m].Vp 		 = sqrt((PP_ref_db[i].phase_bulkModulus/10. + 4.0/3.0*PP_ref_db[i].phase_shearModulus/10.)/(PP_ref_db[i].phase_density/1e3));
+				sp[0].PP[m].Vs 		 = sqrt(PP_ref_db[i].phase_shearModulus/10.0/(PP_ref_db[i].phase_density/1e3));
+
+				if  (strcmp( gv.PP_list[i], "H2O") != 0){
+					sp[0].entropy_S 	+= PP_ref_db[i].phase_entropy*gv.pp_n_mol[i];
+					sp[0].frac_S 		+= gv.pp_n_mol[i];
+					sp[0].frac_S_wt		+= gv.pp_n_wt[i];
+					sp[0].rho_S  		+= gv.pp_n_wt[i]/PP_ref_db[i].phase_density;
+					for (j = 0; j < gv.len_ox; j++){
+						sp[0].bulk_S[j]	+= gv.pp_n_mol[i]*PP_ref_db[i].Comp_mol[j];
+						sp[0].bulk_S_wt[j]	+= gv.pp_n_wt[i]*PP_ref_db[i].Comp_wt[j];
+					}
+				}
+				if  (strcmp( gv.PP_list[i], "H2O") == 0){
+					sp[0].entropy_F 	= PP_ref_db[i].phase_entropy*gv.pp_n_mol[i];
+					sp[0].frac_F 		= gv.pp_n_mol[i];
+					sp[0].frac_F_wt		= gv.pp_n_wt[i];
+					sp[0].rho_F  		= PP_ref_db[i].phase_density;
+					for (j = 0; j < gv.len_ox; j++){
+						sp[0].bulk_F[j]	= PP_ref_db[i].Comp_mol[j];
+						sp[0].bulk_F_wt[j]	= PP_ref_db[i].Comp_wt[j];
+					}
 				}
 			}
-			if  (strcmp( gv.PP_list[i], "H2O") == 0){
-				sp[0].entropy_F 	= PP_ref_db[i].phase_entropy*gv.pp_n_mol[i];
-				sp[0].frac_F 		= gv.pp_n_mol[i];
-				sp[0].frac_F_wt		= gv.pp_n_wt[i];
-				sp[0].rho_F  		= PP_ref_db[i].phase_density;
-				for (j = 0; j < gv.len_ox; j++){
-					sp[0].bulk_F[j]	= PP_ref_db[i].Comp_mol[j];
-					sp[0].bulk_F_wt[j]	= PP_ref_db[i].Comp_wt[j];
-				}
+			else{
+				sp[0].PP[m].Vp = 0.0;
+				sp[0].PP[m].Vs = 0.0;
 			}
 			n 			    	+= 1;
 			m 					+= 1;
@@ -750,8 +1106,10 @@ void fill_output_struct(		global_variable 	 gv,
 		if ( cp[i].ss_flags[1] == 1){
 			sp[0].ph_frac_vol[n] = sp[0].ph_frac_wt[n] / sp[0].SS[n].rho;
 
-			if (strcmp( cp[i].name, "liq") == 0 || strcmp( cp[i].name, "fl") == 0 ){
-				if (strcmp( cp[i].name, "liq") == 0){
+			if (strcmp( cp[i].name, "liq") == 0 || strcmp( cp[i].name, "fl") == 0 || strcmp( cp[i].name, "DEW") == 0
+			 || strcmp( cp[i].name, "liq_W14") == 0 || strcmp( cp[i].name, "liq_G16") == 0 || strcmp( cp[i].name, "liq_G25w") == 0 || strcmp( cp[i].name, "liqmn_R27") == 0 || strcmp( cp[i].name, "liq_S26") == 0
+			 || strcmp( cp[i].name, "fl_G25") == 0 || strcmp( cp[i].name, "fl_EF21") == 0 || strcmp( cp[i].name, "fl_H03") == 0 || strcmp( cp[i].name, "DEW_S24") == 0){
+				if (strcmp( cp[i].name, "liq") == 0 || strcmp( cp[i].name, "liq_W14") == 0 || strcmp( cp[i].name, "liq_G16") == 0 || strcmp( cp[i].name, "liq_G25w") == 0 || strcmp( cp[i].name, "liqmn_R27") == 0 || strcmp( cp[i].name, "liq_S26") == 0){
 						sp[0].frac_M_vol      = sp[0].ph_frac_vol[n];
 				}
 				else{
@@ -771,18 +1129,30 @@ void fill_output_struct(		global_variable 	 gv,
 	m = 0;
 	for (int i = 0; i < gv.len_pp; i++){
 		if (gv.pp_flags[i][1] == 1 && gv.pp_flags[i][4] == 0){
-			sp[0].ph_frac_vol[n] =  sp[0].ph_frac_wt[n] / sp[0].PP[m].rho;
+			/* mirror the mu-fix handling above: a real ph_frac_vol[]/PP[]
+			   slot either way (keeps this loop's n/m in step with the one
+			   above), but skip the density division (PP[m].rho is 0 for a
+			   fictive phase, which would give Inf/NaN) and the volume/mol/
+			   wt aggregate contribution for it */
+			int is_mu_fix = (gv.n_mu_fix > 0 && i >= gv.len_pp - gv.n_mu_fix);
 
-			if  (strcmp( gv.PP_list[i], "H2O") != 0){
-				sp[0].frac_S_vol += sp[0].ph_frac_vol[n];
-			}
-			if  (strcmp( gv.PP_list[i], "H2O") == 0){
-				sp[0].frac_F_vol = sp[0].ph_frac_vol[n];
-			}
+			if (!is_mu_fix){
+				sp[0].ph_frac_vol[n] =  sp[0].ph_frac_wt[n] / sp[0].PP[m].rho;
 
-			sum_vol += sp[0].ph_frac_vol[n];
-			sum_mol += sp[0].ph_frac[n];
-			sum_wt  += sp[0].ph_frac_wt[n];
+				if  (strcmp( gv.PP_list[i], "H2O") != 0){
+					sp[0].frac_S_vol += sp[0].ph_frac_vol[n];
+				}
+				if  (strcmp( gv.PP_list[i], "H2O") == 0){
+					sp[0].frac_F_vol = sp[0].ph_frac_vol[n];
+				}
+
+				sum_vol += sp[0].ph_frac_vol[n];
+				sum_mol += sp[0].ph_frac[n];
+				sum_wt  += sp[0].ph_frac_wt[n];
+			}
+			else{
+				sp[0].ph_frac_vol[n] = 0.0;
+			}
 			m +=1;
 			n +=1;
 		}
@@ -885,6 +1255,13 @@ void fill_output_struct(		global_variable 	 gv,
 						cp,
 						sp 			);
 
+	if (gv.calibration == 1){
+		calibration_output_struct(	gv,
+									z_b,
+									SS_ref_db,
+									cp,
+									sp			);
+	}
 
 }
 
